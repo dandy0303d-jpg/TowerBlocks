@@ -1,0 +1,336 @@
+/**
+ * TopUpController — the recharge panel.
+ *
+ * Wire-once + populate pattern (same as LeaderboardController):
+ *   - Scene author builds the visual layout (dim + card + 6 SKU
+ *     cards + close button + balance strip) and drops references
+ *     into @property slots.
+ *   - Script populates each card's gem count / price / tag from
+ *     `WALLET_SKUS`, wires click → topupWallet(), refreshes balance.
+ *
+ * Purchase flow (MVP — direct buy, no confirmation step):
+ *   1. Player taps a SKU card's "Buy" button
+ *   2. `topupWallet(sku.id, 'mock')` fires immediately
+ *   3. On success → toast "获得 N 宝石" + refresh balance
+ *   4. On failure → toast the error message
+ *
+ * Later: swap paymentKind for real IAP (Apple/Google Billing SDK
+ * or Stripe web checkout). The rest of the flow stays the same —
+ * the server just changes how it validates the transaction.
+ *
+ * Price display is currency-aware via `formatPrice(sku)` — see
+ * WalletApi for the CURRENCY_INFO table. Platform-provided
+ * localized prices (StoreKit / Play Billing) override via
+ * `overrideSkuDisplayPrice(id, str)` from WalletApi.
+ *
+ * INSPECTOR WIRING:
+ *   Panel           — root Node (Widget-stretched to Canvas)
+ *   Close Button    — dismisses the panel
+ *   Title Label     — "充值宝石"
+ *   Subtitle Label  — "选择档位快速补充"
+ *   Balance Label   — "宝石: N" text at top
+ *   Mock Notice Lbl — "(测试模式)" hint (optional)
+ *   Sku Gem Labels  — 6 Labels for "{n} 宝石"
+ *   Sku Price Labels— 6 Labels for the currency-formatted price
+ *   Sku Buy Buttons — 6 Buttons ("购买" — inner Label auto-found)
+ *   Toast Node/Label — optional; fades in/out on success/failure
+ */
+
+import {
+    _decorator,
+    Component,
+    Node,
+    Label,
+    Button,
+    tween,
+    UIOpacity,
+    log,
+} from 'cc';
+
+import { t, subscribe as subscribeI18n } from '../core/i18n/I18n';
+import {
+    WALLET_SKUS,
+    fetchWallet,
+    topupWallet,
+    formatPrice,
+    WalletSku,
+} from '../core/WalletApi';
+
+const { ccclass, property } = _decorator;
+
+@ccclass('TopUpController')
+export class TopUpController extends Component {
+
+    // ---- Panel shell ----
+    @property({ type: Node, tooltip: '充值面板根节点（含 dim + 卡片）— 默认 active=false' })
+    panel: Node | null = null;
+
+    @property({ type: Button, tooltip: '关闭按钮' })
+    closeButton: Button | null = null;
+
+    @property({ type: Label, tooltip: '"充值宝石" 标题 Label' })
+    titleLabel: Label | null = null;
+
+    @property({ type: Label, tooltip: '"宝石: N" 顶部余额 Label' })
+    balanceLabel: Label | null = null;
+
+    @property({ type: Label, tooltip: '"（测试模式，无真实扣款）" 提示 Label（可选）' })
+    mockNoticeLabel: Label | null = null;
+
+    // ---- SKU grid (6 cards; parallel arrays, order matches WALLET_SKUS) ----
+    @property({ type: [Label],  tooltip: '6 个"{n} 宝石"Label（顺序：60/300/700/1500/4000/10000 宝石）' })
+    skuGemLabels: Label[] = [];
+
+    @property({ type: [Label],  tooltip: '6 个价格 Label（顺序同上）；formatPrice 输出带币种符号的字符串' })
+    skuPriceLabels: Label[] = [];
+
+    @property({ type: [Button], tooltip: '6 个"购买"按钮（顺序同上）；内部 Label 脚本自动 getComponentInChildren 找' })
+    skuBuyButtons: Button[] = [];
+
+    // ---- Toast (optional; fades in/out) ----
+    @property({ type: Node, tooltip: '一次性提示 toast 根节点（可空；有的话会用 tween 淡入淡出）' })
+    toastNode: Node | null = null;
+
+    @property({ type: Label, tooltip: 'Toast 内文字 Label' })
+    toastLabel: Label | null = null;
+
+    // ============================================================
+    //  Internal state
+    // ============================================================
+
+    private i18nUnsub: (() => void) | null = null;
+    private wired: boolean = false;
+
+    /** Cached balance so a re-open feels instant while the network
+     *  fetch runs in the background. */
+    private cachedBalance: number = 0;
+
+    // ============================================================
+    //  Lifecycle
+    // ============================================================
+
+    onLoad(): void {
+        if (this.panel)     this.panel.active = false;
+        if (this.toastNode) this.toastNode.active = false;
+    }
+
+    onDestroy(): void {
+        if (this.i18nUnsub) { this.i18nUnsub(); this.i18nUnsub = null; }
+    }
+
+    // ============================================================
+    //  Public API
+    // ============================================================
+
+    /** Show the top-up panel. Paints cached balance immediately, then
+     *  refreshes from server in the background. */
+    public show(): void {
+        if (!this.panel) {
+            log('[TopUp] panel not wired — cannot show');
+            return;
+        }
+        // Activate the tree FIRST — same lesson learned from
+        // LeaderboardController: some Cocos UI wiring (label writes,
+        // click handler registration on button children) is only
+        // guaranteed to take effect on the initial paint when the
+        // parent tree is already active. Doing wire+paint on an
+        // inactive tree causes the "first click shows nothing,
+        // second click shows the panel" symptom.
+        this.panel.active = true;
+        this.panel.setSiblingIndex(999);
+        this.wire();
+        this.paintBalance(this.cachedBalance);
+        // Background refresh; paint updates when it lands.
+        this.refreshBalance();
+    }
+
+    public hide(): void {
+        if (this.panel) this.panel.active = false;
+    }
+
+    public isOpen(): boolean {
+        return !!this.panel?.active;
+    }
+
+    /**
+     * Boot-time preload — called by LoadingController before the
+     * main menu shows. Runs the one-time wiring (i18n on static
+     * labels, click handlers on 6 buy buttons) and kicks off the
+     * initial wallet fetch so the balance is ready when the player
+     * first taps to open the panel.
+     *
+     * Idempotent: safe if it happens to run twice (wire() guards
+     * itself via `wired` flag; fetchWallet is a fresh network call
+     * each time, which is fine).
+     *
+     * Unlike LeaderboardController we don't need to flip the panel
+     * active/inactive here — TopUp has no dynamically-instantiated
+     * children whose Layout needs computing. The scene-authored
+     * 6 cards are laid out at author time by whatever Layout you
+     * put on the grid container.
+     */
+    public preload(): void {
+        if (!this.panel) {
+            log('[TopUp] preload skipped — panel not wired');
+            return;
+        }
+        // Same trick as LeaderboardController — briefly activate the
+        // panel so wire() has a live tree to hang labels + click
+        // handlers on. Loading overlay covers this so the flash is
+        // invisible. Restore prior state (typically inactive) after.
+        const wasActive = this.panel.active;
+        this.panel.active = true;
+        try {
+            this.wire();
+        } finally {
+            this.panel.active = wasActive;
+        }
+        // Prime the balance cache. If it fails (network down at boot),
+        // the cache stays at 0 and the panel opens with "宝石: 0" until
+        // the next fetch. First real show() triggers another fetch anyway.
+        fetchWallet()
+            .then((w) => {
+                this.cachedBalance = w.gems;
+                log(`[TopUp] preload — cached balance ${w.gems}`);
+            })
+            .catch((err) => {
+                console.warn('[TopUp] preload fetchWallet failed (non-fatal):', err.message);
+            });
+    }
+
+    // ============================================================
+    //  Setup
+    // ============================================================
+
+    private wire(): void {
+        if (this.wired) return;
+        this.wired = true;
+
+        // ---- Static labels ----
+        if (this.titleLabel)      this.titleLabel.string      = t('topup.title');
+        if (this.mockNoticeLabel) this.mockNoticeLabel.string = t('topup.mockNotice');
+
+        // ---- Close button ----
+        if (this.closeButton) {
+            this.closeButton.node.off('click');
+            this.closeButton.node.on('click', () => this.hide(), this);
+            const lab = this.closeButton.getComponentInChildren(Label);
+            if (lab) lab.string = t('topup.close');
+        }
+
+        // ---- SKU cards ----
+        this.paintSkuCards();
+
+        // ---- i18n retranslate on lang change ----
+        this.i18nUnsub = subscribeI18n(() => {
+            if (!this.panel?.active) return;
+            if (this.titleLabel)      this.titleLabel.string      = t('topup.title');
+            if (this.mockNoticeLabel) this.mockNoticeLabel.string = t('topup.mockNotice');
+            if (this.closeButton) {
+                const lab = this.closeButton.getComponentInChildren(Label);
+                if (lab) lab.string = t('topup.close');
+            }
+            this.paintBalance(this.cachedBalance);
+            this.paintSkuCards();
+        });
+    }
+
+    /** Populate the SKU cards from the catalog. Iterates up to the
+     *  shortest of (catalog, wired label array) so a partially-wired
+     *  editor build renders however many cards are ready. */
+    private paintSkuCards(): void {
+        const N = Math.min(
+            WALLET_SKUS.length,
+            this.skuGemLabels.length,
+            this.skuPriceLabels.length,
+            this.skuBuyButtons.length,
+        );
+        for (let i = 0; i < N; i++) {
+            const sku = WALLET_SKUS[i];
+            if (this.skuGemLabels[i]) {
+                // Just the number — no "宝石" suffix. If the visual
+                // needs a suffix (icon or unit label), it's authored
+                // as a sibling in the scene, not part of this string.
+                this.skuGemLabels[i].string = sku.gems.toString();
+            }
+            if (this.skuPriceLabels[i]) {
+                // formatPrice includes the currency symbol — the i18n
+                // template just passes it through, no hardcoded $ / ¥.
+                this.skuPriceLabels[i].string = t('topup.price', { price: formatPrice(sku) });
+            }
+            // Buy button + inner label — the label IS the price now
+            // (per design: player taps the price to buy).
+            if (this.skuBuyButtons[i]) {
+                const btn = this.skuBuyButtons[i];
+                btn.node.off('click');
+                // Capture SKU so the click handler knows what to buy.
+                btn.node.on('click', () => this.doPurchase(sku), this);
+                const lab = btn.getComponentInChildren(Label);
+                if (lab) lab.string = formatPrice(sku);
+            }
+        }
+    }
+
+    // ============================================================
+    //  Balance
+    // ============================================================
+
+    private paintBalance(gems: number): void {
+        if (this.balanceLabel) this.balanceLabel.string = t('topup.balance', { n: gems.toString() });
+    }
+
+    private refreshBalance(): void {
+        fetchWallet()
+            .then((w) => {
+                this.cachedBalance = w.gems;
+                this.paintBalance(w.gems);
+                log(`[TopUp] balance refreshed: ${w.gems} gems`);
+            })
+            .catch((err) => {
+                console.warn('[TopUp] fetchWallet failed:', err.message);
+            });
+    }
+
+    // ============================================================
+    //  Purchase (mock — direct, no confirm modal)
+    // ============================================================
+
+    private doPurchase(sku: WalletSku): void {
+        this.showToast(t('topup.processing'));
+        topupWallet(sku.id, 'mock')
+            .then((res) => {
+                this.cachedBalance = res.balance;
+                this.paintBalance(res.balance);
+                this.showToast(
+                    t('topup.successBody', { n: res.gemsAdded.toString() }),
+                );
+                log(`[TopUp] purchase ok — sku=${sku.id} +${res.gemsAdded} gems, balance=${res.balance}`);
+            })
+            .catch((err) => {
+                this.showToast(t('topup.failBody', { reason: err.message }));
+                console.warn('[TopUp] purchase failed:', err.message);
+            });
+    }
+
+    // ============================================================
+    //  Toast (transient message)
+    // ============================================================
+
+    /** Fade-in + auto-hide toast for success/error/in-flight messages.
+     *  Silently no-ops if the toast node isn't wired. */
+    private showToast(text: string): void {
+        if (!this.toastNode || !this.toastLabel) return;
+        this.toastLabel.string = text;
+        this.toastNode.active = true;
+        this.toastNode.setSiblingIndex(999);
+        let op = this.toastNode.getComponent(UIOpacity);
+        if (!op) op = this.toastNode.addComponent(UIOpacity);
+        op.opacity = 0;
+        tween<UIOpacity>(op)
+            .to(0.15, { opacity: 255 })
+            .delay(1.5)
+            .to(0.3, { opacity: 0 })
+            .call(() => { if (this.toastNode) this.toastNode.active = false; })
+            .start();
+    }
+}

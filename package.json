@@ -1,0 +1,22 @@
+{
+  "name": "tower-blocks",
+  "displayName": "TowerBlocks",
+  "uuid": "2dd99a07-353d-410f-8383-9241df818d33",
+  "creator": {
+    "version": "3.8.8"
+  },
+  "description": "Cylindrical block puzzle game — port from HTML/Canvas prototype.",
+  "author": "Dandy",
+  "license": "Proprietary",
+  "private": true,
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  },
+  "version": "3.8.8"
+}

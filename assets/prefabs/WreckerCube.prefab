@@ -1,0 +1,134 @@
+[
+  {
+    "__type__": "cc.Prefab",
+    "_name": "WreckerCube",
+    "_objFlags": 0,
+    "__editorExtras__": {},
+    "_native": "",
+    "data": {
+      "__id__": 1
+    },
+    "optimizationPolicy": 0,
+    "persistent": false
+  },
+  {
+    "__type__": "cc.Node",
+    "_name": "WreckerCube",
+    "_objFlags": 0,
+    "__editorExtras__": {},
+    "_parent": null,
+    "_children": [],
+    "_active": true,
+    "_components": [
+      {
+        "__id__": 2
+      }
+    ],
+    "_prefab": {
+      "__id__": 4
+    },
+    "_lpos": {
+      "__type__": "cc.Vec3",
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "_lrot": {
+      "__type__": "cc.Quat",
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "w": 1
+    },
+    "_lscale": {
+      "__type__": "cc.Vec3",
+      "x": 1,
+      "y": 1,
+      "z": 1
+    },
+    "_mobility": 0,
+    "_layer": 1073741824,
+    "_euler": {
+      "__type__": "cc.Vec3",
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "_id": ""
+  },
+  {
+    "__type__": "7bbb0QbtyRIFL+O8zU1tFh5",
+    "_name": "",
+    "_objFlags": 0,
+    "__editorExtras__": {},
+    "node": {
+      "__id__": 1
+    },
+    "_enabled": true,
+    "__prefab": {
+      "__id__": 3
+    },
+    "bodyPrefab": {
+      "__uuid__": "28ea9a34-d724-4ae4-b2f4-9d7db95f9749",
+      "__expectedType__": "cc.Prefab"
+    },
+    "bodyColor": {
+      "__type__": "cc.Color",
+      "r": 248,
+      "g": 99,
+      "b": 22,
+      "a": 255
+    },
+    "bodySize": 1,
+    "hammerHeadWidth": 0.5,
+    "hammerHeadHeight": 0.2,
+    "hammerHeadOffsetY": 0.18,
+    "hammerHeadColor": {
+      "__type__": "cc.Color",
+      "r": 190,
+      "g": 195,
+      "b": 205,
+      "a": 255
+    },
+    "hammerHandleWidth": 0.12,
+    "hammerHandleHeight": 0.42,
+    "hammerHandleOffsetY": -0.13,
+    "hammerHandleColor": {
+      "__type__": "cc.Color",
+      "r": 125,
+      "g": 80,
+      "b": 45,
+      "a": 255
+    },
+    "iconDepth": 0.4,
+    "starCount": 12,
+    "starSize": 0.05,
+    "starLifetimeMin": 0.05,
+    "starLifetimeMax": 0.2,
+    "starRadius": 0.65,
+    "starColor": {
+      "__type__": "cc.Color",
+      "r": 255,
+      "g": 255,
+      "b": 255,
+      "a": 255
+    },
+    "_id": ""
+  },
+  {
+    "__type__": "cc.CompPrefabInfo",
+    "fileId": "19f+GCPDVNZ6IKJp0l0YQh"
+  },
+  {
+    "__type__": "cc.PrefabInfo",
+    "root": {
+      "__id__": 1
+    },
+    "asset": {
+      "__id__": 0
+    },
+    "fileId": "99SqNPZ/NG45LUaieicS/T",
+    "instance": null,
+    "targetOverrides": null
+  }
+]

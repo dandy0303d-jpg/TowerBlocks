@@ -1,0 +1,221 @@
+/**
+ * Mortar (灰泥) magic item — fills every empty cell whose 4-neighbours
+ * (with cylinder column wrap) include at least one colored cell, with
+ * the fill colour matching the first colored neighbour found.
+ *
+ * Visually, the cells don't pop in instantly — they rain down hail
+ * style. Activation captures the fill plan against the board snapshot
+ * at trigger time and queues one colored drop per target. Each drop
+ * spawns at `y = -3 - random offset`, falls at `MORTAR_DROP_INTERVAL_PER_ROW_MS`
+ * and stamps its colour onto the board when its `y` reaches `targetR`.
+ *
+ * Reserved 'X' and hail 'H' cells are left alone — mortar only paints
+ * into truly-null cells.
+ */
+
+import {
+    COLS,
+    MORTAR_DROP_INTERVAL_PER_ROW_MS,
+    MORTAR_SPAWN_STAGGER_MS,
+    BAG_TYPES,
+    CellValue,
+} from '../Constants';
+import { BoardState, MortarDrop } from '../Types';
+import { isColoredCell } from '../Board';
+
+export interface MortarHooks {
+    /** Storm finished — caller resumes piece spawn. */
+    onFinish?(): void;
+    /** Fired when a drop lands. (Renderer FX hook, optional.) */
+    onPlacedCell?(r: number, c: number, color: CellValue): void;
+}
+
+export class MortarState {
+    /** While `true`, piece play is frozen and the rain is in flight. */
+    mode = false;
+
+    private queue:     Array<{ r: number; c: number; color: CellValue }> = [];
+    private falling:   MortarDrop[]                                       = [];
+    private spawnAccum = 0;
+
+    /** Caller computed the fill plan; this just queues it and flips the
+     *  storm flag. Returns true if anything was queued (caller can use
+     *  the return to decide whether to consume the item). */
+    activate(plan: Array<{ r: number; c: number; color: CellValue }>): boolean {
+        if (!plan.length) return false;
+        this.mode = true;
+        for (const t of plan) this.queue.push(t);
+        return true;
+    }
+
+    /** Frame tick. `dt` in ms. Returns the number of drops that landed. */
+    tick(dt: number, state: BoardState, hooks: MortarHooks = {}): number {
+        if (!this.mode) return 0;
+        let landed = 0;
+
+        // Stagger spawns so the wall builds up rather than dumping.
+        this.spawnAccum += dt;
+        while (this.spawnAccum >= MORTAR_SPAWN_STAGGER_MS && this.queue.length > 0) {
+            this.spawnAccum -= MORTAR_SPAWN_STAGGER_MS;
+            const t = this.queue.shift()!;
+            this.falling.push({
+                col:     t.c,
+                y:       -3 - Math.random() * 12,
+                targetR: t.r,
+                targetC: t.c,
+                color:   t.color,
+            });
+        }
+
+        for (let i = this.falling.length - 1; i >= 0; i--) {
+            const m = this.falling[i];
+            m.y += dt / MORTAR_DROP_INTERVAL_PER_ROW_MS;
+            if (m.y >= m.targetR) {
+                // Defence-in-depth: if the target cell got filled by
+                // some other path between activation and landing, just
+                // drop the drop silently rather than over-writing.
+                if (state.board[m.targetR] && state.board[m.targetR][m.targetC] === null) {
+                    state.board[m.targetR][m.targetC] = m.color;
+                    hooks.onPlacedCell?.(m.targetR, m.targetC, m.color);
+                }
+                this.falling.splice(i, 1);
+                landed++;
+            }
+        }
+
+        if (this.queue.length === 0 && this.falling.length === 0) {
+            this.finish(hooks);
+        }
+        return landed;
+    }
+
+    reset(): void {
+        this.mode = false;
+        this.queue.length = 0;
+        this.falling.length = 0;
+        this.spawnAccum = 0;
+    }
+
+    getFalling(): ReadonlyArray<MortarDrop> {
+        return this.falling;
+    }
+
+    private finish(hooks: MortarHooks): void {
+        this.mode = false;
+        this.queue.length = 0;
+        this.falling.length = 0;
+        this.spawnAccum = 0;
+        hooks.onFinish?.();
+    }
+}
+
+/** Pure plan computation — scan the board and decide where mortar
+ *  drops should land + what colour they'll be.
+ *
+ *  Rule (iterate from colored cells, applied to convergence):
+ *    For every coloured cell, if the cell DIRECTLY BELOW it is empty,
+ *    paint it with that colour. Repeat until no fills happen. With
+ *    iteration, each colored cell's column drips downward through
+ *    every empty cell underneath it until it hits something non-empty
+ *    (another colour, gray reserved, hail, or the bottom edge).
+ *
+ *  We simulate the fills on a board snapshot so freshly-painted cells
+ *  become the next pass's "drippers".
+ *
+ *  Exported so the caller can no-op the item activation when there's
+ *  nothing fillable. */
+export function computeMortarPlan(
+    state: BoardState,
+    reservedHeight: number = 0,
+): Array<{ r: number; c: number; color: CellValue }> {
+    const H = state.board.length;
+    // Bottom `reservedHeight` rows are the level's gray foundation — they
+    // may include null holes by design (task #42: "each reserved row = 23
+    // solids + 1 random hole"). Mortar must NOT drip into those holes,
+    // so we cap the writable region at `firstReservedRow`.
+    const firstReservedRow = reservedHeight > 0 ? H - reservedHeight : H;
+    // Mutable snapshot — fills here become the next pass's drippers.
+    const sim: (CellValue | null)[][] = state.board.map(row => row.slice());
+    const plan: Array<{ r: number; c: number; color: CellValue }> = [];
+
+    let added = true;
+    while (added) {
+        added = false;
+        for (let r = 0; r < H; r++) {
+            for (let c = 0; c < COLS; c++) {
+                const v = sim[r][c];
+                if (!isColoredCell(v)) continue;
+                if (r + 1 >= H) continue;
+                if (r + 1 >= firstReservedRow) continue;   // never drip INTO reserved
+                if (sim[r + 1][c] !== null) continue;      // below must be empty
+                plan.push({ r: r + 1, c, color: v as CellValue });
+                sim[r + 1][c] = v;
+                added = true;
+            }
+        }
+    }
+    return plan;
+}
+
+/** Bottom-up fill plan — fills empty cells starting from the BOTTOM
+ *  of the board upward, up to `cap` targets. Used both as
+ *    1. TOP-UP for {@link computeMortarPlan} whenever the drip rule
+ *       yields fewer than `cap` targets (e.g. only 2 gaps drip-eligible
+ *       but mortar15 wants 15), so mortar always delivers its promised
+ *       block count as long as the board has room; and
+ *    2. STANDALONE fallback when the drip rule finds nothing (fresh
+ *       endless board, flat foundation etc).
+ *
+ *  `exclude` lets the caller pass cells already targeted by the drip
+ *  plan so they aren't double-scheduled. Keys are "r,c" strings.
+ *
+ *  Colour pick: inherits the first colored cell found anywhere on the
+ *  board (consistency with the dripping rule's spirit). If the board
+ *  has zero colored cells, picks `fallbackColor` (defaults to a random
+ *  standard tetromino type via `rng`).
+ *
+ *  Both 'X' (gray reserved) and 'H' (hail) cells are treated as
+ *  occupied — fillable cells are the strict-null subset. */
+export function computeMortarFallbackPlan(
+    state: BoardState,
+    cap: number,
+    rng: () => number = Math.random,
+    fallbackColor?: CellValue,
+    exclude?: ReadonlySet<string>,
+    reservedHeight: number = 0,
+): Array<{ r: number; c: number; color: CellValue }> {
+    if (cap <= 0) return [];
+    const H = state.board.length;
+    // Bottom `reservedHeight` rows are the level's gray foundation. In
+    // level mode those rows may contain designer-authored null holes;
+    // mortar must never fill them, so we start the scan just ABOVE the
+    // reserved zone rather than at the true bottom.
+    const scanStartRow = reservedHeight > 0
+        ? Math.max(0, H - reservedHeight - 1)
+        : H - 1;
+    // Pick the fill colour: first colored cell on the board, otherwise
+    // a random standard tetromino type (so the mortar still does
+    // something visible when the board is completely empty).
+    let color: CellValue | null = null;
+    for (let r = 0; r < H && color === null; r++) {
+        for (let c = 0; c < COLS; c++) {
+            if (isColoredCell(state.board[r][c])) {
+                color = state.board[r][c];
+                break;
+            }
+        }
+    }
+    if (color === null) {
+        color = fallbackColor
+            ?? (BAG_TYPES[Math.floor(rng() * BAG_TYPES.length)] as CellValue);
+    }
+    const plan: Array<{ r: number; c: number; color: CellValue }> = [];
+    for (let r = scanStartRow; r >= 0 && plan.length < cap; r--) {
+        for (let c = 0; c < COLS && plan.length < cap; c++) {
+            if (state.board[r][c] !== null) continue;
+            if (exclude && exclude.has(`${r},${c}`)) continue;
+            plan.push({ r, c, color });
+        }
+    }
+    return plan;
+}

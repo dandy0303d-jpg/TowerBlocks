@@ -1,0 +1,2206 @@
+/**
+ * Top-level game state and main loop. Owns every subsystem — board, bag,
+ * inventory, history, hourglass/blizzard timers, hail/rocket animation
+ * machines — and wires their hooks together so a single `tick(dt)` call
+ * drives the whole game.
+ *
+ * The render and input layers talk to a `GameState` instance via two
+ * interfaces:
+ *   - Inputs:  `hardDrop()`, `softDrop()`, `tryRotate(dir)`, `moveCylinder(dir)`,
+ *              `hold()`, `useItem(key)`, `applyShapeshifterPick(type)`.
+ *   - Outputs: optional `GameRenderHooks` passed to the constructor — every
+ *              relevant event (lock, score, win, particle, …) fires as a hook
+ *              call so the renderer can react without polling.
+ */
+
+import {
+    COLS,
+    ROWS,
+    SHAPES,
+    BASE_DROP_INTERVAL_MS,
+    LOCK_DELAY_MS,
+    LOCK_RESET_LIMIT,
+    METEOR_DROP_INTERVAL,
+    PieceType,
+    CellValue,
+    MagicItemKey,
+    ENERGY_FULL_THRESHOLD,
+    ENERGY_PICKER_CHOICE_COUNT,
+    ENERGY_PICKER_POOL,
+    MORTAR_TIER_COUNT,
+    METEOR_TIER_COUNT,
+    METEOR_PIECES,
+    GATLING_TIER_COUNT,
+    ROCKET_TIER_COUNT,
+    HOURGLASS_DURATIONS_MS,
+    ENDLESS_FATE_MILESTONE,
+} from './Constants';
+import {
+    BoardState,
+    Piece,
+    BombKind,
+    BoomLevel,
+    HistorySnapshot,
+    Inventory,
+    LevelData,
+} from './Types';
+import {
+    emptyEndlessBoardState,
+    emptyLevelBoardState,
+    isColoredCell,
+    wrap,
+} from './Board';
+import { makeEmptyBombs, makeEmptyBooms, makeEmptyWreckers, injectRandomMagicProp } from './Bombs';
+import { collides, rotateBombs, rotateBooms, rotateWreckers } from './Pieces';
+import { Bag } from './Bag';
+import { applyColumnGravity, applyDiagonalGravity } from './ColumnGravity';
+import { clearLines, ClearLinesHooks } from './ClearLines';
+import { detonateBombs, DetonateHooks } from './Detonate';
+import { spawn, lock, gatherLevelBombs, gatherAdjacentBombs, gatherAdjacentBooms, gatherAdjacentWreckers } from './PieceOps';
+import { activateBoom, processClearedBooms } from './Items/Boom';
+import { Clock, realClock } from './Clock';
+import { makeEmptyInventory, grantRandomItem, consumeItem } from './Inventory';
+import { HourglassState } from './Items/Hourglass';
+import { BlizzardState } from './Items/Blizzard';
+import { activateChest } from './Items/Chest';
+import { activateExcavator } from './Items/Excavator';
+import { MortarState, computeMortarPlan, computeMortarFallbackPlan } from './Items/Mortar';
+import { activateWrecker, pickWreckerPlan, applyWreckerPlan, WreckerPlan } from './Items/Wrecker';
+import { activateMeteor } from './Items/Meteor';
+import { HailState } from './Items/Hail';
+import { RocketState } from './Items/Rocket';
+import { GatlingState } from './Items/Gatling';
+import { RewindHistory } from './Items/Rewind';
+import { applyShapeshifterPick } from './Items/Shapeshifter';
+import {
+    convertReservedZoneToGray,
+    checkLevelWin,
+    checkLevelTooTall,
+    LevelChestProgress,
+} from './Modes/LevelMode';
+import {
+    convertCompleteRowsToGray,
+    checkTrappedHole,
+    manageEndlessBoard,
+    peelGrayAboveFoundation,
+    EndlessChestProgress,
+} from './Modes/EndlessMode';
+import { loadLevel } from './LevelData';
+
+export type GameMode = 'level' | 'endless' | 'collect' | 'blind';
+
+/** Endless-like modes share stacking mechanics: no level task, no
+ *  collect goals, grays cap via `manageEndlessBoard`, fail on
+ *  trapped-hole / stack-too-tall. `blind` is a variant of endless
+ *  (tower hidden, no fate modal, no embed props). */
+export function isEndlessLike(m: GameMode): boolean {
+    return m === 'endless' || m === 'blind';
+}
+
+/** Per-color collection target for `collect` mode levels. */
+export interface CollectGoal {
+    color: import('./Constants').PieceType;
+    count: number;
+}
+export type FailureReason = 1 | 2;   // 1 = sealed hole; 2 = stack too tall
+
+export interface GameRenderHooks {
+    onPieceLand?(piece: Piece): void;
+    onPieceLock?(piece: Piece): void;
+    onPartialShatter?(r: number, content: ReadonlyArray<CellValue | null>): void;
+    /** Fires after any clearing operation with the list of cells that
+     *  diagonal-gravity moved. Each entry has {fromR, toR, c}; the
+     *  renderer plays an animated fall between fromR and toR instead
+     *  of teleporting the cube to its new row. */
+    onCellsFell?(moves: ReadonlyArray<import('./ColumnGravity').CellFallMove>): void;
+    /** Wrecker fired — these cells are about to be demolished. The
+     *  renderer plays a pre-pulse flash on them; once finished it calls
+     *  `commitPendingWreckerPlans` on the GameState to apply the clear. */
+    onWreckerPrePulse?(picks: ReadonlyArray<{ r: number; c: number; color: CellValue }>): void;
+    /** Wrecker plain sweep — fired in place of `onPartialShatter` so the
+     *  renderer plays a PER-CELL shatter at each pick instead of a
+     *  row-wide flash. */
+    onWreckerPicksShatter?(picks: ReadonlyArray<{ r: number; c: number; color: CellValue }>): void;
+    /** Rocket bullet 1:1-cancelled a cell — renderer plays a single-cell
+     *  shatter FX at (r,c). Same payload shape as the wrecker hook so
+     *  the renderer can route both through the same code path. */
+    onRocketHit?(picks: ReadonlyArray<{ r: number; c: number; color: CellValue }>): void;
+    /** Gatling bullet 1:1-cancelled a cell — see `onRocketHit`. */
+    onGatlingHit?(picks: ReadonlyArray<{ r: number; c: number; color: CellValue }>): void;
+    /** Fired the moment a rocket / gatling projectile is spawned.
+     *  Renderer uses these to play the launch SFX. */
+    onRocketFire?(col: number): void;
+    onGatlingFire?(col: number): void;
+    /** Fired every time a DOT (meteor rain) piece spawns as the
+     *  active piece. Renderer plays the launch SFX per DOT so each
+     *  falling meteor gets its own sound (matches rocket / gatling). */
+    onMeteorFire?(): void;
+    /** Fired every time a mortar (灰泥) drop lands + stamps its
+     *  colour onto the board. Renderer plays a per-drop lock SFX. */
+    onMortarLanded?(r: number, c: number, color: CellValue): void;
+    /** Endless / blind — one or more 24-col rows just got fully
+     *  filled + converted to gray. Fired ONCE per lock, with the
+     *  count of newly-gray rows. Renderer plays the same line-clear
+     *  audio cue as level mode gets for its shatter clears. */
+    onEndlessRowsFilled?(count: number): void;
+    /** Fires once per ROW cleared by a row bomb (`row1`/`row2`/`row3`).
+     *  Used by the renderer to spawn the rainbow-ribbon sweep FX. */
+    onRowBombDetonate?(r: number): void;
+    /** Fires once per COLUMN cleared by a column bomb (`col1`..`col3`).
+     *  `r` is the anchor row of the bomb that triggered the column —
+     *  use it as a Y reference for column-blast visuals. */
+    onColBombDetonate?(r: number, c: number): void;
+    /** Fires when a BOOM (diamond range-blast) item activates. `r`/`c`
+     *  is the centre of the blast, `level` is the radius (1/2/3), and
+     *  `cleared` is the list of cells the engine just wiped — handy for
+     *  the renderer to layer a per-cell flash on top. */
+    onBoomTriggered?(r: number, c: number, level: 1 | 2 | 3,
+        cleared: ReadonlyArray<{ r: number; c: number }>): void;
+    onClearSound?(intensity: number): void;
+    onItemGranted?(key: MagicItemKey): void;
+    onScoreChanged?(score: number): void;
+    onLinesChanged?(lines: number): void;
+    onLevelChanged?(level: number): void;
+    onInventoryChanged?(inventory: Readonly<Inventory>): void;
+    onNextChanged?(type: PieceType): void;
+    onHoldChanged?(type: PieceType | null): void;
+    onGameOver?(reason: FailureReason | null): void;
+    onLevelWin?(): void;
+    onMeteorActivated?(): void;
+    onBlizzardActivated?(): void;
+    onHailActivated?(): void;
+    onRocketActivated?(): void;
+    onGatlingActivated?(): void;
+    onMortarActivated?(): void;
+    onWreckerActivated?(): void;
+    onShapeshifterRequest?(apply: (type: PieceType) => void): void;
+    /** Collect-mode progress update — fires whenever a cleared cell of a
+     *  goal colour increments the running total. `progress` is the live
+     *  per-colour collected count, `goals` is the per-colour target. */
+    onCollectProgress?(
+        progress: Readonly<Partial<Record<PieceType, number>>>,
+        goals: ReadonlyArray<{ color: PieceType; count: number }>,
+    ): void;
+    onRotate?(): void;
+
+    // ---------- Energy bar / picker reward ----------
+    /** Fires whenever the energy charge changes (after a natural clear).
+     *  `max = ENERGY_FULL_THRESHOLD`. UI uses this to animate the bar. */
+    onEnergyChanged?(charge: number, max: number): void;
+    /** Fires when the bar fills up and the 2-choice picker should appear.
+     *  `choices` contains exactly `ENERGY_PICKER_CHOICE_COUNT` magic-item
+     *  keys. UI shows the picker overlay. Game state is "frozen" until the
+     *  player calls `pickEnergyReward` or `refreshEnergyPicker`. */
+    onEnergyPickerOpen?(choices: MagicItemKey[]): void;
+    /** Fires when the picker overlay should close (after pick OR cancel). */
+    onEnergyPickerClose?(): void;
+    /** Fires when the player picked an option and it activated. */
+    onEnergyPickerPicked?(key: MagicItemKey): void;
+    /** Fires when the endless-mode cumulative-rows counter crosses a
+     *  new ENDLESS_FATE_MILESTONE multiple. `milestone` = 1, 2, 3, ...
+     *  Renderer plays a celebration FX; independent of the fate modal
+     *  (which is level/endless only). Blind mode ALSO fires this so the
+     *  player gets audible/textual milestone feedback even though the
+     *  tower is hidden. */
+    onEndlessMilestone?(milestone: number, cumulative: number): void;
+}
+
+export interface GameStateOpts {
+    hooks?:  GameRenderHooks;
+    clock?:  Clock;
+    rng?:    () => number;
+}
+
+export class GameState {
+    // ---------- Subsystems ----------
+    state:              BoardState;
+    inventory:          Inventory;
+    readonly bag:       Bag;
+    readonly hourglass: HourglassState;
+    readonly blizzard:  BlizzardState;
+    readonly hail:      HailState;
+    readonly rocket:    RocketState;
+    readonly gatling:   GatlingState;
+    readonly mortar:    MortarState;
+    readonly history:   RewindHistory;
+    readonly levelProgress:   LevelChestProgress;
+    readonly endlessProgress: EndlessChestProgress;
+
+    // ---------- Mode / lifecycle ----------
+    mode:        GameMode = 'endless';
+    running:     boolean  = false;
+    paused:      boolean  = false;
+    gameOver:    boolean  = false;
+    failureReason: FailureReason | null = null;
+
+    currentLevel:        LevelData | null = null;
+    levelReservedHeight: number = 0;
+    levelTaskHeight:     number = 0;
+
+    // ---------- Collect mode ----------
+    /** Per-colour collection goals copied from the level data. Empty
+     *  when not running a collect-mode level. */
+    collectGoals:    Array<{ color: PieceType; count: number }> = [];
+    /** Live per-colour tally of how many of each goal colour the player
+     *  has cleared so far. Compared against `collectGoals[*].count` to
+     *  decide the win condition. */
+    collectProgress: Partial<Record<PieceType, number>> = {};
+
+    // ---------- Energy bar (picker reward) ----------
+    /** Cumulative naturally-cleared rows since the last picker activation.
+     *  Caps at `ENERGY_FULL_THRESHOLD`. Driven by `naturalClearsThisLock`. */
+    energyCharge: number = 0;
+    /** Picker state. While `active`, the game tick freezes — the player must
+     *  call `pickEnergyReward(key)` or `refreshEnergyPicker()` to resume. */
+    energyPicker: { active: boolean; choices: MagicItemKey[] } = { active: false, choices: [] };
+    /** Modal-pause flag — set to true while the shapeshifter picker (or
+     *  any other blocking overlay that doesn't route through
+     *  `energyPicker.active`) is open. Gates `tick` and `canAcceptInput`
+     *  just like `paused` / `energyPicker.active`, but WITHOUT triggering
+     *  the pause-UI overlay path. */
+    modalPaused: boolean = false;
+
+    /** True while the new-player operations tutorial is running. Gates
+     *  a bunch of level-mode side effects (level win check, embed-prop
+     *  rewards, energy charging, fate modal, fail on stack too tall)
+     *  so the tutorial's dummy level stays inert. GameController
+     *  sets this via `startTutorial()`. */
+    tutorialActive: boolean = false;
+
+    // ---------- Active piece ----------
+    current:  Piece | null = null;
+    nextType: PieceType    = 'T';
+    /** Shape matrix for the queued next piece. `null` means "use the
+     *  default `SHAPES[nextType]`" — set to a real matrix only when the
+     *  bag draws the level's custom-shape entry. */
+    nextShape: number[][] | null = null;
+    nextBombsShape: (BombKind | null)[][] = makeEmptyBombs(SHAPES.T);
+    /** Parallel boom (range-blast) embed grid for the queued next piece. */
+    nextBoomsShape: (BoomLevel | null)[][] = makeEmptyBooms(SHAPES.T);
+    /** Wrecker (rare random-sweep) embed grid for the queued next piece.
+     *  Mirrors `nextBombsShape` / `nextBoomsShape` but stores a boolean
+     *  marker per cell — only one cell per piece is ever set. */
+    nextWreckersShape: (true | null)[][] = makeEmptyWreckers(SHAPES.T);
+    holdType: PieceType | null = null;
+    /** Parallel storage for the held piece's hand-authored shape. Only
+     *  populated when the held piece carried `isCustomShape = true`
+     *  (fate / level-editor custom). Null for standard tetrominoes,
+     *  which restore from `SHAPES[holdType]` as usual. */
+    holdShape: number[][] | null = null;
+    canHold:  boolean = true;
+    lastSpawnCenterCol: number | null = null;
+
+    // ---------- Stats ----------
+    score:       number = 0;
+    lines:       number = 0;
+    level:       number = 1;    // speed tier
+    towerHeight: number = 0;
+    best:        number = 0;
+
+    /** How many endless-mode fate-piece milestones (each every
+     *  ENDLESS_FATE_MILESTONE cumulative rows) have already popped the
+     *  fate modal this run. Compared against
+     *  `endlessProgress.cumulative / interval` after every lock to
+     *  decide whether to queue another modal. */
+    private endlessFateMilestonesPopped: number = 0;
+
+    /** Highest cumulative-rows value the celebration FX has already
+     *  fired for this run. Celebration fires EVERY layer — this is a
+     *  latest-cum watermark, not a milestone count. Tracked separately
+     *  from `endlessFateMilestonesPopped` because the celebration also
+     *  fires in blind mode (where the fate modal is skipped). */
+    private endlessCelebrationsFired: number = 0;
+
+    /** Set by the last `clearLines` call inside the lock pipeline —
+     *  read a few lines later for the embed-prop reward decision. Just
+     *  a temp field so we don't have to plumb the value through
+     *  multiple call sites. */
+    private _lastClearLinesFullyCleared: number = 0;
+    /** Set when an endless milestone fires. The renderer polls
+     *  `hasPendingFateModal()` and shows the modal once FX have
+     *  settled. The flag is cleared by `commitPendingFateModal`. */
+    pendingFateModal: boolean = false;
+
+    /** Type picked by the shapeshifter modal when the modal was opened
+     *  BEFORE the next piece had spawned (typical picker flow: energy
+     *  fills → spawn deferred → picker opens → player picks
+     *  shapeshifter → picks a type). `spawnNext` consumes this and
+     *  applies the recolour/reshape on the freshly-spawned piece. */
+    pendingShapeshifterType: PieceType | null = null;
+
+    // ---------- Timing ----------
+    dropAccum:   number  = 0;
+    dropInterval: number = BASE_DROP_INTERVAL_MS;
+    isGrounded:  boolean = false;
+    lockDelay:   number  = 0;
+    lockResets:  number  = 0;
+
+    /** Deferred spawn flag — set by `lockAndNext` (post-clear) and
+     *  storm-finish hooks instead of calling `spawnNext()` directly.
+     *  The renderer (GameController) polls `hasPendingSpawn()` each
+     *  frame and calls `commitPendingSpawn()` once every active FX
+     *  (rainbow flash, sparkle stars, pre-pulse, ribbon detonation,
+     *  shatter dust) has finished playing — so the next piece doesn't
+     *  pop into a still-celebrating scene. */
+    private pendingSpawn: boolean = false;
+    /** Deferred picker-open flag — same idea as `pendingSpawn`. Set
+     *  by `lockAndNext` when the bar fills, drained by the renderer
+     *  once the line-clear / detonation FX finishes. Without this,
+     *  the picker would pop up while shatter shards are still flying
+     *  and (worse) while the just-locked piece's stamped cells are
+     *  still visible at the top — looking like a fresh spawn. */
+    private pendingPickerOpen: boolean = false;
+
+    /** Rows cleared by DOT pieces during an in-flight meteor shower
+     *  while the NEXT piece is also a DOT. The embed-prop injection
+     *  fires on the FIRST lock where `nextType !== 'DOT'` (the last
+     *  DOT of the shower) using `this lock's clears + accumulator`.
+     *  Without this counter every DOT-cleared row during the shower
+     *  was silently dropped from the reward calculation. */
+    private meteorAccumulatedClears: number = 0;
+
+    /** Wrecker × Boom combo cache. Populated at the start of the bomb/boom
+     *  pipeline (in `lockAndNext` and `processMortarClears`) BEFORE any
+     *  adjacent boom detonates. The boom firing-loop wipes its own
+     *  `boardBooms` entry, so without this snapshot the wrecker activation
+     *  later in the chain would see an empty cell and silently degrade
+     *  the combo to a plain 10-cell sweep. Keyed by `${r}-${c}` (the
+     *  wrecker's pre-fire position). Cleared at the top of each pipeline run. */
+    private wreckerBoomComboCache: Map<string, 1 | 2 | 3> = new Map();
+    /** Wrecker × directional-bomb combo cache. Same snapshot pattern as
+     *  `wreckerBoomComboCache` — captured before the bomb pipeline fires
+     *  so the wrecker can still see "I had a rowN/colN neighbour" even
+     *  though that bomb has since detonated and been wiped. Stores just
+     *  the axis (row vs col); the bomb's tier is intentionally
+     *  discarded — every wrecker pick fires a level-1 blast on the
+     *  captured axis. */
+    private wreckerBombComboCache: Map<string, 'row' | 'col'> = new Map();
+    /** Wrecker activations that picked their cells but haven't committed
+     *  the clear yet. Filled by `triggerWreckerFromBoard` (phase 1) and
+     *  drained by `commitPendingWreckerPlans` (phase 2) after the renderer
+     *  finishes its pre-pulse flash. */
+    private pendingWreckerPlans: WreckerPlan[] = [];
+
+    // ---------- External wiring ----------
+    private readonly hooks: GameRenderHooks;
+    private readonly rng:   () => number;
+
+    constructor(opts: GameStateOpts = {}) {
+        this.hooks = opts.hooks ?? {};
+        this.rng   = opts.rng ?? Math.random;
+        const clock = opts.clock ?? realClock;
+
+        this.state = emptyEndlessBoardState();
+        this.inventory = makeEmptyInventory();
+        this.bag       = new Bag(this.rng);
+        this.hourglass = new HourglassState(clock);
+        this.blizzard  = new BlizzardState(clock);
+        this.hail      = new HailState();
+        this.rocket    = new RocketState(this.rng);
+        this.gatling   = new GatlingState(this.rng);
+        this.mortar    = new MortarState();
+        this.history   = new RewindHistory();
+        this.levelProgress   = new LevelChestProgress();
+        this.endlessProgress = new EndlessChestProgress();
+    }
+
+    // ============================================================
+    //  Lifecycle
+    // ============================================================
+
+    newGame(customPiece?: { baseType: PieceType; shape: number[][] }): void {
+        this.mode = 'endless';
+        this.currentLevel = null;
+        this.levelReservedHeight = 0;
+        this.levelTaskHeight = 0;
+        this.collectGoals = [];
+        this.collectProgress = {};
+        this.state = emptyEndlessBoardState();
+        // Endless starts with an EMPTY board — no prefilled gray
+        // foundation. (Was a 4-row X prefill; removed per UX request
+        // so the tower begins clean and gray only grows from actual
+        // player fills.) The `already-gray subtraction` in
+        // `lockAndNext` still holds up: with no prefill, `alreadyGray`
+        // is simply 0 at game start and grows organically as fills
+        // convert rows.
+        // Inline the resetCommon work so we can register the custom-
+        // shape piece (本命方块) BETWEEN bag.reset() and bag.refill().
+        // Without this the first refill draws from the standard 7
+        // tetrominoes, and the custom piece would only appear once the
+        // bag exhausts and re-fills.
+        this.reset();
+        if (customPiece) {
+            this.bag.setCustomShape({ type: customPiece.baseType, shape: customPiece.shape });
+        }
+        this.bag.refill();
+        const d = this.bag.pick();
+        this.nextType  = d.type;
+        this.nextShape = d.shape;
+        this.nextBombsShape    = makeEmptyBombs(this.nextShape ?? SHAPES[this.nextType]);
+        this.nextBoomsShape    = makeEmptyBooms(this.nextShape ?? SHAPES[this.nextType]);
+        this.nextWreckersShape = makeEmptyWreckers(this.nextShape ?? SHAPES[this.nextType]);
+        this.startRunning();
+    }
+
+    /** Blind mode — endless mechanics minus the "spice":
+     *   - No fate piece (skips bag.setCustomShape, fate modal never fires)
+     *   - No embed props on the NEXT piece (endless already skips this;
+     *     blind reuses the same check via `isEndlessLike`)
+     *   - Tower rendering hidden (handled at the render layer; game state
+     *     stays fully accurate so the player's stacking is real)
+     *  Same failure conditions as endless (trapped hole / stack too tall)
+     *  and the same gray-cap behaviour (`manageEndlessBoard`). */
+    newBlindGame(): void {
+        this.mode = 'blind';
+        this.currentLevel = null;
+        this.levelReservedHeight = 0;
+        this.levelTaskHeight = 0;
+        this.collectGoals = [];
+        this.collectProgress = {};
+        this.state = emptyEndlessBoardState();
+        // Blind starts EMPTY — no prefilled gray foundation. Paired
+        // with the `peelGrayAboveFoundation(state, 0)` call in
+        // `lockAndNext` (was `..., 4)`) that keeps the total gray
+        // count locked at 0, so completed rows collapse Tetris-style:
+        // a row that becomes fully filled is converted to gray, then
+        // immediately peeled, dropping the player's stack by one row.
+        this.reset();
+        // No customPiece registration — blind mode plays with the
+        // standard 7 tetrominoes only.
+        this.bag.refill();
+        const d = this.bag.pick();
+        this.nextType  = d.type;
+        this.nextShape = d.shape;
+        this.nextBombsShape    = makeEmptyBombs(this.nextShape ?? SHAPES[this.nextType]);
+        this.nextBoomsShape    = makeEmptyBooms(this.nextShape ?? SHAPES[this.nextType]);
+        this.nextWreckersShape = makeEmptyWreckers(this.nextShape ?? SHAPES[this.nextType]);
+        this.startRunning();
+    }
+
+    startLevel(lvl: LevelData): void {
+        const loaded = loadLevel(lvl);
+        // Collect-mode levels carry a `collectGoals` array — they boot
+        // into the dedicated collect mode (win = goals met, not the
+        // clear-task-zone check).
+        const goals = (lvl.collectGoals ?? []).filter(g => g && g.color && g.count > 0);
+        this.mode = goals.length > 0 ? 'collect' : 'level';
+        this.collectGoals    = goals.map(g => ({ color: g.color, count: g.count }));
+        this.collectProgress = {};
+        this.currentLevel = lvl;
+        this.levelTaskHeight     = loaded.taskHeight;
+        this.levelReservedHeight = loaded.reservedHeight;
+        this.state = loaded.state;
+        // `resetCommon` would re-shuffle the bag immediately, so we
+        // inline its work here and register the level's optional
+        // custom-shape piece BETWEEN bag.reset() and bag.refill() —
+        // otherwise the custom entry would be wiped before the first
+        // refill ever sees it.
+        this.reset();
+        if (loaded.customPiece) {
+            this.bag.setCustomShape({
+                type:  loaded.customPiece.baseType,
+                shape: loaded.customPiece.shape,
+            });
+        }
+        this.bag.refill();
+        // Tutorial: force the FIRST spawn to be the registered custom
+        // piece (the tutorial's "practice" I) so the tap-to-morph demo
+        // has a piece with visible rotation instead of a random O.
+        // Non-tutorial paths use the normal shuffled draw.
+        const d = this.tutorialActive
+            ? this.bag.pickCustomFirst()
+            : this.bag.pick();
+        this.nextType = d.type;
+        this.nextShape = d.shape;
+        this.nextBombsShape = makeEmptyBombs(this.nextShape ?? SHAPES[this.nextType]);
+        this.nextBoomsShape = makeEmptyBooms(this.nextShape ?? SHAPES[this.nextType]);
+        this.nextWreckersShape = makeEmptyWreckers(this.nextShape ?? SHAPES[this.nextType]);
+        // Seed starting items.
+        for (const k of Object.keys(loaded.startingItems) as MagicItemKey[]) {
+            const v = loaded.startingItems[k];
+            if (v) this.inventory[k] = v;
+        }
+        this.hooks.onInventoryChanged?.(this.inventory);
+        this.startRunning();
+    }
+
+    togglePause(): void {
+        if (!this.running || this.gameOver) return;
+        this.paused = !this.paused;
+    }
+
+    reset(): void {
+        this.running = false;
+        this.paused = false;
+        this.modalPaused = false;
+        this.gameOver = false;
+        this.failureReason = null;
+        this.current = null;
+        this.holdType = null;
+        this.holdShape = null;
+        this.canHold = true;
+        this.score = 0;
+        this.lines = 0;
+        this.level = 1;
+        this.towerHeight = 0;
+        this.dropAccum = 0;
+        this.dropInterval = BASE_DROP_INTERVAL_MS;
+        this.isGrounded = false;
+        this.lockDelay = 0;
+        this.lockResets = 0;
+        this.lastSpawnCenterCol = null;
+        this.pendingSpawn = false;
+        this.pendingPickerOpen = false;
+        this.pendingFateModal = false;
+        this.pendingShapeshifterType = null;
+        this.endlessFateMilestonesPopped = 0;
+        this.endlessCelebrationsFired = 0;
+        this.meteorAccumulatedClears = 0;
+        this.bag.reset();
+        this.hourglass.reset();
+        this.blizzard.reset();
+        this.hail.reset();
+        this.rocket.reset();
+        this.gatling.reset();
+        this.mortar.reset();
+        this.pendingWreckerPlans = [];
+        this.history.reset();
+        this.levelProgress.reset();
+        this.endlessProgress.reset();
+        this.inventory = makeEmptyInventory();
+        // Energy bar resets to empty + picker closed.
+        this.energyCharge = 0;
+        this.energyPicker.active = false;
+        this.energyPicker.choices = [];
+        this.hooks.onEnergyChanged?.(0, ENERGY_FULL_THRESHOLD);
+        this.hooks.onEnergyPickerClose?.();
+    }
+
+    private resetCommon(): void {
+        this.reset();
+        this.bag.refill();
+        const d = this.bag.pick();
+        this.nextType = d.type;
+        this.nextShape = d.shape;
+        this.nextBombsShape = makeEmptyBombs(this.nextShape ?? SHAPES[this.nextType]);
+        this.nextBoomsShape = makeEmptyBooms(this.nextShape ?? SHAPES[this.nextType]);
+        this.nextWreckersShape = makeEmptyWreckers(this.nextShape ?? SHAPES[this.nextType]);
+    }
+
+    private startRunning(): void {
+        this.running = true;
+        this.spawnNext();
+    }
+
+    /** Spawn the next piece using `nextType` + `nextBombsShape`. */
+    private spawnNext(): void {
+        this.current = spawn(this.nextType, this.lastSpawnCenterCol, this.nextBombsShape, this.nextShape, this.nextBoomsShape, this.nextWreckersShape);
+        // Consume any shapeshifter pick that came in while there was
+        // no live piece (the energy picker path deferred spawn until
+        // FX cleared). Applying here means the just-spawned piece is
+        // the one the transformation lands on.
+        if (this.pendingShapeshifterType && this.current) {
+            this.current = applyShapeshifterPick(this.current, this.pendingShapeshifterType);
+            this.pendingShapeshifterType = null;
+        }
+        // Meteor shower per-DOT SFX — fire once per DOT spawn (not
+        // once at activation) so each falling meteor gets its own
+        // launch sound, matching the rocket / gatling pattern.
+        if (this.current && this.current.type === 'DOT') {
+            this.hooks.onMeteorFire?.();
+        }
+        const d = this.bag.pick();
+        this.nextType = d.type;
+        this.nextShape = d.shape;
+        this.nextBombsShape = makeEmptyBombs(this.nextShape ?? SHAPES[this.nextType]);
+        this.nextBoomsShape = makeEmptyBooms(this.nextShape ?? SHAPES[this.nextType]);
+        this.nextWreckersShape = makeEmptyWreckers(this.nextShape ?? SHAPES[this.nextType]);
+        this.isGrounded = false;
+        this.lockDelay = 0;
+        this.lockResets = 0;
+        this.hooks.onNextChanged?.(this.nextType);
+    }
+
+    // ============================================================
+    //  Main tick
+    // ============================================================
+
+    tick(dt: number): void {
+        if (!this.running || this.paused || this.gameOver) return;
+
+        // Energy picker freezes the game until the player picks.
+        if (this.energyPicker.active) return;
+        // Shapeshifter picker (and any other blocking modal that flips
+        // modalPaused) — same treatment.
+        if (this.modalPaused) return;
+
+        // Hail/rocket/gatling/mortar storms freeze normal piece movement.
+        if (this.hail.mode || this.rocket.mode || this.gatling.mode || this.mortar.mode) {
+            if (this.hail.mode)    this.hail.tick(dt, this.state, this.makeStormHooks());
+            if (this.rocket.mode)  this.rocket.tick(dt, this.state, this.computeReservedTop(), {
+                ...this.makeStormHooks(),
+                onHit:  (r, c, color) => this.hooks.onRocketHit?.([{ r, c, color }]),
+                onFire: (col) => this.hooks.onRocketFire?.(col),
+            });
+            if (this.gatling.mode) this.gatling.tick(
+                dt,
+                this.state,
+                this.computeReservedTop(),
+                // Live target column: the camera-facing column at this
+                // very tick. Updated by `rotate()` so rotating the
+                // tower mid-storm redirects new+in-flight bullets onto
+                // whatever's now in front.
+                this.lastSpawnCenterCol ?? 0,
+                {
+                    ...this.makeStormHooks(),
+                    onHit:  (r, c, color) => this.hooks.onGatlingHit?.([{ r, c, color }]),
+                    onFire: (col) => this.hooks.onGatlingFire?.(col),
+                },
+            );
+            if (this.mortar.mode)  this.mortar.tick(dt, this.state, this.makeMortarHooks());
+            // Mid-storm win check: if the gatling / rocket / mortar
+            // cleared the last colored cell, fire the level-win popup
+            // RIGHT NOW instead of waiting for every pending bullet /
+            // drop to play through. Aborts the active storm(s) so the
+            // remaining projectiles don't keep raining over a finished
+            // board.
+            if ((this.mode === 'level' || this.mode === 'collect') && this.maybeFireLevelWin()) {
+                this.hail.reset();
+                this.rocket.reset();
+                this.gatling.reset();
+                this.mortar.reset();
+            }
+            return;
+        }
+
+        if (!this.current) return;
+
+        // Drop / lock loop.
+        const grounded = collides(this.state.board, this.current, 0, 1, this.current.shape);
+        if (grounded) {
+            // DOT pieces lock instantly on touchdown (meteor shower).
+            if (this.current.type === 'DOT') {
+                this.lockAndNext();
+                this.dropAccum = 0;
+                return;
+            }
+            if (!this.isGrounded) {
+                this.isGrounded = true;
+                this.lockDelay  = LOCK_DELAY_MS;
+            }
+            this.lockDelay -= dt;
+            if (this.lockDelay <= 0) {
+                this.lockAndNext();
+                this.dropAccum = 0;
+            }
+        } else {
+            this.isGrounded = false;
+            this.lockDelay = 0;
+            // Tutorial: freeze gravity. The piece hovers wherever it
+            // spawned until the player hard-drops it via a swipe-down
+            // gesture. This lets the player take their time on each
+            // gesture demo without racing the drop.
+            if (this.tutorialActive) return;
+            this.dropAccum += dt;
+            let interval: number;
+            if (this.current.type === 'DOT') {
+                interval = METEOR_DROP_INTERVAL;
+            } else {
+                interval = this.hourglass.isActive() ? this.dropInterval * 2 : this.dropInterval;
+            }
+            if (this.dropAccum >= interval) {
+                this.dropAccum = 0;
+                if (!collides(this.state.board, this.current, 0, 1, this.current.shape)) {
+                    this.current.y += 1;
+                    this.lockResets = 0;
+                }
+            }
+        }
+    }
+
+    // ============================================================
+    //  Input commands
+    // ============================================================
+
+    moveCylinder(dir: -1 | 1): void {
+        if (!this.canAcceptInput()) return;
+        // Storms (hail / rocket / gatling) freeze piece play — the input
+        // pans the camera even if a piece is technically alive. Critical
+        // for gatling: bullets target `lastSpawnCenterCol`, and the
+        // renderer uses the same value to place the stream at screen
+        // centre. If we moved the piece instead, the renderer would
+        // follow the piece while the bullets' targeting column stayed
+        // fixed, and the visual/collision would desync.
+        if (!this.current || this.hail.mode || this.rocket.mode || this.gatling.mode || this.mortar.mode) {
+            this.lastSpawnCenterCol = (this.lastSpawnCenterCol ?? 0) + dir;
+            return;
+        }
+        if (!collides(this.state.board, this.current, dir, 0, this.current.shape)) {
+            this.current.x = wrap(this.current.x + dir);
+            this.tryResetLockDelay();
+        }
+    }
+
+    tryRotate(dir: 1 | -1): void {
+        if (!this.canAcceptInput() || !this.current) return;
+        const newShape = rotate(this.current.shape, dir);
+        // `rotateBombs` is bomb-aware: it rotates the cells in lockstep with the
+        // shape AND flips each bomb's blast axis (rowN ↔ colN) per 90°, so the
+        // bomb's direction visually matches the rotated piece. `rotateBooms`
+        // does the same for radial (boom) props — no axis flip since the
+        // diamond blast is rotation-invariant.
+        const newBombs    = this.current.bombs    ? rotateBombs(this.current.bombs, dir) : null;
+        const newBooms    = this.current.booms    ? rotateBooms(this.current.booms, dir) : null;
+        const newWreckers = this.current.wreckers ? rotateWreckers(this.current.wreckers, dir) : null;
+        if (!collides(this.state.board, this.current, 0, 0, newShape)) {
+            this.current.shape = newShape;
+            if (newBombs)    this.current.bombs    = newBombs;
+            if (newBooms)    this.current.booms    = newBooms;
+            if (newWreckers) this.current.wreckers = newWreckers;
+            this.tryResetLockDelay();
+            this.hooks.onRotate?.();
+            return;
+        }
+        // Kick attempt: try shifting up 1, then 2 rows.
+        for (const ky of [-1, -2]) {
+            if (!collides(this.state.board, this.current, 0, ky, newShape)) {
+                this.current.shape = newShape;
+                if (newBombs)    this.current.bombs    = newBombs;
+                if (newBooms)    this.current.booms    = newBooms;
+                if (newWreckers) this.current.wreckers = newWreckers;
+                this.current.y += ky;
+                this.tryResetLockDelay();
+                this.hooks.onRotate?.();
+                return;
+            }
+        }
+    }
+
+    hardDrop(): void {
+        if (!this.canAcceptInput() || !this.current) return;
+        let d = 0;
+        while (!collides(this.state.board, this.current, 0, d + 1, this.current.shape)) d++;
+        this.current.y += d;
+        this.score += d * 2;
+        this.hooks.onScoreChanged?.(this.score);
+        if (d > 0) this.lockResets = 0;
+    }
+
+    /** Return the y-coordinate at which the current piece would land if
+     *  hard-dropped RIGHT NOW (no piece movement, just gravity). Used by
+     *  the renderer to draw a translucent "ghost" preview.
+     *
+     *  Returns `null` when there's no live piece, or when the piece is
+     *  already grounded (ghost overlaps current, no point drawing). */
+    getGhostDropY(): number | null {
+        if (!this.current) return null;
+        let d = 0;
+        while (!collides(this.state.board, this.current, 0, d + 1, this.current.shape)) d++;
+        if (d === 0) return null;
+        return this.current.y + d;
+    }
+
+    softDrop(): void {
+        if (!this.canAcceptInput() || !this.current) return;
+        if (!collides(this.state.board, this.current, 0, 1, this.current.shape)) {
+            this.current.y += 1;
+            this.score += 1;
+            this.hooks.onScoreChanged?.(this.score);
+            this.tryResetLockDelay();
+        }
+    }
+
+    hold(): void {
+        if (!this.canAcceptInput() || !this.current || !this.canHold) return;
+        this.lastSpawnCenterCol = pieceCenterOf(this.current);
+        const prevHold = this.holdType;
+        const prevHoldShape = this.holdShape;
+        // Save the outgoing piece's identity into the hold slot. Custom
+        // pieces (fate / level-editor) snapshot their shape so a later
+        // swap-back restores the hand-authored geometry instead of the
+        // standard tetromino shape.
+        this.holdType  = this.current.type;
+        this.holdShape = this.current.isCustomShape
+            ? this.current.shape.map(r => r.slice())
+            : null;
+        if (prevHold === null) {
+            this.current = spawn(this.nextType, this.lastSpawnCenterCol, this.nextBombsShape, this.nextShape, this.nextBoomsShape, this.nextWreckersShape);
+            const d = this.bag.pick();
+            this.nextType = d.type;
+            this.nextShape = d.shape;
+            this.nextBombsShape = makeEmptyBombs(this.nextShape ?? SHAPES[this.nextType]);
+        this.nextBoomsShape = makeEmptyBooms(this.nextShape ?? SHAPES[this.nextType]);
+        this.nextWreckersShape = makeEmptyWreckers(this.nextShape ?? SHAPES[this.nextType]);
+            this.hooks.onNextChanged?.(this.nextType);
+        } else {
+            // Swap back from hold. Standard pieces use SHAPES[prevHold];
+            // custom pieces restore their saved shape so the fate piece
+            // (or level-editor custom) doesn't degrade to a vanilla
+            // tetromino on the round trip.
+            this.current = spawn(prevHold, this.lastSpawnCenterCol, null, prevHoldShape);
+        }
+        this.canHold = false;
+        this.hooks.onHoldChanged?.(this.holdType);
+    }
+
+    /** Magic-item activation. Returns true if the item was consumed. */
+    // ============================================================
+    //  Energy picker API
+    // ============================================================
+
+    /** Open the picker with 2 fresh choices (called from `lockAndNext` when
+     *  the bar fills). Idempotent — repeated calls re-roll choices. */
+    private openEnergyPicker(): void {
+        this.energyPicker.choices = this.rollEnergyChoices();
+        this.energyPicker.active  = true;
+        this.hooks.onEnergyPickerOpen?.([...this.energyPicker.choices]);
+    }
+
+    /** Roll `ENERGY_PICKER_CHOICE_COUNT` distinct items from the pool.
+     *  Rule: at most ONE tier per family per picker — if `mortar5` is
+     *  drawn, all other `mortar*` keys are removed from the pool before
+     *  the next draw, so the player never sees "mortar ×5 vs mortar ×10"
+     *  (which is just "more or less of the same thing"). The picker
+     *  should give a meaningful choice between DIFFERENT items.
+     *
+     *  Note: 挖底机 (excavator*) and 掀顶机 (excavatorTop*) are treated
+     *  as ONE family for exclusion — they're both "clear an entire
+     *  horizontal slice" effects that would feel redundant paired
+     *  against each other in the picker. */
+    private rollEnergyChoices(): MagicItemKey[] {
+        const pool = [...ENERGY_PICKER_POOL];
+        const out: MagicItemKey[] = [];
+        const familyOf = (k: MagicItemKey): string | null => {
+            if (k === 'mortar5'  || k === 'mortar10'  || k === 'mortar15')     return 'mortar';
+            if (k === 'excavator1'    || k === 'excavator2'    || k === 'excavator3'
+             || k === 'excavatorTop1' || k === 'excavatorTop2' || k === 'excavatorTop3') return 'excavator';
+            if (k === 'hourglass1'    || k === 'hourglass2'    || k === 'hourglass3')    return 'hourglass';
+            if (k === 'meteor1'       || k === 'meteor2'       || k === 'meteor3')       return 'meteor';
+            if (k === 'rocket1'       || k === 'rocket2'       || k === 'rocket3')       return 'rocket';
+            if (k === 'gatling1'      || k === 'gatling2'      || k === 'gatling3')      return 'gatling';
+            return null;
+        };
+        for (let i = 0; i < ENERGY_PICKER_CHOICE_COUNT && pool.length > 0; i++) {
+            const idx = Math.floor(this.rng() * pool.length);
+            const picked = pool[idx];
+            out.push(picked);
+            pool.splice(idx, 1);
+            const fam = familyOf(picked);
+            if (fam) {
+                for (let j = pool.length - 1; j >= 0; j--) {
+                    if (familyOf(pool[j]) === fam) pool.splice(j, 1);
+                }
+            }
+        }
+        return out;
+    }
+
+    /** Player picked one of the choices. Activates the item immediately,
+     *  drains the bar, closes the picker. Returns true on success.
+     *
+     *  Order: close the picker UI FIRST, THEN run `useItem`. Otherwise
+     *  the rocket/gatling/meteor storms (and any other item that paints
+     *  a heavy effect over the playfield) start while the picker
+     *  overlay is still covering the canvas — the player only sees the
+     *  effect after they happen to dismiss the overlay on their own. */
+    /** Post-pick delay (ms) between hiding the picker and actually
+     *  firing the item's effect. Gives the popup dismiss animation +
+     *  the player's eye a moment to move from the card to the tower
+     *  before the item's visual FX kicks in. */
+    private static readonly PICK_EXECUTE_DELAY_MS = 250;
+
+    pickEnergyReward(key: MagicItemKey): boolean {
+        if (!this.energyPicker.active) return false;
+        if (!this.energyPicker.choices.includes(key)) return false;
+        // Activate the item bypass-inventory: temporarily grant +1, useItem
+        // consumes it back to 0. Net inventory delta = 0; effect applied.
+        const before = this.inventory[key];
+        this.inventory[key] = before + 1;
+        // Close picker immediately so the card visibly reacts to the tap.
+        // Keep `modalPaused` on so no input sneaks in during the pause
+        // window between popup-close and effect-fire.
+        this.energyPicker.active = false;
+        this.modalPaused = true;
+        this.hooks.onEnergyPickerClose?.();
+        // Fire the item's effect AFTER a short delay — user feedback:
+        // popup should visibly close first, then the effect plays. Without
+        // the gap, close + FX overlap in the same frame and read as one
+        // muddled blip.
+        setTimeout(() => {
+            this.modalPaused = false;
+            const ok = this.useItem(key);
+            if (!ok) {
+                // Roll back the inventory grant — item couldn't activate
+                // (e.g. rewind without enough history). Reopen picker so
+                // the player can choose the other option.
+                this.inventory[key] = before;
+                this.energyPicker.active = true;
+                this.hooks.onEnergyPickerOpen?.([...this.energyPicker.choices]);
+                return;
+            }
+            // Drain the bar and notify the UI.
+            this.energyCharge = 0;
+            this.energyPicker.choices = [];
+            this.hooks.onEnergyChanged?.(0, ENERGY_FULL_THRESHOLD);
+            this.hooks.onEnergyPickerPicked?.(key);
+        }, GameState.PICK_EXECUTE_DELAY_MS);
+        // Return true optimistically — the pick has been accepted, even
+        // though the effect fires on the next microtask. All existing
+        // callers ignore the return value beyond a debug log.
+        return true;
+    }
+
+    /** Re-roll the 2 choices without consuming the bar. The UI is expected
+     *  to gate this behind a "watch ad" / "free refresh once" rule — the
+     *  game state itself happily refreshes on demand. */
+    refreshEnergyPicker(): void {
+        if (!this.energyPicker.active) return;
+        this.energyPicker.choices = this.rollEnergyChoices();
+        this.hooks.onEnergyPickerOpen?.([...this.energyPicker.choices]);
+    }
+
+    useItem(key: MagicItemKey): boolean {
+        if (!this.canAcceptInput()) return false;
+        if (this.inventory[key] <= 0) return false;
+        let consumed = false;
+        switch (key) {
+            case 'hourglass1':
+                consumed = this.hourglass.activate(HOURGLASS_DURATIONS_MS.hourglass1);
+                break;
+            case 'hourglass2':
+                consumed = this.hourglass.activate(HOURGLASS_DURATIONS_MS.hourglass2);
+                break;
+            case 'hourglass3':
+                consumed = this.hourglass.activate(HOURGLASS_DURATIONS_MS.hourglass3);
+                break;
+            case 'excavator1':
+                consumed = activateExcavator(this.state, this.computeReservedTop(), this.makeClearHooks(), false, 1);
+                break;
+            case 'excavator2':
+                consumed = activateExcavator(this.state, this.computeReservedTop(), this.makeClearHooks(), false, 2);
+                break;
+            case 'excavator3':
+                consumed = activateExcavator(this.state, this.computeReservedTop(), this.makeClearHooks(), false, 3);
+                break;
+            case 'excavatorTop1':
+                consumed = activateExcavator(this.state, this.computeReservedTop(), this.makeClearHooks(), true, 1);
+                break;
+            case 'excavatorTop2':
+                consumed = activateExcavator(this.state, this.computeReservedTop(), this.makeClearHooks(), true, 2);
+                break;
+            case 'excavatorTop3':
+                consumed = activateExcavator(this.state, this.computeReservedTop(), this.makeClearHooks(), true, 3);
+                break;
+            case 'shapeshifter':
+                // Fire the picker unconditionally — even when there's no
+                // live piece yet (this happens when the energy picker
+                // deferred the next spawn to wait for FX and the player
+                // selects shapeshifter right there). The apply callback
+                // decides where to route the new shape based on whether
+                // the current piece carries embedded props (bombs / booms
+                // / wreckers) — those are precious and losing them to a
+                // shapeshifter transform feels bad.
+                //   - current piece has NO embed props → swap current
+                //   - current piece has embed props   → keep current
+                //     playing, apply the shape to the NEXT piece instead
+                //   - no current piece                → apply to NEXT
+                consumed = true;
+                this.hooks.onShapeshifterRequest?.((newType: PieceType) => {
+                    const cur = this.current;
+                    const curHasProps = cur ? hasEmbedProps(cur) : false;
+                    if (cur && !curHasProps) {
+                        this.current = applyShapeshifterPick(cur, newType);
+                    } else {
+                        // Route to next piece: replace nextType, drop any
+                        // next-piece embed props (they were assigned to a
+                        // DIFFERENT tetromino shape and would misalign).
+                        this.nextType         = newType;
+                        this.nextShape        = null;
+                        this.nextBombsShape   = makeEmptyBombs(SHAPES[newType]);
+                        this.nextBoomsShape   = makeEmptyBooms(SHAPES[newType]);
+                        this.nextWreckersShape = makeEmptyWreckers(SHAPES[newType]);
+                        this.hooks.onNextChanged?.(this.nextType);
+                    }
+                });
+                break;
+            case 'rewind':
+                consumed = this.applyRewind();
+                break;
+            case 'meteor1':
+            case 'meteor2':
+            case 'meteor3': {
+                // Tier suffix picks how many DOTs rain: 5 / 10 / 15.
+                const pieces = METEOR_TIER_COUNT[key];
+                consumed = this.triggerMeteorFromInventory(pieces);
+                break;
+            }
+            case 'rocket1':
+            case 'rocket2':
+            case 'rocket3': {
+                // Same as level-prop rocket trigger: enter rocket-storm
+                // mode and fire the FX hook so the renderer can launch
+                // the falling rockets. Tier suffix picks 8 / 16 / 24.
+                this.rocket.activate(ROCKET_TIER_COUNT[key]);
+                consumed = true;
+                break;
+            }
+            case 'gatling1':
+            case 'gatling2':
+            case 'gatling3': {
+                // Anchor the gatling storm at the column currently
+                // facing the camera so all bullets stream down the
+                // centre of the screen. Tier suffix picks 4 / 8 / 12.
+                this.gatling.activate(this.lastSpawnCenterCol ?? 0, GATLING_TIER_COUNT[key]);
+                consumed = true;
+                break;
+            }
+            case 'mortar5':
+            case 'mortar10':
+            case 'mortar15': {
+                // Compute the fill plan against a board snapshot, then
+                // enter mortar-storm mode. The tier suffix (5 / 10 / 15)
+                // caps the plan length — picking `mortar15` rains 15
+                // drops, `mortar5` only 5. Drops rain in hail-style
+                // (one per target) and stamp their colour on landing.
+                // Any newly-complete rows clear on the NEXT piece lock
+                // via the normal clearLines path — the engine doesn't
+                // try to chain clears off a storm.
+                //
+                // Mortar ALWAYS consumes the item — even if the board has
+                // nothing to drip onto right now (only X reserved cells,
+                // empty board, etc). Returning false here would refund
+                // the pick via `pickEnergyReward`'s rollback, which keeps
+                // the picker pinned open while the player presses the
+                // useless option over and over. Better UX: take the
+                // input, drain the bar, no storm fires.
+                const cap = MORTAR_TIER_COUNT[key];
+                // Level mode's bottom `levelReservedHeight` rows are the
+                // gray foundation — those rows may contain designer holes
+                // that the mortar must NOT fill. Endless mode passes 0.
+                const reserved = this.levelReservedHeight;
+                // 1. Drip plan (colour-inherit-downward rule), truncated
+                //    to `cap`. May be shorter than cap when few gaps
+                //    qualify — that's when we top up.
+                const drip = computeMortarPlan(this.state, reserved).slice(0, cap);
+                let plan = drip;
+                // 2. Top up with the bottom-up fill so the mortar ALWAYS
+                //    delivers `cap` blocks (as long as the board has that
+                //    many non-reserved empty cells). The exclude set
+                //    prevents the fallback from re-targeting drip cells.
+                if (plan.length < cap) {
+                    const excluded = new Set<string>();
+                    for (const t of drip) excluded.add(`${t.r},${t.c}`);
+                    const remaining = cap - plan.length;
+                    const topUp = computeMortarFallbackPlan(
+                        this.state, remaining, this.rng, undefined, excluded, reserved,
+                    );
+                    if (topUp.length) plan = plan.concat(topUp);
+                }
+                if (plan.length) this.mortar.activate(plan);
+                consumed = true;
+                break;
+            }
+        }
+        if (consumed) {
+            consumeItem(this.inventory, key);
+            this.hooks.onInventoryChanged?.(this.inventory);
+            if (key === 'meteor1'  || key === 'meteor2'  || key === 'meteor3')  this.hooks.onMeteorActivated?.();
+            if (key === 'rocket1'  || key === 'rocket2'  || key === 'rocket3')  this.hooks.onRocketActivated?.();
+            if (key === 'gatling1' || key === 'gatling2' || key === 'gatling3') this.hooks.onGatlingActivated?.();
+            if (key === 'mortar5' || key === 'mortar10' || key === 'mortar15') this.hooks.onMortarActivated?.();
+            // Excavator runs synchronously and may have just cleared
+            // the entire task zone. The current piece is still alive,
+            // so we can't pipe through `commitPendingSpawn`'s win gate.
+            // Check the win condition directly — `maybeFireLevelWin`
+            // will null the piece + flip `running` if the level is done.
+            if (key === 'excavator1'    || key === 'excavator2'    || key === 'excavator3'
+             || key === 'excavatorTop1' || key === 'excavatorTop2' || key === 'excavatorTop3') {
+                this.maybeFireLevelWin();
+            }
+        }
+        return consumed;
+    }
+
+    // ============================================================
+    //  Lock + next pipeline (the heart of the game)
+    // ============================================================
+
+    private lockAndNext(): void {
+        if (!this.current) return;
+        const piece = this.current;
+        this.lastSpawnCenterCol = pieceCenterOf(piece);
+        this.hooks.onPieceLand?.(piece);
+
+        // DOT sifting (endless / blind only): a DOT rain piece is 1×1
+        // and lands wherever gravity naturally rests it — on top of
+        // the column's current stack. If the column has EMPTY cells
+        // deeper down (a hole trapped under solid cells), the DOT
+        // would sit on top and eventually create MORE trapped holes
+        // once regular tetrominoes land above. That's fatal for the
+        // trapped-hole fail check.
+        //
+        // Fix: DOT "sifts" like sand — before stamping, teleport
+        // piece.y down to the DEEPEST empty cell in its column. This
+        // both avoids creating new holes and actively fills existing
+        // ones. Only applies in endless-like modes where trapped
+        // holes are fatal; level mode preserves the designer's DOT
+        // landing behaviour.
+        if (piece.type === 'DOT' && isEndlessLike(this.mode)) {
+            const col = wrap(piece.x);
+            let deepestEmpty = -1;
+            for (let r = this.state.board.length - 1; r >= 0; r--) {
+                if (this.state.board[r][col] === null) {
+                    deepestEmpty = r;
+                    break;
+                }
+            }
+            if (deepestEmpty > piece.y) {
+                piece.y = deepestEmpty;
+            }
+        }
+
+        // Stamp the piece onto the board. Embedded bombs go into
+        // `boardBombs` and stay DORMANT until their host row fills —
+        // they no longer detonate on impact.
+        lock(this.state, piece);
+        this.hooks.onPieceLock?.(piece);
+
+        /** Natural clears this lock — used to gift the NEXT piece a bomb.
+         *  Counted BEFORE detonate, so a col-bomb in a full row doesn't get
+         *  hidden by its own column blast nulling cells. Bomb-chain
+         *  cascade rows (e.g. row2 bomb splicing an extra row) don't count
+         *  — the user wants the reward to come from skill, not feedback loop. */
+        let naturalClearsThisLock = this.countFullRows();
+        // Endless mode: the gray foundation (initial 4 X-rows + anything
+        // converted on previous locks) registers as "full" in
+        // `countFullRows`. Subtract that baseline so score, energy and
+        // chest progress only react to NEW colored rows that just
+        // became full this lock. Blind mode uses the same stacking
+        // mechanics as endless — apply the same baseline correction.
+        if (isEndlessLike(this.mode)) {
+            let alreadyGray = 0;
+            const b = this.state.board;
+            for (let r = 0; r < b.length; r++) {
+                if (b[r].every(v => v === 'X')) alreadyGray++;
+            }
+            naturalClearsThisLock = Math.max(0, naturalClearsThisLock - alreadyGray);
+        }
+
+        // Gather BOTH bomb seeds AND boom seeds against the same pre-trigger
+        // snapshot — otherwise a boom's diamond may erase the host cell of
+        // an adjacent bomb before the bomb-side scan runs, and the bomb
+        // never fires. Adjacency rules:
+        //   - bomb seed:  host row full, OR 4-neighbour carries a prop
+        //     (bomb OR boom)
+        //   - boom seed:  4-neighbour carries a prop (bomb OR boom)
+        const fullRowSeeds  = gatherLevelBombs(this.state);
+        const adjacentSeeds = gatherAdjacentBombs(this.state);
+        const adjBooms      = gatherAdjacentBooms(this.state);
+        // Snapshot adjacent wreckers BEFORE the boom firing loop. The
+        // boom side's diamond will wipe `boardBooms` and may clear the
+        // wrecker's neighbour cells, so by the time the wrecker tried
+        // to find an adjacent prop on its own, the live board would
+        // already be empty and the combo wouldn't fire.
+        const adjWreckers   = gatherAdjacentWreckers(this.state);
+        const seeds = fullRowSeeds.concat(adjacentSeeds);
+
+        // Snapshot every wrecker's adjacent boom level + bomb axis BEFORE
+        // the booms detonate (the next block wipes them from `boardBooms`).
+        // Without this cache the wrecker × boom / wrecker × bomb combo
+        // would silently degrade to a plain sweep.
+        this.captureWreckerBoomCombos();
+
+        // Fire adjacent booms first so their diamond clears feed the
+        // orphan-chain that processClearedBooms runs at the end of
+        // detonate / clearLines — but seeds for the parallel bomb chain
+        // were already snapshotted above, so erasing cells here doesn't
+        // hide them from the detonate pass below. Effect: both visuals
+        // (boom rainbow ripple + bomb row/col blast) fire on the same
+        // frame and visually stack.
+        if (adjBooms.length) {
+            const fire = (r: number, c: number, level: 1 | 2 | 3,
+                          cleared: Array<{ r: number; c: number }>) =>
+                this.hooks.onBoomTriggered?.(r, c, level, cleared);
+            for (const { r, c, level } of adjBooms) {
+                // Re-check — chain activations may have already wiped this.
+                const stillThere = this.state.boardBooms
+                    && this.state.boardBooms[r] && this.state.boardBooms[r][c];
+                if (!stillThere) continue;
+                this.state.boardBooms![r][c] = null;
+                const cleared = activateBoom(this.state, r, c, level);
+                fire(r, c, level, cleared);
+            }
+            processClearedBooms(this.state, { onBoomActivated: fire });
+        }
+
+        // Fire every wrecker that the pre-boom scan marked. The cache
+        // lookups inside `triggerWreckerFromBoard` resolve to the
+        // pre-detonate boom level / bomb axis, so every pick still
+        // gets the combo blast even though the neighbour prop has
+        // since been wiped.
+        //
+        // NOTE: this MUST run BEFORE the boom-side gravity below —
+        // gravity moves the wrecker prop layer along with its host
+        // cell, so a wrecker whose host got cleared by the boom's
+        // diamond ends up at a NEW (r, c) after gravity. Firing here
+        // uses the original coordinates captured in `adjWreckers`.
+        for (const { r, c } of adjWreckers) {
+            const stillThere = this.state.boardWreckers
+                && this.state.boardWreckers[r] && this.state.boardWreckers[r][c];
+            if (!stillThere) continue;
+            this.state.boardWreckers![r][c] = null;
+            this.triggerWreckerFromBoard(r, c);
+        }
+
+        if (adjBooms.length) {
+            // Apply gravity NOW that wreckers have finished firing.
+            // Cubes above the just-cleared boom diamond fall down;
+            // without this the downstream clearLines /
+            // convertCompleteRowsToGray path skips gravity whenever
+            // there are no full rows.
+            const fellMoves = applyDiagonalGravity(this.state, this.computeReservedTop());
+            if (fellMoves.length) this.hooks.onCellsFell?.(fellMoves);
+        }
+
+        if (seeds.length) {
+            detonateBombs(this.state, seeds, this.computeReservedTop(), this.makeDetonateHooks());
+        }
+
+        // Collect-mode pre-snapshot: capture per-goal colour counts BEFORE
+        // the level pipeline (clearLines + reserved-zone conversion). The
+        // diff against the post-snapshot tells us how many cells of each
+        // goal colour the player just cleared, which feeds collectProgress.
+        const collectPreCounts: Partial<Record<PieceType, number>> =
+            this.mode === 'collect' ? this.countGoalColours() : {};
+
+        if (this.mode === 'level' || this.mode === 'collect') {
+            // clearLines splices any rows that are STILL full (i.e. weren't
+            // already spliced by detonate's row-bomb path, and survived col
+            // blasts because the col-blast loop skips currently-full rows).
+            const result = clearLines(this.state, this.computeReservedTop(), this.makeClearHooks());
+            this._lastClearLinesFullyCleared = result.fullyCleared;
+            convertReservedZoneToGray(this.state, this.levelReservedHeight);
+            // Score + lines for level mode. Use the pre-detonate full count
+            // so col-bomb-host rows count even though detonate spliced them.
+            if (naturalClearsThisLock > 0) {
+                const pts = [0, 100, 300, 500, 800][Math.min(naturalClearsThisLock, 4)] * this.level;
+                this.score += pts;
+                this.lines += naturalClearsThisLock;
+                this.hooks.onScoreChanged?.(this.score);
+                this.hooks.onLinesChanged?.(this.lines);
+            }
+            // Chest progress — driven by the pre-detonate natural-clear count.
+            const chests = this.levelProgress.consume(naturalClearsThisLock);
+            for (let i = 0; i < chests; i++) this.grantOneChest();
+            // Collect-mode post-snapshot: diff against pre to credit the
+            // player for cells of goal colours that disappeared during
+            // the lock pipeline (clearLines / detonate / boom).
+            if (this.mode === 'collect') {
+                const post = this.countGoalColours();
+                let advanced = false;
+                for (const g of this.collectGoals) {
+                    const before = collectPreCounts[g.color] ?? 0;
+                    const after  = post[g.color] ?? 0;
+                    const delta  = before - after;
+                    if (delta > 0) {
+                        const prev = this.collectProgress[g.color] ?? 0;
+                        this.collectProgress[g.color] = Math.min(g.count, prev + delta);
+                        advanced = true;
+                    }
+                }
+                if (advanced) {
+                    this.hooks.onCollectProgress?.(this.collectProgress, this.collectGoals);
+                }
+                // Win when every goal has been hit.
+                if (this.collectGoals.every(g =>
+                    (this.collectProgress[g.color] ?? 0) >= g.count
+                )) {
+                    this.running = false;
+                    this.current = null;
+                    this.hooks.onLevelWin?.();
+                    return;
+                }
+            } else {
+                // Standard level mode — original win check (clear task zone).
+                if (checkLevelWin(this.state, this.levelReservedHeight)) {
+                    this.running = false;
+                    // Clear the locked-piece reference — `playerLock` would
+                    // normally call `spawnNext()` at its tail and overwrite
+                    // `current`, but we're returning early on the win path.
+                    // Without this, the renderer still draws the just-locked
+                    // piece's shape ON TOP of the X cells that absorbed it,
+                    // making the stack look one row taller than it is.
+                    this.current = null;
+                    this.hooks.onLevelWin?.();
+                    return;
+                }
+            }
+            // Top-out: any brick at row 0 ⇒ pieces can't spawn, fail.
+            if (checkLevelTooTall(this.state,
+                    this.levelTaskHeight + this.levelReservedHeight)) {
+                this.failGame(2);
+                return;
+            }
+        } else {
+            // Endless / blind mode branch (both use trapped-hole + stack-
+            // too-tall failure model rather than the level-completion model).
+            // Blind mode fires per-row `onPartialShatter` before the peel
+            // wipes the row, so the player gets the same rainbow-flash
+            // "row cleared" FX level mode has (via `clearLines`). Endless
+            // skips the shatter — the row stays visible as gray so a
+            // per-row flash would just make the freshly-converted band
+            // strobe once before settling; the `onEndlessRowsFilled`
+            // sound cue below covers audio for that mode.
+            const filled = convertCompleteRowsToGray(
+                this.state,
+                this.mode === 'blind'
+                    ? (r, content) => this.hooks.onPartialShatter?.(r, content)
+                    : undefined,
+            );
+            // `onEndlessRowsFilled` plays a single `line_clear` per lock;
+            // suppress it in blind mode because `onPartialShatter` above
+            // already fires `line_clear` per row (avoids double-audio).
+            if (filled > 0 && this.mode !== 'blind') {
+                this.hooks.onEndlessRowsFilled?.(filled);
+            }
+            // (naturalClearsThisLock was already captured before detonate; in
+            // endless that equals `filled` plus any rows the col-blast skip
+            // logic preserved. It's the correct figure for the bomb reward.)
+            // Blind mode: keep the gray count locked at 0 — peel any
+            // freshly-converted grays right after the conversion, before
+            // the failure checks run against the new (shorter) stack.
+            // Used to hold a 4-row foundation as the anchor; foundation
+            // was removed per UX request, so the target is now 0 and
+            // completed rows disappear Tetris-style with the stack
+            // above collapsing down.
+            if (this.mode === 'blind') {
+                peelGrayAboveFoundation(this.state, 0);
+            }
+            if (checkTrappedHole(this.state)) {
+                this.failGame(1);
+                return;
+            }
+            // Was: `checkStackTooTall` (height-line fail model). Removed
+            // in favour of the spawn-collision model — the game now
+            // fails at the moment a fresh piece is spawned and overlaps
+            // the tower. Trigger lives in GameController.realignPieceSpawnRow,
+            // which calls back into `spawnCollisionFail()` after
+            // positioning the new piece.
+            // Endless grows the board on demand + caps gray at
+            // ENDLESS_GRAY_CAP. Blind mode does neither — its 4-row
+            // foundation stays and its board size is fixed.
+            if (this.mode !== 'blind') {
+                const rowsAdded = manageEndlessBoard(this.state);
+                if (rowsAdded > 0 && this.current) this.current.y += rowsAdded;
+            }
+            const chests = this.endlessProgress.consume(filled);
+            // Blind mode grants NO items — inventory picker is disabled
+            // (energy pipeline off in `lockAndNext`, no picker UI), so
+            // handing out chest items would just pile them up unused.
+            if (this.mode !== 'blind') {
+                for (let i = 0; i < chests; i++) this.grantOneChest();
+            }
+            // Fate-piece modal cadence: FIRST popup fires at layer
+            // ENDLESS_FATE_MILESTONE + 1 (14 at the default value 13),
+            // then every ENDLESS_FATE_MILESTONE layers after that —
+            // so 14, 27, 40, 53… The `cumulative - 1` shift turns the
+            // "N-row spacing starting at 1" into the floor-div form.
+            // Defer through the FX gate so the modal doesn't pop over
+            // still-playing shatter / ribbon FX.
+            const cum = this.endlessProgress.cumulative;
+            const milestones = cum > 0
+                ? Math.floor((cum - 1) / ENDLESS_FATE_MILESTONE)
+                : 0;
+            // Blind mode explicitly skips the fate modal — the player
+            // asked for a no-frills stacking mode: no fate piece, no
+            // embed props, tower hidden.
+            if (milestones > this.endlessFateMilestonesPopped
+                && this.mode !== 'blind') {
+                this.endlessFateMilestonesPopped = milestones;
+                this.pendingFateModal = true;
+            }
+            // Layer celebration FX — fires EVERY layer (endless +
+            // blind). A single lock that clears N rows fires the hook
+            // ONCE with the new `cum`, not N times, to avoid stacking
+            // multiple text-pops on top of each other. The `milestone`
+            // param carries the new layer count; text uses it verbatim.
+            if (cum > this.endlessCelebrationsFired) {
+                this.endlessCelebrationsFired = cum;
+                this.hooks.onEndlessMilestone?.(cum, cum);
+            }
+        }
+
+        // Charge the energy bar (caps at threshold; overflow rolls into next
+        // cycle after the picker consumes the current charge).
+        //
+        // Blind mode SKIPS the energy pipeline entirely — no bar, no
+        // picker, no magic items. It's a pure stacking challenge.
+        // Tutorial also skips — the practice tower shouldn't gift the
+        // player items or pop the picker mid-demo.
+        if (naturalClearsThisLock > 0 && this.mode !== 'blind' && !this.tutorialActive) {
+            this.energyCharge = Math.min(
+                ENERGY_FULL_THRESHOLD,
+                this.energyCharge + naturalClearsThisLock,
+            );
+            this.hooks.onEnergyChanged?.(this.energyCharge, ENERGY_FULL_THRESHOLD);
+            // Bar is full — queue the picker open behind the FX gate.
+            // GameController polls `hasPendingPickerOpen()` and calls
+            // `commitPendingPickerOpen()` once shatter shards / row
+            // flash / ribbon FX have all settled. Without the defer,
+            // the popup would cover the canvas while the locked piece's
+            // stamped cells (which are still at the top until clearLines
+            // runs gravity) are visible — looks like a fresh spawn.
+            if (this.energyCharge >= ENERGY_FULL_THRESHOLD && !this.energyPicker.active) {
+                this.pendingPickerOpen = true;
+            }
+        }
+
+        // Reward natural clears: the NEXT piece gets a RANDOM magic prop
+        // (direction blast row*/col*, range blast boom1/2/3, or rare
+        // wrecker). Probabilities are tier-weighted by total rows
+        // cleared so multi-row clears push toward higher tiers.
+        //
+        // Endless mode SKIPS this reward — the embed-prop pipeline is
+        // a level/collect mechanic. Endless is the long-haul stacking
+        // mode, and the player explicitly asked that no embed props
+        // spawn there. Energy-bar magic items are the only prop source
+        // in endless.
+        //
+        // Meteor-shower handling: while the queued next piece is still
+        // a DOT (shower not over), accumulate the row count silently.
+        // Then on the FIRST lock where `nextType !== 'DOT'` (the LAST
+        // DOT of the shower, or any normal piece), inject using
+        // `this lock's clears + accumulator`. This way DOT clears
+        // earlier in the shower aren't wasted just because the host
+        // piece happens to be a DOT.
+        // ANY-clear detector for the embed reward. The player's mental
+        // model is "if something got cleared this lock, next piece has
+        // a prop." Sources that all count as a clear:
+        //   - Natural piece-placement rows filled
+        //   - Any bomb seed fired (row/col blast)
+        //   - Any adjacent boom fired (diamond blast)
+        //   - Any wrecker fired (10-cell sweep)
+        //   - clearLines removed any row (cascade from any of the above)
+        const anyPropFired = (seeds.length > 0)
+                          || (adjBooms.length > 0)
+                          || (adjWreckers.length > 0);
+        const clearsForTier = Math.max(
+            naturalClearsThisLock,
+            this.mode === 'level' || this.mode === 'collect'
+                ? (this._lastClearLinesFullyCleared ?? 0)
+                : 0,
+            anyPropFired ? 1 : 0,
+        );
+
+        if (isEndlessLike(this.mode) || this.tutorialActive) {
+            // Endless / blind / tutorial all skip the embed-prop reward.
+            // Endless is a long-haul stacking mode; blind is minimal;
+            // tutorial doesn't want random props popping onto the next
+            // piece and confusing the demonstration.
+            this.meteorAccumulatedClears = 0;
+        } else if (this.nextType === 'DOT') {
+            this.meteorAccumulatedClears += clearsForTier;
+        } else {
+            const effectiveRowsCleared = clearsForTier + this.meteorAccumulatedClears;
+            if (effectiveRowsCleared >= 1) {
+                const shape = this.nextShape ?? SHAPES[this.nextType];
+                injectRandomMagicProp(
+                    this.nextBombsShape,
+                    this.nextBoomsShape,
+                    shape,
+                    effectiveRowsCleared,
+                    this.rng,
+                    this.nextWreckersShape,
+                );
+                // Hand the renderer the updated "next" preview so the prop glyph shows.
+                this.hooks.onNextChanged?.(this.nextType);
+            }
+            this.meteorAccumulatedClears = 0;
+        }
+        // Reset the clearLines counter so a subsequent lock that skips
+        // clearLines (e.g. because seeds spliced all full rows) can't
+        // reuse a stale value.
+        this._lastClearLinesFullyCleared = 0;
+
+        this.canHold = true;
+        // Push a rewind snapshot AFTER all post-lock processing settled.
+        this.history.snapshot({
+            state: this.state, score: this.score, lines: this.lines,
+            level: this.level, towerHeight: this.towerHeight,
+        });
+
+        // Hail life ticks down on every normal piece lock.
+        if (!this.hail.mode) {
+            this.hail.tickLifeOnPieceLock(this.state, { onEvaporate: () => {/* hooks left for renderer */} });
+        }
+        // Blizzard release counter: each piece-lock consumes one tick of
+        // the active blizzard window. When it hits 0 the drag input
+        // returns to normal continuous-rotation mode.
+        this.blizzard.onPieceLock();
+        // Hail / rocket / gatling / mortar storms freeze spawn — they'll
+        // call onFinish themselves to resume normal play when their
+        // animations complete.
+        if (this.hail.mode || this.rocket.mode || this.gatling.mode || this.mortar.mode) {
+            this.current = null;
+            return;
+        }
+        // Defer the actual spawn until every active FX has played
+        // through. GameController polls `hasPendingSpawn()` each frame
+        // and calls `commitPendingSpawn()` once the scene is quiet.
+        this.current = null;
+        this.pendingSpawn = true;
+    }
+
+    // ============================================================
+    //  Helpers
+    // ============================================================
+
+    private canAcceptInput(): boolean {
+        return this.running && !this.paused && !this.gameOver && !this.modalPaused;
+    }
+
+    private tryResetLockDelay(): void {
+        if (!this.isGrounded) return;
+        if (this.lockResets >= LOCK_RESET_LIMIT) return;
+        this.lockResets++;
+        this.lockDelay = LOCK_DELAY_MS;
+    }
+
+    private computeReservedTop(): number {
+        if (this.mode === 'level' && this.levelReservedHeight > 0) {
+            return this.state.board.length - this.levelReservedHeight;
+        }
+        return this.state.board.length;
+    }
+
+    /** Number of rows currently fully filled (24 colored cells, no nulls,
+     *  no hail). Used to capture "natural" clears at lock time, BEFORE
+     *  detonate can hide them by clearing column cells. */
+    /** Scan the live board and count cells of each goal colour. Returns
+     *  a sparse map (colours not in `collectGoals` are absent). Used by
+     *  the collect-mode pipeline to diff cell counts before/after a
+     *  lock and credit the player for cleared cells. */
+    private countGoalColours(): Partial<Record<PieceType, number>> {
+        const out: Partial<Record<PieceType, number>> = {};
+        if (!this.collectGoals.length) return out;
+        const wanted = new Set<PieceType>(this.collectGoals.map(g => g.color));
+        const board = this.state.board;
+        for (let r = 0; r < board.length; r++) {
+            for (let c = 0; c < COLS; c++) {
+                const v = board[r][c];
+                if (v && wanted.has(v as PieceType)) {
+                    out[v as PieceType] = (out[v as PieceType] ?? 0) + 1;
+                }
+            }
+        }
+        return out;
+    }
+
+    private countFullRows(): number {
+        let count = 0;
+        const board = this.state.board;
+        // Scan the WHOLE board (including the reserved zone). When the
+        // player fills the gap in a reserved row, that row becomes 24/24
+        // (23 X + 1 colored) and should count toward score / energy /
+        // chest progress / embed-prop reward — just like a regular row
+        // clear in the task zone. Endless mode subtracts the pre-existing
+        // all-X gray foundation downstream (see `naturalClearsThisLock`
+        // adjustment in lockAndNext).
+        for (let r = 0; r < board.length; r++) {
+            let full = true;
+            for (let c = 0; c < COLS; c++) {
+                const v = board[r][c];
+                if (v === null || v === 'H') { full = false; break; }
+            }
+            if (full) count++;
+        }
+        return count;
+    }
+
+    /** Public entry-point for GameController's spawn-collision check.
+     *  After `realignPieceSpawnRow` positions a freshly-spawned piece,
+     *  the controller tests `collides(...)` — if the piece overlaps a
+     *  filled tower cell at its spawn row, it calls this to end the
+     *  run with the "stack too tall" (reason 2) fail state. */
+    public spawnCollisionFail(): void {
+        if (this.gameOver) return;
+        this.failGame(2);
+    }
+
+    private failGame(reason: FailureReason): void {
+        // Tutorial mode disables ALL fail conditions — the practice
+        // tower is small and the player is free to explore without
+        // punishment. If they stack too tall / trap a hole during
+        // demos, nothing happens.
+        if (this.tutorialActive) return;
+        this.failureReason = reason;
+        this.gameOver = true;
+        this.running = false;
+        this.hooks.onGameOver?.(reason);
+    }
+
+    private grantOneChest(): void {
+        const k = grantRandomItem(this.inventory, this.rng);
+        if (k) {
+            this.hooks.onItemGranted?.(k);
+            this.hooks.onInventoryChanged?.(this.inventory);
+        }
+    }
+
+    private applyRewind(): boolean {
+        const out = this.history.activate(this.state);
+        if (!out) return false;
+        this.score = out.score;
+        this.lines = out.lines;
+        this.level = out.level;
+        this.towerHeight = out.towerHeight;
+        // Respawn a fresh piece so the player has something to play with.
+        this.current = spawn(this.nextType, this.lastSpawnCenterCol, this.nextBombsShape, this.nextShape, this.nextBoomsShape, this.nextWreckersShape);
+        const d = this.bag.pick();
+        this.nextType = d.type;
+        this.nextShape = d.shape;
+        this.nextBombsShape = makeEmptyBombs(this.nextShape ?? SHAPES[this.nextType]);
+        this.nextBoomsShape = makeEmptyBooms(this.nextShape ?? SHAPES[this.nextType]);
+        this.nextWreckersShape = makeEmptyWreckers(this.nextShape ?? SHAPES[this.nextType]);
+        this.hooks.onScoreChanged?.(this.score);
+        this.hooks.onLinesChanged?.(this.lines);
+        this.hooks.onNextChanged?.(this.nextType);
+        return true;
+    }
+
+    private triggerMeteorFromInventory(pieces: number = METEOR_PIECES): boolean {
+        return activateMeteor(this.bag, {
+            pieces,
+            swapCurrent: true,
+            onSwapLivePiece: () => {
+                if (!this.current) return false;
+                const center = pieceCenterOf(this.current);
+                const newShape = SHAPES.DOT.map(r => r.slice());
+                this.current.type  = 'DOT';
+                this.current.shape = newShape;
+                this.current.bombs    = makeEmptyBombs(newShape);
+                this.current.booms    = makeEmptyBooms(newShape);
+                this.current.wreckers = makeEmptyWreckers(newShape);
+                this.current.x = wrap(Math.round(center - 0.5));
+                // Drift up if the new dot would collide where current.y sits.
+                for (let dy = 0; dy >= -4; dy--) {
+                    if (!collides(this.state.board, this.current, 0, dy, newShape)) {
+                        this.current.y += dy;
+                        break;
+                    }
+                }
+                return true;
+            },
+            onOverrideNextType: () => {
+                this.nextType = 'DOT';
+                this.nextShape = null;   // DOT uses the standard SHAPES.DOT
+                this.nextBombsShape = makeEmptyBombs(SHAPES.DOT);
+                this.nextBoomsShape = makeEmptyBooms(SHAPES.DOT);
+                this.nextWreckersShape = makeEmptyWreckers(SHAPES.DOT);
+                this.hooks.onNextChanged?.(this.nextType);
+            },
+        });
+    }
+
+    // ---------- Hook factories ----------
+
+    private makeClearHooks(): ClearLinesHooks {
+        return {
+            onChestTriggered:    () => this.grantOneChest(),
+            onMeteorTriggered:   () => this.triggerMeteorFromBoard(),
+            onBlizzardTriggered: () => { this.blizzard.activate(); this.hooks.onBlizzardActivated?.(); },
+            onWreckerTriggered:  (r, c) => this.triggerWreckerFromBoard(r, c),
+            onHailTriggered:     () => { this.hail.activate(); this.hooks.onHailActivated?.(); },
+            onRocketTriggered:   () => { this.rocket.activate(); this.hooks.onRocketActivated?.(); },
+            onGatlingTriggered:  () => {
+                // Anchor the storm at the column currently facing the
+                // camera so all 12 bullets fire straight down the centre
+                // of the screen — and stay there even if the player
+                // rotates the tower mid-storm.
+                this.gatling.activate(this.lastSpawnCenterCol ?? 0);
+                this.hooks.onGatlingActivated?.();
+            },
+            onBoomTriggered:     (r, c, level, cleared) =>
+                this.hooks.onBoomTriggered?.(r, c, level, cleared),
+            onPartialShatter:    (r, content) => this.hooks.onPartialShatter?.(r, content),
+            onCellsFell:         moves => this.hooks.onCellsFell?.(moves),
+            onWreckerPrePulse:   picks => this.hooks.onWreckerPrePulse?.(picks),
+            onWreckerPicksShatter: picks => this.hooks.onWreckerPicksShatter?.(picks),
+            onClearSound:        intensity => this.hooks.onClearSound?.(intensity),
+        };
+    }
+
+    /** Same as `makeClearHooks` but also forwards bomb-specific FX hooks
+     *  (used by detonateBombs to fire row/col detonation visuals). */
+    private makeDetonateHooks(): DetonateHooks {
+        return {
+            ...this.makeClearHooks(),
+            onRowBombDetonate: r => this.hooks.onRowBombDetonate?.(r),
+            onColBombDetonate: (r, c) => this.hooks.onColBombDetonate?.(r, c),
+        };
+    }
+
+    private makeStormHooks(): DetonateHooks & { onFinish?(): void } {
+        // Extend `makeDetonateHooks` instead of `makeClearHooks` — the
+        // rocket / gatling bullet "1:1 cancel" path now routes any
+        // directional bomb it hits through `detonateBombs`, and the
+        // row/col blast visuals need `onRowBombDetonate` /
+        // `onColBombDetonate` to fire. Without these the block gets
+        // cleared silently and the player sees no blast FX.
+        return {
+            ...this.makeDetonateHooks(),
+            onFinish: () => {
+                // Storm finished — queue the spawn behind any still-
+                // playing FX (smoke trails, shatter dust, etc.). If the
+                // current piece is still alive (mortar fired via the
+                // picker while a piece was mid-fall), DON'T queue a
+                // spawn — let the existing piece resume playing.
+                if (!this.hail.mode && !this.rocket.mode && !this.gatling.mode && !this.mortar.mode
+                    && this.running && !this.gameOver
+                    && this.current === null) {
+                    this.pendingSpawn = true;
+                }
+            },
+        };
+    }
+
+    /** Mortar-specific storm hooks. Identical to `makeStormHooks` but
+     *  the `onFinish` runs the post-clear pipeline (detonate row bombs
+     *  in newly-full rows + clearLines + mode-specific bookkeeping)
+     *  BEFORE queuing the spawn. Mortar drops just paint colored cells
+     *  onto the board — they don't run the clear hooks themselves —
+     *  so the lock-style pipeline has to fire from this hook instead. */
+    private makeMortarHooks(): ClearLinesHooks & { onFinish?(): void; onPlacedCell?(r: number, c: number, color: CellValue): void } {
+        return {
+            ...this.makeClearHooks(),
+            onFinish: () => {
+                this.processMortarClears();
+                if (!this.hail.mode && !this.rocket.mode && !this.gatling.mode && !this.mortar.mode
+                    && this.running && !this.gameOver
+                    && this.current === null) {
+                    this.pendingSpawn = true;
+                }
+            },
+            // Per-drop lock hook — fires when a mortar drop stamps its
+            // colour onto a board cell. Forwarded to GameRenderHooks
+            // for the SFX + any future FX.
+            onPlacedCell: (r, c, color) => this.hooks.onMortarLanded?.(r, c, color),
+        };
+    }
+
+    /** Run the post-mortar clearing pipeline: count rows that became
+     *  fully filled, detonate any bombs sitting in them, then run the
+     *  mode-appropriate clearLines / convert-to-gray / fail-check
+     *  sequence. Score is awarded for the natural clears. Energy bar
+     *  charging + next-piece embed reward are deliberately SKIPPED
+     *  because they're tied to actual piece locks — granting them
+     *  here would create a mortar→picker→mortar feedback loop. */
+    private processMortarClears(): void {
+        let naturalClearsThisLock = this.countFullRows();
+        // Endless / blind mode baseline: subtract pre-existing all-X
+        // gray rows (initial 4 + previously-converted) so mortar
+        // doesn't claim score / lines credit for the foundation it
+        // didn't create.
+        if (isEndlessLike(this.mode)) {
+            let alreadyGray = 0;
+            const b = this.state.board;
+            for (let r = 0; r < b.length; r++) {
+                if (b[r].every(v => v === 'X')) alreadyGray++;
+            }
+            naturalClearsThisLock = Math.max(0, naturalClearsThisLock - alreadyGray);
+        }
+        // Mirror lockAndNext's bomb / boom adjacency gathering — mortar's
+        // freshly-painted cells are eligible adjacency triggers for
+        // existing bombs/booms sitting next to them.
+        // Mirror lockAndNext's wrecker × boom combo snapshot so a mortar-painted
+        // wrecker adjacent to a boom still combos when the boom fires first.
+        this.captureWreckerBoomCombos();
+        const fullRowSeeds  = gatherLevelBombs(this.state);
+        const adjacentSeeds = gatherAdjacentBombs(this.state);
+        const adjBooms      = gatherAdjacentBooms(this.state);
+        const seeds = fullRowSeeds.concat(adjacentSeeds);
+        const adjWreckersMortar = gatherAdjacentWreckers(this.state);
+        if (adjBooms.length) {
+            const fire = (r: number, c: number, level: 1 | 2 | 3,
+                          cleared: Array<{ r: number; c: number }>) =>
+                this.hooks.onBoomTriggered?.(r, c, level, cleared);
+            for (const { r, c, level } of adjBooms) {
+                const stillThere = this.state.boardBooms
+                    && this.state.boardBooms[r] && this.state.boardBooms[r][c];
+                if (!stillThere) continue;
+                this.state.boardBooms![r][c] = null;
+                const cleared = activateBoom(this.state, r, c, level);
+                fire(r, c, level, cleared);
+            }
+            processClearedBooms(this.state, { onBoomActivated: fire });
+        }
+        // Wreckers BEFORE gravity — see comment in lockAndNext for the
+        // rationale (gravity shifts the wrecker prop layer along with
+        // its host cell, so post-gravity (r, c) coords go stale).
+        for (const { r, c } of adjWreckersMortar) {
+            const stillThere = this.state.boardWreckers
+                && this.state.boardWreckers[r] && this.state.boardWreckers[r][c];
+            if (!stillThere) continue;
+            this.state.boardWreckers![r][c] = null;
+            this.triggerWreckerFromBoard(r, c);
+        }
+        if (adjBooms.length) {
+            // Now apply gravity — pull cells above the boom diamond
+            // back down. Skipped if no adjacent boom actually fired.
+            const fellMoves = applyDiagonalGravity(this.state, this.computeReservedTop());
+            if (fellMoves.length) this.hooks.onCellsFell?.(fellMoves);
+        }
+        if (seeds.length) {
+            detonateBombs(this.state, seeds, this.computeReservedTop(), this.makeDetonateHooks());
+        }
+        if (this.mode === 'level' || this.mode === 'collect') {
+            clearLines(this.state, this.computeReservedTop(), this.makeClearHooks());
+            convertReservedZoneToGray(this.state, this.levelReservedHeight);
+            if (naturalClearsThisLock > 0) {
+                const pts = [0, 100, 300, 500, 800][Math.min(naturalClearsThisLock, 4)] * this.level;
+                this.score += pts;
+                this.lines += naturalClearsThisLock;
+                this.hooks.onScoreChanged?.(this.score);
+                this.hooks.onLinesChanged?.(this.lines);
+            }
+            // Win check — mortar may have just cleared the task zone.
+            if (this.maybeFireLevelWin()) return;
+            if (checkLevelTooTall(this.state,
+                    this.levelTaskHeight + this.levelReservedHeight)) {
+                this.failGame(2);
+                return;
+            }
+        } else {
+            // Endless / blind (post-storm-resolution branch). Same
+            // per-row shatter wiring as the main convertCompleteRowsToGray
+            // call above — blind mode gets the rainbow-flash FX for each
+            // freshly-filled row so peel-per-fill doesn't silently swallow
+            // the "row cleared" cue. Endless-only for the sound hook to
+            // avoid double audio in blind (`onPartialShatter` also plays
+            // `line_clear`).
+            const filledPost = convertCompleteRowsToGray(
+                this.state,
+                this.mode === 'blind'
+                    ? (r, content) => this.hooks.onPartialShatter?.(r, content)
+                    : undefined,
+            );
+            if (filledPost > 0 && this.mode !== 'blind') {
+                this.hooks.onEndlessRowsFilled?.(filledPost);
+            }
+            if (checkTrappedHole(this.state)) { this.failGame(1); return; }
+            // `checkStackTooTall` removed — see comment above.
+            const rowsAdded = manageEndlessBoard(this.state);
+            if (rowsAdded > 0 && this.current) this.current.y += rowsAdded;
+            if (naturalClearsThisLock > 0) {
+                const pts = [0, 100, 300, 500, 800][Math.min(naturalClearsThisLock, 4)] * this.level;
+                this.score += pts;
+                this.lines += naturalClearsThisLock;
+                this.hooks.onScoreChanged?.(this.score);
+                this.hooks.onLinesChanged?.(this.lines);
+            }
+        }
+    }
+
+    /** True when a piece spawn is queued behind active FX. */
+    hasPendingSpawn(): boolean {
+        return this.pendingSpawn;
+    }
+
+    /** Sub-row visual offset (0..1) for the current piece, based on how
+     *  far into the next auto-drop tick we are. Renderers can add this
+     *  to `current.y` to draw the piece mid-fall instead of teleporting
+     *  one row at a time — used by meteor DOT pieces so the shower
+     *  reads as continuous motion.
+     *
+     *  Returns 0 when there's no live piece, the piece has landed
+     *  (grounded), or the piece isn't of a "smooth-fall" type. Non-DOT
+     *  pieces stay stepped (classic Tetris feel). */
+    getPieceVisualYOffset(): number {
+        if (!this.current) return 0;
+        if (this.isGrounded) return 0;
+        // Only DOTs (meteor shower fragments) fall smoothly. Regular
+        // tetrominoes keep the classic per-row step so the player's
+        // spatial mental model isn't broken.
+        if (this.current.type !== 'DOT') return 0;
+        const interval = METEOR_DROP_INTERVAL;
+        if (interval <= 0) return 0;
+        const f = this.dropAccum / interval;
+        return f < 0 ? 0 : f > 1 ? 1 : f;
+    }
+
+    /** True when the energy picker is queued to open behind active FX. */
+    hasPendingPickerOpen(): boolean {
+        return this.pendingPickerOpen;
+    }
+
+    /** True when the endless-mode fate modal is queued for the next FX-quiet frame. */
+    hasPendingFateModal(): boolean {
+        return this.pendingFateModal;
+    }
+
+    /** Renderer calls this when it has popped the fate modal (or
+     *  decided to drop it, e.g. game over) so subsequent frames don't
+     *  re-pop. The actual UI lives in `GameController` / `HudController`. */
+    commitPendingFateModal(): void {
+        this.pendingFateModal = false;
+    }
+
+    /** Re-register the fate piece's shape + base type on the bag.
+     *  Called by the renderer when the player confirms a pick in the
+     *  mid-run fate modal. Three updates happen so the swap takes
+     *  effect IMMEDIATELY, not just "eventually":
+     *
+     *    1. `bag.customShape` ← NEW. Future refills include the new
+     *       shape in the 8-piece permutation.
+     *    2. `bag.clearContents()`. Discards the current bag permutation
+     *       (which may still have the OLD custom-shape descriptor
+     *       buried in it). The next `pick()` triggers a fresh refill
+     *       using the NEW custom shape.
+     *    3. If the queued `nextShape` is a custom shape (i.e. the
+     *       next piece is going to be the OLD fate piece), swap it
+     *       for the NEW shape so the player sees the swap in the
+     *       NEXT-piece preview immediately.
+     *
+     *  The CURRENT active piece is left alone — mid-fall swap would be
+     *  jarring. */
+    setEndlessFateShape(customPiece: { baseType: PieceType; shape: number[][] }): void {
+        const baseType = customPiece.baseType;
+        const shape    = customPiece.shape.map(r => r.slice());
+        // 1. Update the bag's template.
+        this.bag.setCustomShape({ type: baseType, shape });
+        // 2. Discard the existing permutation so the OLD custom-shape
+        //    descriptor doesn't get drawn before the next refill.
+        this.bag.clearContents();
+        // 3. If the queued next piece is a custom shape (nextShape !==
+        //    null means "this descriptor carries a hand-authored
+        //    matrix" — only fate pieces do that), swap its descriptor
+        //    for the NEW shape so the preview / spawn use NEW.
+        if (this.nextShape !== null) {
+            this.nextType  = baseType;
+            this.nextShape = shape.map(r => r.slice());
+            this.nextBombsShape    = makeEmptyBombs(this.nextShape);
+            this.nextBoomsShape    = makeEmptyBooms(this.nextShape);
+            this.nextWreckersShape = makeEmptyWreckers(this.nextShape);
+            this.hooks.onNextChanged?.(this.nextType);
+        }
+    }
+
+    /** Renderer calls this once line-clear / detonation FX has finished
+     *  so the picker pops up over a settled scene. */
+    commitPendingPickerOpen(): void {
+        if (!this.pendingPickerOpen) return;
+        if (!this.running || this.gameOver) { this.pendingPickerOpen = false; return; }
+        // Don't pop the picker while a storm is running.
+        if (this.hail.mode || this.rocket.mode || this.gatling.mode || this.mortar.mode) return;
+        // Energy may have been spent or the picker already opened via
+        // a different path (currently none, but guard anyway).
+        if (this.energyPicker.active || this.energyCharge < ENERGY_FULL_THRESHOLD) {
+            this.pendingPickerOpen = false;
+            return;
+        }
+        this.pendingPickerOpen = false;
+        this.openEnergyPicker();
+    }
+
+    /** Renderer calls this once every FX has played through. Idempotent
+     *  on the empty/already-spawned case. */
+    commitPendingSpawn(): void {
+        if (!this.pendingSpawn) return;
+        if (!this.running || this.gameOver) {
+            // Game ended while spawn was queued — drop the request.
+            this.pendingSpawn = false;
+            return;
+        }
+        // Storms may have started AFTER the request (chained from a
+        // wrecker / boom). Don't spawn during a storm; the storm's own
+        // onFinish will re-queue once it ends.
+        if (this.hail.mode || this.rocket.mode || this.gatling.mode || this.mortar.mode) return;
+        this.pendingSpawn = false;
+        // If a magic-item effect (excavator / wrecker / storm) cleared
+        // the task zone, win the level NOW instead of spawning the next
+        // piece. lockAndNext's natural-clear path already runs this
+        // check; this catches the item-triggered case where no piece
+        // ever locked but the board still ended up cleared.
+        if (this.maybeFireLevelWin()) return;
+        this.spawnNext();
+    }
+
+    /** Win-condition probe used after item-triggered clears (excavator,
+     *  wrecker, storms). Returns true if the level was won and the win
+     *  hook fired — caller should bail out of any spawn. */
+    private maybeFireLevelWin(): boolean {
+        // Tutorial short-circuit: the tower is dressing, not a real
+        // level. Clearing the two colored rows during demos shouldn't
+        // fire "level clear" — the tutorial owns its own completion
+        // trigger (last gesture in the sequence).
+        if (this.tutorialActive) return false;
+        if (this.mode !== 'level' && this.mode !== 'collect') return false;
+        if (this.mode === 'collect') {
+            // collect mode: every goal hit?
+            if (!this.collectGoals.length) return false;
+            const won = this.collectGoals.every(g =>
+                (this.collectProgress[g.color] ?? 0) >= g.count
+            );
+            if (!won) return false;
+        } else {
+            if (!checkLevelWin(this.state, this.levelReservedHeight)) return false;
+        }
+        this.running = false;
+        this.current = null;
+        this.hooks.onLevelWin?.();
+        return true;
+    }
+
+    private triggerMeteorFromBoard(): void {
+        activateMeteor(this.bag, {
+            swapCurrent: false,
+            onOverrideNextType: () => {
+                this.nextType = 'DOT';
+                this.nextShape = null;
+                this.nextBombsShape = makeEmptyBombs(SHAPES.DOT);
+                this.nextBoomsShape = makeEmptyBooms(SHAPES.DOT);
+                this.hooks.onNextChanged?.(this.nextType);
+            },
+        });
+        this.hooks.onMeteorActivated?.();
+    }
+
+    private triggerWreckerFromBoard(triggerR: number, triggerC: number): void {
+        // Two-phase wrecker firing: PHASE 1 picks the cells but doesn't
+        // touch the board, so the renderer can play a pre-pulse flash on
+        // the picks while they're still visible. PHASE 2 (commit) runs
+        // from `commitPendingWreckerPlans` after the renderer's pulse
+        // window elapses. The combo cache lookups are done here in
+        // phase 1 because the wrecker × boom / wrecker × directional-bomb
+        // snapshots were captured BEFORE the bomb/boom pipeline fired.
+        const key = `${triggerR}-${triggerC}`;
+        const cachedBoomLevel = this.wreckerBoomComboCache.get(key) ?? 0;
+        const cachedBombAxis  = this.wreckerBombComboCache.get(key) ?? null;
+        const plan = pickWreckerPlan(
+            this.state, this.rng, triggerR, triggerC, cachedBoomLevel, cachedBombAxis,
+        );
+        if (!plan) {
+            this.hooks.onWreckerActivated?.();
+            return;
+        }
+        this.pendingWreckerPlans.push(plan);
+        this.hooks.onWreckerPrePulse?.([...plan.picks]);
+        this.hooks.onWreckerActivated?.();
+    }
+
+    /** Renderer calls this once the pre-pulse flash has finished playing.
+     *  Drains every queued wrecker plan and commits the actual clear —
+     *  null cells, fire shatter, run combo bombs, settle gravity. */
+    commitPendingWreckerPlans(): void {
+        if (!this.pendingWreckerPlans.length) return;
+        const reservedTop = this.computeReservedTop();
+        const hooks = this.makeDetonateHooks();
+        const plans = this.pendingWreckerPlans;
+        this.pendingWreckerPlans = [];
+        for (const plan of plans) applyWreckerPlan(this.state, plan, hooks, reservedTop);
+        // The wrecker (alone or in combo with a Boom / directional bomb)
+        // can clear the last colored cell on the board. Without this
+        // check the next-piece spawner runs first and the player sees a
+        // fresh tetromino dropped onto a "won" board.
+        if (this.mode === 'level' || this.mode === 'collect') {
+            this.maybeFireLevelWin();
+        }
+    }
+
+    hasPendingWreckerPlans(): boolean {
+        return this.pendingWreckerPlans.length > 0;
+    }
+
+    /** Snapshot each wrecker's strongest adjacent boom level into
+     *  `wreckerBoomComboCache`. Must be called BEFORE the boom-side
+     *  adjacency loop fires (which removes booms from the live board),
+     *  otherwise the wrecker—which always fires later in the same frame—
+     *  would lose access to its combo neighbour. */
+    private captureWreckerBoomCombos(): void {
+        this.wreckerBoomComboCache.clear();
+        this.wreckerBombComboCache.clear();
+        const wreckers = this.state.boardWreckers;
+        const booms = this.state.boardBooms;
+        const bombs = this.state.boardBombs;
+        if (!wreckers) return;
+        const H = this.state.board.length;
+        for (let r = 0; r < H; r++) {
+            if (!wreckers[r]) continue;
+            for (let c = 0; c < COLS; c++) {
+                if (!wreckers[r][c]) continue;
+                const candidates: Array<[number, number]> = [
+                    [r - 1, c],
+                    [r + 1, c],
+                    [r, (c - 1 + COLS) % COLS],
+                    [r, (c + 1) % COLS],
+                ];
+                let bestBoom: 0 | 1 | 2 | 3 = 0;
+                let bombAxis: 'row' | 'col' | null = null;
+                for (const [nr, nc] of candidates) {
+                    if (nr < 0 || nr >= H) continue;
+                    if (booms) {
+                        const lvl = booms[nr] && booms[nr][nc];
+                        if (lvl && lvl > bestBoom) bestBoom = lvl as 1 | 2 | 3;
+                    }
+                    if (bombs && !bombAxis) {
+                        const kind = bombs[nr] && bombs[nr][nc];
+                        if (kind && typeof kind === 'string') {
+                            if (kind.startsWith('row')) bombAxis = 'row';
+                            else if (kind.startsWith('col')) bombAxis = 'col';
+                        }
+                    }
+                }
+                const key = `${r}-${c}`;
+                if (bestBoom) this.wreckerBoomComboCache.set(key, bestBoom);
+                if (bombAxis) this.wreckerBombComboCache.set(key, bombAxis);
+            }
+        }
+    }
+}
+
+// ---------- Inline helpers (kept here to avoid an extra import in the input handlers) ----------
+
+function rotate(grid: number[][], dir: number): number[][] {
+    const n = grid.length;
+    const out: number[][] = [];
+    for (let r = 0; r < n; r++) out.push(new Array<number>(n).fill(0));
+    for (let r = 0; r < n; r++) {
+        for (let c = 0; c < n; c++) {
+            if (dir > 0) out[c][n - 1 - r] = grid[r][c];
+            else         out[n - 1 - c][r] = grid[r][c];
+        }
+    }
+    return out;
+}
+
+/** True if `piece` carries ANY embedded prop (bomb, boom, wrecker).
+ *  Used by the shapeshifter path to protect prop-carrying pieces from
+ *  being swapped out (their embed layers would be silently erased). */
+function hasEmbedProps(piece: Piece): boolean {
+    const scan = (grid: readonly (unknown | null)[][] | null | undefined): boolean => {
+        if (!grid) return false;
+        for (let r = 0; r < grid.length; r++) {
+            const row = grid[r];
+            if (!row) continue;
+            for (let c = 0; c < row.length; c++) {
+                if (row[c]) return true;
+            }
+        }
+        return false;
+    };
+    return scan(piece.bombs) || scan(piece.booms) || scan(piece.wreckers);
+}
+
+function pieceCenterOf(piece: Piece): number {
+    let minX = piece.shape[0].length, maxX = -1;
+    for (let r = 0; r < piece.shape.length; r++) {
+        for (let c = 0; c < piece.shape[r].length; c++) {
+            if (piece.shape[r][c]) {
+                if (c < minX) minX = c;
+                if (c > maxX) maxX = c;
+            }
+        }
+    }
+    if (maxX < 0) return piece.x;
+    return piece.x + (minX + maxX + 1) / 2;
+}

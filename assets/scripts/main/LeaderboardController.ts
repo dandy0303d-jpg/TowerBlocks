@@ -1,0 +1,514 @@
+/**
+ * Leaderboard panel — 前端 UI (scrollable list, up to 500 entries).
+ *
+ * ============================================================
+ *  Design (matches the mockup, now scrollable):
+ *    ┌─────────────────────────────────────────────┐
+ *    │  [关卡模式]  [无尽模式]  [闭眼模式]         │  ← mode tabs
+ *    │                                             │
+ *    │              排 行 榜                       │  ← title
+ *    │                                             │
+ *    │  ┌── ScrollView ────────────────────────┐   │
+ *    │  │ [1👑] avatar 玩家昵称xxx    999999   │   │  rank 1 (default top)
+ *    │  │ [2🥈] avatar 玩家昵称xxx    876543   │   │
+ *    │  │ [3🥉] avatar 玩家昵称xxx    765432   │   │
+ *    │  │ ...                                  │   │  ← scroll for more
+ *    │  │ [500] avatar 玩家昵称xxx        1    │   │  down to rank 500
+ *    │  └──────────────────────────────────────┘   │
+ *    │                                             │
+ *    │              [↩ 返回]                       │
+ *    └─────────────────────────────────────────────┘
+ * ============================================================
+ *
+ * ARCHITECTURE:
+ *   - One authored ROW PREFAB (`LeaderboardRow` component on the root)
+ *     holds the visual template for a single line.
+ *   - The controller reads entries (currently a MOCK of 500), then
+ *     instantiates the prefab once per entry and parents it to the
+ *     ScrollView's Content node. A Layout component on Content stacks
+ *     them vertically.
+ *   - `scrollToTop()` on show so the player always sees rank 1 first.
+ *   - Row instances are cached across tab switches — we reuse the
+ *     same pool and just re-populate, avoiding node churn.
+ *
+ * INSPECTOR WIRING (build these in the scene, then drag them here):
+ *   Panel       — root Node; Widget-stretched to Canvas
+ *   Title Label — big "排行榜" text
+ *   Back Button — bottom back button
+ *   ScrollView  — cc.ScrollView component (vertical)
+ *   Content     — the ScrollView's Content Node (should have a
+ *                 Layout component: Vertical, Top-to-Bottom,
+ *                 Resize Mode = CONTAINER — script does NOT enforce)
+ *   Row Prefab  — Prefab of a LeaderboardRow-driven row
+ *   Mode Tabs   — 3 Buttons at the top (Level / Endless / Blind)
+ *   Avatar Frames — SpriteFrame pool; each row's avatar is picked by
+ *                   entry.avatarIdx or (rank - 1) mod pool length
+ *
+ * Any slot left null is skipped so a partial editor build still boots.
+ */
+
+import {
+    _decorator,
+    Component,
+    Node,
+    Label,
+    Layout,
+    Sprite,
+    SpriteFrame,
+    Button,
+    Prefab,
+    ScrollView,
+    instantiate,
+    log,
+} from 'cc';
+
+import { t, subscribe as subscribeI18n } from '../core/i18n/I18n';
+import { LeaderboardRow } from './LeaderboardRow';
+import { fetchTop, fetchMyRank, LeaderboardApiEntry, LeaderboardApiMode, MyRankResult } from '../core/LeaderboardApi';
+import { PlayerProfile } from '../core/PlayerProfile';
+
+const { ccclass, property } = _decorator;
+
+/** One row's worth of data. */
+export interface LeaderboardEntry {
+    rank:  number;
+    name:  string;
+    score: number;
+    /** Index into `avatarFrames`. If null, script picks by rank. */
+    avatarIdx?: number | null;
+    /** True → this is the local player's row (LeaderboardRow toggles
+     *  its `youHighlight` node when set). */
+    isYou?: boolean;
+}
+
+/** Which mode's leaderboard is currently showing. */
+export type LeaderboardMode = 'level' | 'endless' | 'blind';
+
+/** Hard cap on how many entries we display. Server can return fewer;
+ *  we won't try to show more than this even if it returns more. */
+const MAX_ENTRIES = 500;
+
+@ccclass('LeaderboardController')
+export class LeaderboardController extends Component {
+
+    // ---- Panel root + static UI ----
+    @property({ type: Node, tooltip: '排行榜面板根节点（含全屏 dim + 卡片）— 默认 active=false' })
+    panel: Node | null = null;
+
+    @property({ type: Label, tooltip: '"排行榜" 标题 Label' })
+    titleLabel: Label | null = null;
+
+    @property({ type: Button, tooltip: '返回按钮（点击 → 隐藏面板回到主菜单）' })
+    backButton: Button | null = null;
+
+    // ---- Mode tabs ----
+    @property({ type: [Button], tooltip: '3 个模式 Tab 按钮（顺序：关卡 / 无尽 / 闭眼）' })
+    modeTabButtons: Button[] = [];
+
+    @property({ type: [Label], tooltip: '3 个 Tab 按钮内部的 Label（可空；空的会自动 getComponentInChildren 找）' })
+    modeTabLabels: Label[] = [];
+
+    @property({ type: [Node], tooltip: '3 个 Tab 的"选中"指示节点（可空；有的话脚本会切换 active）' })
+    modeTabIndicators: Node[] = [];
+
+    // ---- Scroll list ----
+    @property({ type: ScrollView, tooltip: '排行榜 ScrollView（Vertical）' })
+    scrollView: ScrollView | null = null;
+
+    @property({ type: Node, tooltip: 'ScrollView 的 Content 节点（挂 Layout: Vertical + TopToBottom + Resize Mode CONTAINER）' })
+    content: Node | null = null;
+
+    @property({ type: Prefab, tooltip: '单行 Prefab（预制体上挂 LeaderboardRow 组件，@property 拖对应 Label/Sprite 槽位）' })
+    rowPrefab: Prefab | null = null;
+
+    // ---- My-rank fixed row (below the ScrollView) ----
+    @property({ type: LeaderboardRow, tooltip: '固定在 ScrollView 下方的"我的排名"行 — 拖场景里挂了 LeaderboardRow 的 Node（不在 ScrollView Content 里，而是同级/下方固定位置）。留空则不显示。' })
+    myRankRow: LeaderboardRow | null = null;
+
+    // ---- Assets ----
+    @property({ type: [SpriteFrame], tooltip: '头像 SpriteFrame 池；行按索引循环使用。空的话头像保留 Prefab 默认。' })
+    avatarFrames: SpriteFrame[] = [];
+
+    // ============================================================
+    //  Internal state
+    // ============================================================
+
+    /** Currently-selected mode tab. */
+    private currentMode: LeaderboardMode = 'endless';
+
+    /** Cached row instances — grown on demand, reused across tab
+     *  switches / re-shows. Extra rows past the current data length
+     *  get `active = false` so they don't take up scroll space. */
+    private rowPool: LeaderboardRow[] = [];
+
+    /** Unsub handle for i18n subscribe. */
+    private i18nUnsub: (() => void) | null = null;
+
+    /** True after we've wired click handlers + i18n subscribe. */
+    private wired: boolean = false;
+
+    /** Per-mode cache of the latest fetched entries. Used so switching
+     *  tabs feels instant on second visit; refreshes each time the
+     *  panel opens for the currently-selected mode. */
+    private cachedEntries: Partial<Record<LeaderboardMode, LeaderboardEntry[]>> = {};
+
+    /** Per-mode cache of the local player's rank+score. Same instant-
+     *  paint story as `cachedEntries`. */
+    private cachedMyRank: Partial<Record<LeaderboardMode, MyRankResult>> = {};
+
+    /** Monotonically increasing request id so late-arriving responses
+     *  from a fetch we no longer care about (e.g. user tab-switched
+     *  before it resolved) don't overwrite fresher data. */
+    private lastFetchId: number = 0;
+
+    // ============================================================
+    //  Lifecycle
+    // ============================================================
+
+    onLoad(): void {
+        // Panel starts hidden regardless of scene state — the menu
+        // button is the only way in.
+        if (this.panel) this.panel.active = false;
+    }
+
+    onDestroy(): void {
+        if (this.i18nUnsub) { this.i18nUnsub(); this.i18nUnsub = null; }
+    }
+
+    // ============================================================
+    //  Public API
+    // ============================================================
+
+    /** Show the leaderboard for `mode` (default: endless). Auto-scrolls
+     *  to the top so the player always sees rank 1 first. */
+    public show(mode: LeaderboardMode = 'endless'): void {
+        if (!this.panel) {
+            log('[Leaderboard] panel not wired — cannot show');
+            return;
+        }
+        log(`[Leaderboard] show(${mode}) — panel=${!!this.panel} content=${!!this.content} scrollView=${!!this.scrollView} rowPrefab=${!!this.rowPrefab}`);
+        // Activate the tree BEFORE we instantiate + populate rows.
+        // Cocos Layout only recalculates content size when the layout
+        // node is active — instantiating rows under an inactive parent
+        // would leave `content` at 0×0 until the next tick, and the
+        // ScrollView would clip everything. Ordering here fixes the
+        // "first click shows an empty list, second click shows rows"
+        // symptom.
+        this.panel.active = true;
+        this.panel.setSiblingIndex(999);
+        this.wire();
+        this.currentMode = mode;
+        this.refresh();
+        log(`[Leaderboard] show() done — pool=${this.rowPool.length} content children=${this.content?.children.length ?? '(no content)'}`);
+        // Snap to top — instant, no animation, so the player never
+        // sees mid-scroll flash from a previous session's scroll pos.
+        if (this.scrollView) this.scrollView.scrollToTop(0);
+    }
+
+    public hide(): void {
+        if (this.panel) this.panel.active = false;
+    }
+
+    public isOpen(): boolean {
+        return !!this.panel?.active;
+    }
+
+    /**
+     * Pre-instantiate the 500 row Prefabs during boot so the panel
+     * opens instantly when the player taps the leaderboard button. No
+     * visual change — we briefly flip `panel.active = true` so Cocos
+     * Layout can compute row positions (Layout is skipped on inactive
+     * nodes), then restore the previous state. The LoadingPanel dim
+     * covers everything during boot, so the momentary activation is
+     * invisible.
+     *
+     * Called by LoadingController from the boot pipeline. Idempotent
+     * via the `wired` flag inside `wire()` and via `ensureRowPool`
+     * only growing the pool, never shrinking it.
+     */
+    public preload(): void {
+        if (!this.panel) {
+            log('[Leaderboard] preload skipped — panel not wired');
+            return;
+        }
+        if (!this.rowPrefab || !this.content) {
+            log('[Leaderboard] preload skipped — rowPrefab or content not wired');
+            return;
+        }
+        const wasActive = this.panel.active;
+        this.panel.active = true;
+        try {
+            this.wire();
+            // Eagerly build the full 500-row pool + rows hidden until
+            // data arrives. This is the whole POINT of preload: pay
+            // the node-instantiation + Layout cost during boot, so
+            // the panel opens instantly with just a data repaint.
+            this.ensureRowPool(MAX_ENTRIES);
+            for (const row of this.rowPool) row.node.active = false;
+            if (this.content) {
+                const layout = this.content.getComponent(Layout);
+                if (layout) layout.updateLayout(true);
+            }
+            // Kick off the data fetch — populates cache when it lands.
+            this.refresh();
+            log(`[Leaderboard] preload triggered — pool=${this.rowPool.length} content children=${this.content.children.length} (network fetch in-flight)`);
+        } catch (err) {
+            console.error('[Leaderboard] preload THREW:', err);
+        } finally {
+            this.panel.active = wasActive;
+        }
+    }
+
+    // ============================================================
+    //  Setup
+    // ============================================================
+
+    private wire(): void {
+        if (this.wired) return;
+        this.wired = true;
+
+        // ---- Static labels (title + back button) ----
+        if (this.titleLabel) {
+            this.titleLabel.string = t('leaderboard.title');
+        }
+        if (this.backButton) {
+            this.backButton.node.off('click');
+            this.backButton.node.on('click', () => this.hide(), this);
+            const lab = this.backButton.getComponentInChildren(Label);
+            if (lab) lab.string = t('leaderboard.back');
+        }
+
+        // ---- Mode tabs ----
+        this.wireTabs();
+
+        // Re-translate everything on language change while open;
+        // hidden panels get a fresh render at next `show()` anyway.
+        this.i18nUnsub = subscribeI18n(() => {
+            if (!this.panel?.active) return;
+            if (this.titleLabel) this.titleLabel.string = t('leaderboard.title');
+            if (this.backButton) {
+                const lab = this.backButton.getComponentInChildren(Label);
+                if (lab) lab.string = t('leaderboard.back');
+            }
+            this.retranslateTabs();
+            this.refresh();
+        });
+    }
+
+    /** Kept separate from `wire()` so `retranslateTabs()` can share
+     *  the same array walk without duplicating the click bindings. */
+    private wireTabs(): void {
+        const tabModes: LeaderboardMode[] = ['level', 'endless', 'blind'];
+        const tabKeys = ['leaderboard.tab.level', 'leaderboard.tab.endless', 'leaderboard.tab.blind'];
+        for (let i = 0; i < this.modeTabButtons.length; i++) {
+            const btn = this.modeTabButtons[i];
+            if (!btn) continue;
+            const mode = tabModes[i];
+            if (!mode) continue;
+            btn.node.off('click');
+            btn.node.on('click', () => this.onTabClick(mode), this);
+            const lab = this.modeTabLabels[i] ?? btn.getComponentInChildren(Label);
+            if (lab) lab.string = t(tabKeys[i]);
+        }
+    }
+
+    private retranslateTabs(): void {
+        const tabKeys = ['leaderboard.tab.level', 'leaderboard.tab.endless', 'leaderboard.tab.blind'];
+        for (let i = 0; i < this.modeTabButtons.length; i++) {
+            const btn = this.modeTabButtons[i];
+            if (!btn) continue;
+            const lab = this.modeTabLabels[i] ?? btn.getComponentInChildren(Label);
+            if (lab) lab.string = t(tabKeys[i]);
+        }
+    }
+
+    private onTabClick(mode: LeaderboardMode): void {
+        if (this.currentMode === mode) return;
+        this.currentMode = mode;
+        this.refresh();
+        // Any tab switch resets scroll to top so the player always
+        // starts at rank 1 for the newly-picked mode.
+        if (this.scrollView) this.scrollView.scrollToTop(0);
+    }
+
+    // ============================================================
+    //  Data + rendering
+    // ============================================================
+
+    /** Update tab indicators + trigger a fresh data fetch. Uses the
+     *  cached entries (if any) for instant paint, then updates when
+     *  the network fetch resolves. Handles tab-switch race conditions
+     *  via `lastFetchId`. */
+    private refresh(): void {
+        // ---- Tab indicators (sync, immediate) ----
+        const tabModes: LeaderboardMode[] = ['level', 'endless', 'blind'];
+        for (let i = 0; i < this.modeTabIndicators.length; i++) {
+            const ind = this.modeTabIndicators[i];
+            if (!ind) continue;
+            ind.active = tabModes[i] === this.currentMode;
+        }
+
+        // ---- Paint cached data immediately so the list isn't empty
+        // while the network fetch is in flight (returning users see
+        // whatever was there last time). ----
+        const cached = this.cachedEntries[this.currentMode];
+        if (cached && cached.length > 0) {
+            this.paintRows(cached);
+        }
+        const cachedMy = this.cachedMyRank[this.currentMode];
+        if (cachedMy) this.paintMyRankRow(cachedMy);
+        else          this.paintMyRankRow({ rank: null, score: null });
+
+        // ---- Kick off a network fetch; paint again when it resolves. ----
+        const reqId = ++this.lastFetchId;
+        const mode  = this.currentMode;
+        this.fetchEntriesAsync(mode)
+            .then((entries) => {
+                // Stale response — user tab-switched (or fired a fresh
+                // refresh) between the fetch starting and resolving.
+                if (reqId !== this.lastFetchId) return;
+                if (this.currentMode !== mode) return;
+                this.cachedEntries[mode] = entries;
+                this.paintRows(entries);
+            })
+            .catch((err) => {
+                console.warn(`[Leaderboard] fetch ${mode} failed:`, err.message);
+                // Keep whatever was on screen (either the cached data
+                // from earlier, or an empty list) — no UI toast for now.
+                // TODO(polish): show a "network error, tap to retry" hint.
+            });
+        // Parallel fetch: local player's own rank + score. Uses the
+        // same reqId so a tab-switch mid-flight discards this too.
+        fetchMyRank(mode)
+            .then((r) => {
+                if (reqId !== this.lastFetchId) return;
+                if (this.currentMode !== mode) return;
+                this.cachedMyRank[mode] = r;
+                this.paintMyRankRow(r);
+            })
+            .catch((err) => {
+                console.warn(`[Leaderboard] fetchMyRank ${mode} failed:`, err.message);
+            });
+    }
+
+    /** Fill the fixed "my rank" row below the ScrollView. Shows the
+     *  local player's rank + score if they've submitted; falls back to
+     *  a "—" placeholder + rank 0 if they haven't scored in this mode
+     *  yet. Always keeps the `isYou` highlight on. */
+    private paintMyRankRow(result: MyRankResult): void {
+        const row = this.myRankRow;
+        if (!row) return;
+        row.node.active = true;
+        const hasRank = result.rank !== null && result.score !== null;
+        row.populate({
+            rank:  hasRank ? result.rank! : 0,
+            name:  PlayerProfile.name,
+            score: hasRank ? result.score! : 0,
+            isYou: true,
+            // Local player's own avatar — read from PlayerProfile
+            // instead of the server, so the row updates instantly
+            // after a fresh pick without waiting for a re-fetch.
+            avatarIdx: PlayerProfile.avatarIdx,
+        }, this.avatarFrames);
+        // Overwrite the rank / score Labels with placeholder strings
+        // when the player hasn't scored in this mode yet — populate()
+        // above would have written "0" for both, which reads worse
+        // than a plain dash.
+        if (!hasRank) {
+            if (row.rankLabel)  row.rankLabel.string  = '—';
+            if (row.scoreLabel) row.scoreLabel.string = '—';
+        }
+    }
+
+    /** Sync paint helper — pool + tail-hide + force Layout. Called
+     *  both from the immediate cached-paint path and the async
+     *  fetch-resolved path. */
+    private paintRows(entries: ReadonlyArray<LeaderboardEntry>): void {
+        const n = Math.min(entries.length, MAX_ENTRIES);
+        this.ensureRowPool(n);
+        for (let i = 0; i < this.rowPool.length; i++) {
+            const row = this.rowPool[i];
+            if (i < n) {
+                row.node.active = true;
+                row.populate(entries[i], this.avatarFrames);
+            } else {
+                row.node.active = false;
+            }
+        }
+        // Force the Content Layout to recalculate NOW — see original
+        // comment on the "first click shows empty" bug.
+        if (this.content) {
+            const layout = this.content.getComponent(Layout);
+            if (layout) layout.updateLayout(true);
+        }
+    }
+
+    /** Instantiate additional row Prefab copies until the pool has
+     *  at least `n` instances. Newer instances get parented to the
+     *  ScrollView Content node so the Layout arranges them. */
+    private ensureRowPool(n: number): void {
+        if (!this.rowPrefab) {
+            if (this.rowPool.length === 0) {
+                log('[Leaderboard] rowPrefab not wired — no rows will render');
+            }
+            return;
+        }
+        if (!this.content) {
+            log('[Leaderboard] content not wired — cannot parent rows');
+            return;
+        }
+        const before = this.rowPool.length;
+        while (this.rowPool.length < n) {
+            const inst = instantiate(this.rowPrefab);
+            inst.parent = this.content;
+            inst.layer  = this.content.layer;
+            const row = inst.getComponent(LeaderboardRow);
+            if (!row) {
+                // Prefab is missing the component — bail out loudly so
+                // the misconfiguration is obvious in the console. Keep
+                // the (un-typed) node so we don't loop-instantiate.
+                log('[Leaderboard] row prefab missing LeaderboardRow component; aborting pool growth');
+                inst.destroy();
+                return;
+            }
+            this.rowPool.push(row);
+        }
+        const added = this.rowPool.length - before;
+        if (added > 0) {
+            log(`[Leaderboard] ensureRowPool: spawned ${added} rows (pool now ${this.rowPool.length}, target ${n})`);
+        }
+    }
+
+    // ============================================================
+    //  Data source — real backend via LeaderboardApi.
+    // ============================================================
+
+    /**
+     * Fetch leaderboard entries for `mode` from the backend and adapt
+     * the server-side shape into this component's `LeaderboardEntry`.
+     * The server returns [{rank, uuid, name, score}]; we tack on the
+     * `isYou` flag by comparing uuid against the local player's UUID.
+     *
+     * Errors propagate so `refresh()` can catch and decide (currently
+     * keeps the cached / empty list).
+     */
+    private async fetchEntriesAsync(mode: LeaderboardMode): Promise<LeaderboardEntry[]> {
+        const apiEntries: LeaderboardApiEntry[] = await fetchTop(mode, MAX_ENTRIES);
+        const myUuid = PlayerProfile.uuid;
+        return apiEntries.map((e) => ({
+            rank:  e.rank,
+            name:  e.name,
+            score: e.score,
+            // Server returns 0 as the DB DEFAULT for players who never
+            // picked. Treat that as "unset" so LeaderboardRow falls
+            // back to its rank-cycled variety (visually distinct rows)
+            // instead of every default player showing avatar 0.
+            // Real picks (server >= 1) are respected as-is. Trade-off:
+            // a player who explicitly picks avatar 0 renders as their
+            // rank-cycled default; acceptable given avatar 0 IS still
+            // one of the rank-cycle candidates.
+            avatarIdx: e.avatarIdx > 0 ? e.avatarIdx : null,
+            isYou: e.uuid === myUuid,           // highlight local player's row
+        }));
+    }
+}

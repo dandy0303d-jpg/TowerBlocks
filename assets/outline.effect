@@ -1,0 +1,75 @@
+// Backface-expansion outline effect
+// -----------------------------------------------------------------------------
+// Draws each mesh a second time, inflating vertices along their normals and
+// rendering only the BACK faces in a solid colour. From the camera's view this
+// forms a solid coloured silhouette that peeks out from behind the main mesh,
+// creating a clean cartoon-style outline.
+//
+// Usage
+//   1. Create a material referencing this effect (outline-mat.mtl).
+//   2. Add a second MeshRenderer child to Cube.prefab that uses the same mesh
+//      and the outline material.
+//   3. Tune outlineWidth in the material inspector (0.01–0.05 typical).
+
+CCEffect %{
+  techniques:
+  - name: opaque
+    passes:
+    - vert: outline-vs:vert
+      frag: outline-fs:frag
+      rasterizerState:
+        cullMode: front
+      depthStencilState:
+        depthTest: true
+        depthWrite: true
+      properties:
+        outlineColor:  { value: [0, 0, 0, 1], editor: { type: color } }
+        outlineWidth:  { value: 0.02, editor: { range: [0, 0.2, 0.005] } }
+}%
+
+CCProgram outline-vs %{
+  precision highp float;
+  #include <builtin/uniforms/cc-global>
+  #include <builtin/uniforms/cc-local>
+
+  in vec3 a_position;
+  in vec3 a_normal;
+
+  uniform Constants {
+    vec4  outlineColor;
+    float outlineWidth;
+  };
+
+  vec4 vert () {
+    // Radial-position expansion (NOT normal expansion).
+    //
+    // The brick mesh was authored with UnweldEdge — each face has its own
+    // vertex normals for crisp crystal facets. If we push along those hard
+    // normals the corners tear apart and the outline goes jagged. Instead,
+    // use the vertex's position as the expansion direction (mesh is
+    // centred at origin, so this is a smooth radial vector shared by all
+    // duplicated corner vertices).
+    //
+    // Then transform to view space and offset there so the thickness is
+    // scale-independent (Cube.prefab is scaled 1000×).
+    vec3 dirLocal = normalize(a_position);
+    vec4 posWorld = cc_matWorld * vec4(a_position, 1.0);
+    vec4 posView  = cc_matView  * posWorld;
+    vec3 dirView  = normalize(mat3(cc_matView) * mat3(cc_matWorld) * dirLocal);
+    posView.xyz  += dirView * outlineWidth;
+    return cc_matProj * posView;
+  }
+}%
+
+CCProgram outline-fs %{
+  precision highp float;
+
+  uniform Constants {
+    vec4  outlineColor;
+    float outlineWidth;
+  };
+
+  vec4 frag () {
+    return outlineColor;
+  }
+}%

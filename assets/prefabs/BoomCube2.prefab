@@ -1,0 +1,132 @@
+[
+  {
+    "__type__": "cc.Prefab",
+    "_name": "BoomCube2",
+    "_objFlags": 0,
+    "__editorExtras__": {},
+    "_native": "",
+    "data": {
+      "__id__": 1
+    },
+    "optimizationPolicy": 0,
+    "persistent": false
+  },
+  {
+    "__type__": "cc.Node",
+    "_name": "BoomCube2",
+    "_objFlags": 0,
+    "__editorExtras__": {},
+    "_parent": null,
+    "_children": [],
+    "_active": true,
+    "_components": [
+      {
+        "__id__": 2
+      }
+    ],
+    "_prefab": {
+      "__id__": 4
+    },
+    "_lpos": {
+      "__type__": "cc.Vec3",
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "_lrot": {
+      "__type__": "cc.Quat",
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "w": 1
+    },
+    "_lscale": {
+      "__type__": "cc.Vec3",
+      "x": 1,
+      "y": 1,
+      "z": 1
+    },
+    "_mobility": 0,
+    "_layer": 1073741824,
+    "_euler": {
+      "__type__": "cc.Vec3",
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "_id": ""
+  },
+  {
+    "__type__": "d43f70kjU1HFLeJ6FDOp2+x",
+    "_name": "",
+    "_objFlags": 0,
+    "__editorExtras__": {},
+    "node": {
+      "__id__": 1
+    },
+    "_enabled": true,
+    "__prefab": {
+      "__id__": 3
+    },
+    "bodyPrefab": {
+      "__uuid__": "28ea9a34-d724-4ae4-b2f4-9d7db95f9749",
+      "__expectedType__": "cc.Prefab"
+    },
+    "bodyColor": {
+      "__type__": "cc.Color",
+      "r": 248,
+      "g": 99,
+      "b": 22,
+      "a": 255
+    },
+    "bodySize": 1,
+    "level": 2,
+    "lozengeSize": 0.2,
+    "lozengeThickness": 0.2,
+    "lozengeDepth": 0.4,
+    "lozengeColor": {
+      "__type__": "cc.Color",
+      "r": 120,
+      "g": 220,
+      "b": 255,
+      "a": 255
+    },
+    "lozengeInnerColor": {
+      "__type__": "cc.Color",
+      "r": 20,
+      "g": 30,
+      "b": 60,
+      "a": 255
+    },
+    "lozengeSpacing": 1.6,
+    "starCount": 12,
+    "starSize": 0.05,
+    "starLifetimeMin": 0.05,
+    "starLifetimeMax": 0.2,
+    "starRadius": 0.65,
+    "starColor": {
+      "__type__": "cc.Color",
+      "r": 255,
+      "g": 255,
+      "b": 255,
+      "a": 255
+    },
+    "_id": ""
+  },
+  {
+    "__type__": "cc.CompPrefabInfo",
+    "fileId": "9buu2y3zFGYLY2VztAKgxL"
+  },
+  {
+    "__type__": "cc.PrefabInfo",
+    "root": {
+      "__id__": 1
+    },
+    "asset": {
+      "__id__": 0
+    },
+    "fileId": "4cqwVcLBdJfonaWSvd/Vlw",
+    "instance": null,
+    "targetOverrides": null
+  }
+]

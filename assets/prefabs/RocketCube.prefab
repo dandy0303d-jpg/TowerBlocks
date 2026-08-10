@@ -1,0 +1,144 @@
+[
+  {
+    "__type__": "cc.Prefab",
+    "_name": "RocketCube",
+    "_objFlags": 0,
+    "__editorExtras__": {},
+    "_native": "",
+    "data": {
+      "__id__": 1
+    },
+    "optimizationPolicy": 0,
+    "persistent": false
+  },
+  {
+    "__type__": "cc.Node",
+    "_name": "RocketCube",
+    "_objFlags": 0,
+    "__editorExtras__": {},
+    "_parent": null,
+    "_children": [],
+    "_active": true,
+    "_components": [
+      {
+        "__id__": 2
+      }
+    ],
+    "_prefab": {
+      "__id__": 4
+    },
+    "_lpos": {
+      "__type__": "cc.Vec3",
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "_lrot": {
+      "__type__": "cc.Quat",
+      "x": 0,
+      "y": 0,
+      "z": 0,
+      "w": 1
+    },
+    "_lscale": {
+      "__type__": "cc.Vec3",
+      "x": 1,
+      "y": 1,
+      "z": 1
+    },
+    "_mobility": 0,
+    "_layer": 1073741824,
+    "_euler": {
+      "__type__": "cc.Vec3",
+      "x": 0,
+      "y": 0,
+      "z": 0
+    },
+    "_id": ""
+  },
+  {
+    "__type__": "2992eu2a3VIbZDFW4BwvQ54",
+    "_name": "",
+    "_objFlags": 0,
+    "__editorExtras__": {},
+    "node": {
+      "__id__": 1
+    },
+    "_enabled": true,
+    "__prefab": {
+      "__id__": 3
+    },
+    "bodyPrefab": {
+      "__uuid__": "28ea9a34-d724-4ae4-b2f4-9d7db95f9749",
+      "__expectedType__": "cc.Prefab"
+    },
+    "bodyColor": {
+      "__type__": "cc.Color",
+      "r": 248,
+      "g": 99,
+      "b": 22,
+      "a": 255
+    },
+    "bodySize": 1,
+    "rocketBodyWidth": 0.2,
+    "rocketBodyHeight": 0.4,
+    "rocketBodyOffsetY": 0.02,
+    "rocketBodyColor": {
+      "__type__": "cc.Color",
+      "r": 248,
+      "g": 244,
+      "b": 230,
+      "a": 255
+    },
+    "rocketNoseWidth": 0.14,
+    "rocketNoseHeight": 0.14,
+    "rocketNoseOffsetY": 0.29,
+    "rocketNoseColor": {
+      "__type__": "cc.Color",
+      "r": 220,
+      "g": 70,
+      "b": 60,
+      "a": 255
+    },
+    "rocketFinWidth": 0.12,
+    "rocketFinHeight": 0.16,
+    "rocketFinOffsetX": 0.15,
+    "rocketFinOffsetY": -0.22,
+    "rocketFinColor": {
+      "__type__": "cc.Color",
+      "r": 248,
+      "g": 244,
+      "b": 230,
+      "a": 255
+    },
+    "iconDepth": 0.7,
+    "starCount": 12,
+    "starSize": 0.05,
+    "starLifetimeMin": 0.05,
+    "starLifetimeMax": 0.2,
+    "starRadius": 0.65,
+    "starColor": {
+      "__type__": "cc.Color",
+      "r": 255,
+      "g": 255,
+      "b": 255,
+      "a": 255
+    },
+    "_id": ""
+  },
+  {
+    "__type__": "cc.CompPrefabInfo",
+    "fileId": "38zAqdyfJIaoo4l7OF1BMT"
+  },
+  {
+    "__type__": "cc.PrefabInfo",
+    "root": {
+      "__id__": 1
+    },
+    "asset": {
+      "__id__": 0
+    },
+    "fileId": "93mK4TWy5L7J7iEtd47p+r",
+    "targetOverrides": null
+  }
+]
