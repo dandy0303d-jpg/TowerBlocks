@@ -7,7 +7,58 @@ temp/
 local/
 build/
 profiles/
-native
+
+#//////////////////////////
+# Native (Android / iOS) — TRACK build configs, IGNORE compile output
+#//////////////////////////
+# NOTE: use `native/*` (not `native/`) so specific paths can be re-
+# included with `!` below. `native/` would ignore the whole tree
+# unconditionally; git won't re-descend once a parent dir is excluded.
+native/*
+# Traverse into engine/ and its two sub-platforms.
+!native/engine/
+native/engine/*
+!native/engine/android/
+!native/engine/common/
+# ---- Android: keep Manifest / gradle / proguard / res, drop the rest.
+native/engine/android/*
+!native/engine/android/app/
+!native/engine/android/build.gradle
+!native/engine/android/build-cfg.json
+!native/engine/android/Pre-service.cmake
+!native/engine/android/Post-service.cmake
+!native/engine/android/CMakeLists.txt
+!native/engine/android/instantapp/
+!native/engine/android/res/
+native/engine/android/app/*
+!native/engine/android/app/AndroidManifest.xml
+!native/engine/android/app/build.gradle
+!native/engine/android/app/proguard-rules.pro
+!native/engine/android/app/res/
+!native/engine/android/app/src/
+native/engine/android/instantapp/*
+!native/engine/android/instantapp/AndroidManifest.xml
+!native/engine/android/instantapp/build.gradle
+!native/engine/android/instantapp/proguard-rules.pro
+# ---- Common C++ (Game.cpp / .h / cocos-version / cmake bits).
+native/engine/common/*
+!native/engine/common/Classes/
+!native/engine/common/CMakeLists.txt
+!native/engine/common/cocos-version.json
+!native/engine/common/xr.cmake
+!native/engine/common/localCfg.cmake
+# ---- iOS: channel/app-store will populate `native/engine/ios/` once
+# Cocos generates the Xcode project. Track the whole subtree for now;
+# refine later if compile products leak in.
+!native/engine/ios/
+# ---- Compile products / caches — always ignore, even under tracked dirs.
+native/engine/**/build/
+native/engine/**/.gradle/
+native/engine/**/.cxx/
+native/engine/**/CMakeCache.txt
+native/engine/**/CMakeFiles/
+native/engine/**/*.o
+native/engine/**/*.obj
 
 #//////////////////////////
 # NPM

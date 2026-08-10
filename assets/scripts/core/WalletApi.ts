@@ -90,18 +90,34 @@ export async function fetchWallet(): Promise<WalletState> {
     return httpGetJson<WalletState>(url, BACKEND_TIMEOUT_MS);
 }
 
-/** Simulate an in-app purchase: server credits the SKU's gems to
- *  the player's wallet. Real production replaces `paymentKind='mock'`
- *  with `'apple'` / `'google'` / `'stripe'` + receipt validation. */
+/** Credit a completed IAP to the player's wallet. Server dedups by
+ *  `transactionId` (idempotent — retrying the same call is safe) and,
+ *  when `paymentKind !== 'mock'`, forwards `platformReceipt` to
+ *  Google Play Developer API / Apple App Store validation before
+ *  crediting.
+ *
+ *  Main-branch code goes through `Providers.purchase.buy(sku)` first
+ *  to get a `PurchaseReceipt`, then passes that receipt here. Direct
+ *  callers of `topupWallet` should be rare — kept public so debug /
+ *  admin tools can grant gems in dev.
+ *
+ *  Payload shape (JSON body):
+ *      { uuid, sku, paymentKind, transactionId?, platformReceipt? }
+ *  The receipt fields are optional so old dev flows that just call
+ *  `topupWallet('gems_60')` still work (server defaults them). */
 export async function topupWallet(
-    sku: string,
-    paymentKind: 'mock' | 'stripe' | 'apple' | 'google' = 'mock',
+    sku:            string,
+    paymentKind:    'mock' | 'stripe' | 'apple' | 'google' = 'mock',
+    transactionId?: string,
+    platformReceipt?: string,
 ): Promise<TopupResult> {
     const url = `${BACKEND_BASE_URL}/player/wallet/topup`;
     return httpPostJson<TopupResult>(url, {
         uuid: PlayerProfile.uuid,
         sku,
         paymentKind,
+        transactionId,
+        platformReceipt,
     }, BACKEND_TIMEOUT_MS);
 }
 

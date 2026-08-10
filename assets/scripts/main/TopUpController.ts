@@ -55,6 +55,7 @@ import {
     formatPrice,
     WalletSku,
 } from '../core/WalletApi';
+import { Providers } from '../core/channels/Providers';
 
 const { ccclass, property } = _decorator;
 
@@ -174,6 +175,16 @@ export class TopUpController extends Component {
             log('[TopUp] preload skipped — panel not wired');
             return;
         }
+        // Boot the purchase provider so channel implementations
+        // (Google Play Billing, StoreKit) can bind their native
+        // services during the loading screen instead of on the first
+        // click. `MockPurchaseProvider.init()` is a no-op, so this is
+        // free on the main branch. Errors are logged but don't block
+        // preload — a broken IAP layer shouldn't prevent the game
+        // from booting; the purchase will just fail on click.
+        Providers.purchase.init().catch((err) => {
+            console.warn('[TopUp] purchase provider init failed:', err && err.message);
+        });
         // Same trick as LeaderboardController — briefly activate the
         // panel so wire() has a live tree to hang labels + click
         // handlers on. Loading overlay covers this so the flash is
@@ -292,21 +303,57 @@ export class TopUpController extends Component {
     }
 
     // ============================================================
-    //  Purchase (mock — direct, no confirm modal)
+    //  Purchase (channel-agnostic — goes through Providers.purchase)
     // ============================================================
 
+    /** Full purchase pipeline. Order matters — see the "correct
+     *  sequence" comment at the top of `IPurchaseProvider.ts`:
+     *
+     *    1. `purchase.buy()`      — native billing UI, returns receipt
+     *    2. `topupWallet(receipt)` — server verifies + credits gems
+     *    3. `purchase.consume()`  — mark receipt used so the player
+     *                                can buy the same SKU again
+     *
+     *  Step 3 fires ONLY after step 2 succeeds — losing a receipt
+     *  before the server credits gems means the player paid for
+     *  nothing (Play won't reissue the token). If step 3 fails after
+     *  step 2 succeeded, log it but treat the purchase as successful
+     *  — the gems are in the wallet; the platform will eventually
+     *  re-deliver the pending consume on next `buy()` acknowledgment. */
     private doPurchase(sku: WalletSku): void {
         this.showToast(t('topup.processing'));
-        topupWallet(sku.id, 'mock')
-            .then((res) => {
-                this.cachedBalance = res.balance;
-                this.paintBalance(res.balance);
-                this.showToast(
-                    t('topup.successBody', { n: res.gemsAdded.toString() }),
-                );
-                log(`[TopUp] purchase ok — sku=${sku.id} +${res.gemsAdded} gems, balance=${res.balance}`);
+        Providers.purchase.buy(sku.id)
+            .then((receipt) => {
+                // Step 2: send receipt to server for validation + credit.
+                return topupWallet(
+                    receipt.sku,
+                    receipt.paymentKind,
+                    receipt.transactionId,
+                    receipt.platformReceipt,
+                ).then((res) => {
+                    this.cachedBalance = res.balance;
+                    this.paintBalance(res.balance);
+                    this.showToast(
+                        t('topup.successBody', { n: res.gemsAdded.toString() }),
+                    );
+                    log(`[TopUp] purchase ok — sku=${sku.id} +${res.gemsAdded} gems, balance=${res.balance}, kind=${receipt.paymentKind}`);
+                    // Step 3: acknowledge / consume — best-effort, don't
+                    // roll back on failure. Server has already credited.
+                    Providers.purchase
+                        .consume(receipt.platformReceipt)
+                        .catch((consumeErr) => {
+                            console.warn(`[TopUp] consume failed (gems already credited): ${consumeErr.message}`);
+                        });
+                });
             })
             .catch((err) => {
+                // Distinguish user-cancelled from real errors — no toast
+                // for cancel (the native sheet already showed).
+                if (err && typeof err.message === 'string'
+                    && err.message.startsWith('user-cancelled')) {
+                    log(`[TopUp] purchase cancelled by user (sku=${sku.id})`);
+                    return;
+                }
                 this.showToast(t('topup.failBody', { reason: err.message }));
                 console.warn('[TopUp] purchase failed:', err.message);
             });
