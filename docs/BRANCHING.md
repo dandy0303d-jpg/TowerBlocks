@@ -1,27 +1,37 @@
 # Branching model
 
 This project ships to multiple app stores from one codebase. To keep
-main free of store-specific SDK clutter, we use a **main + long-lived
-channel branches + short-lived release branches** model.
+main clean and channel-branch merges predictable, we use a
+**develop + main + long-lived channel branches + short-lived release
+branches** model, plus a moving `stable-*` tag on the latest tested
+main commit.
 
 ```
-main                          — the game itself (pure gameplay + backend)
-├─ channel/google-play        — long-lived, only Google Play differences
-├─ channel/app-store          — long-lived, only App Store differences
-└─ release/{channel}-{ver}    — short-lived, cut per store submission
+develop                       — daily integration; unstable / in-progress
+   ↓ (merge after testing)
+main                          — stable baseline; only tested code lands here
+   │                            ← tagged `stable-YYYYMMDD` at each merge in
+   ├─ channel/google-play     — long-lived, only Google Play differences
+   ├─ channel/app-store       — long-lived, only App Store differences
+   └─ release/{channel}-{ver} — short-lived, cut per store submission
 ```
+
+**Golden rule**: `main` never has broken code. If you're not sure it's
+tested, it goes on `develop`. Channels only ever merge from `main` —
+never from `develop`.
 
 ---
 
 ## Where each kind of change lives
 
-| Kind of change                              | Branch                                |
+| Kind of change                              | Starts on                              |
 |---------------------------------------------|----------------------------------------|
-| Gameplay / balance / bug fix                | `main` (via a feature branch → PR)     |
-| New content (levels, art, sound)            | `main`                                 |
-| Backend endpoint / server schema            | `main`                                 |
-| i18n strings                                | `main`                                 |
-| Google Play Billing SDK integration         | `channel/google-play`                  |
+| Gameplay / balance / bug fix                | `feat/xxx` or `fix/xxx` → PR → `develop` → `main` |
+| New content (levels, art, sound)            | same as above                          |
+| Backend endpoint / server schema            | same as above                          |
+| i18n strings                                | same as above                          |
+| Emergency line-issue hotfix                 | `hotfix/xxx` from `main`, merge back into both `main` **and** `develop` |
+| Google Play Billing SDK integration         | `channel/google-play` directly         |
 | Firebase / GameCenter / AppsFlyer SDK       | corresponding channel branch           |
 | Manifest / build.gradle / Info.plist edits  | corresponding channel branch           |
 | Store-specific keystore, provisioning       | corresponding channel branch (local)   |
@@ -31,45 +41,60 @@ main                          — the game itself (pure gameplay + backend)
 
 ## Everyday workflow
 
-### Add a game feature
+### Add a game feature (day-to-day)
+
+```bash
+git checkout develop
+git pull                                # if remote exists
+git checkout -b feat/some-thing
+# ... code, commit ...
+git checkout develop
+git merge --no-ff feat/some-thing
+git branch -d feat/some-thing
+# ...test it (Cocos preview / unit tests / APK smoke test)...
+```
+
+Nothing on `develop` is guaranteed stable — it's your integration sandbox.
+
+### Promote develop → main (when a batch of work is verified)
 
 ```bash
 git checkout main
-git checkout -b feat/some-thing
-# ... code, commit ...
-git push -u origin feat/some-thing
-# Open PR to main, merge when ready
+git merge --no-ff develop -m "release: promote develop → main (yyyy-mm-dd)"
+# Tag the new stable snapshot (see "Stable tags" section).
+git tag stable-$(date +%Y%m%d)
 ```
 
-### Sync main → channel (do this at least weekly + before every release)
+After promoting, propagate to the channel branches so their next
+release has the new code:
 
 ```bash
 git checkout channel/google-play
 git merge --no-ff main
-# resolve any conflicts, then:
-git push
+git checkout channel/app-store
+git merge --no-ff main
+git checkout develop
 ```
 
-Repeat for `channel/app-store`.
-
 **Merge, don't rebase** — rebasing a long-lived shared branch rewrites
-history for anyone else who pulled it.
+history you or a teammate may already have pulled.
 
 ### Cut a release (submitting to a store)
 
 ```bash
 git checkout channel/google-play
-git pull                          # make sure it's fresh
+git pull                          # make sure it's fresh (remote if any)
 git checkout -b release/gp-1.2.0  # freeze the code that goes to review
 # ... bump versionCode / versionName in build.gradle ...
 git commit -am "chore(release): bump to 1.2.0"
 git tag v1.2.0-gp
-git push --set-upstream origin release/gp-1.2.0
-git push origin v1.2.0-gp
 # ... build APK/AAB from this branch, upload to Play Console ...
 ```
 
 ### Hotfix during store review
+
+The fix must land back on `main` and `develop` too — otherwise the next
+release will regress.
 
 ```bash
 git checkout release/gp-1.2.0
@@ -82,10 +107,77 @@ git tag v1.2.1-gp
 # then propagate the fix back home:
 git checkout main
 git cherry-pick <the-fix-commit-sha>
+git tag stable-$(date +%Y%m%d)              # main advanced, refresh the tag
+git checkout develop
+git cherry-pick <the-fix-commit-sha>
 git checkout channel/google-play
 git cherry-pick <the-fix-commit-sha>
-# (if the fix is store-specific, only cherry-pick to the channel)
+# (if the fix is store-specific, only cherry-pick to the channel and skip main/develop)
 ```
+
+### Line-issue hotfix (bug found in prod, not related to a pending release)
+
+```bash
+git checkout main
+git checkout -b hotfix/prod-crash
+# ... fix, commit ...
+git checkout main
+git merge --no-ff hotfix/prod-crash
+git tag stable-$(date +%Y%m%d)
+# Propagate down to develop so the next dev cycle has it:
+git checkout develop
+git merge --no-ff main
+# And out to channels for the next release:
+git checkout channel/google-play
+git merge --no-ff main
+git checkout channel/app-store
+git merge --no-ff main
+```
+
+---
+
+## Stable tags
+
+Every time `develop` merges into `main` (or a hotfix lands on `main`),
+tag the merge commit as `stable-YYYYMMDD`. These tags:
+
+- Give a one-line summary of "the state of main over time" — quickly
+  see all past stable snapshots.
+- Immutable: never move or delete a `stable-*` tag once created. If
+  two stable merges happen the same day, append a suffix (`-b`, `-2`).
+- Cheap way to bisect a regression: `git bisect` between two tags
+  narrows down which promote-to-main introduced a bug.
+
+**Making a tag** (already inlined above; here as a standalone recipe):
+
+```bash
+git checkout main
+git tag stable-$(date +%Y%m%d)
+# push if there's a remote:
+# git push origin stable-$(date +%Y%m%d)
+```
+
+**Listing stable snapshots**:
+
+```bash
+git tag -l "stable-*" | sort
+```
+
+**Checkout the latest stable** (useful when preparing an emergency
+build from the last known-good state):
+
+```bash
+git checkout $(git tag -l "stable-*" | sort | tail -1)
+```
+
+**Compare two stable states** (what changed between two snapshots):
+
+```bash
+git log --oneline stable-20260810..stable-20260820
+```
+
+The very first tag on this repo is `stable-init`, pointing at the
+initial main baseline before any develop-based promote workflow began.
 
 ---
 
