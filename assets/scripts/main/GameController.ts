@@ -2910,9 +2910,39 @@ export class GameController extends Component {
      *  of `rotateCylinder` so the main loop can call it BEFORE the piece
      *  realignment + cube sync, ensuring every consumer this frame
      *  reads the freshly-snapped/lerped value. */
+    /** Last-seen `totalRows` — used to detect a bottom-peel (which
+     *  drops totalRows by N and instantly lowers every row's world Y
+     *  by N * scale * CELL). Compensating for that snap makes the
+     *  post-cap "tower shifts down" animate smoothly. */
+    private lastKnownTotalRows: number = -1;
+
     private updateBoardYOffset(): void {
         const totalRows = this.gameState?.state.board.length ?? VISIBLE_ROWS;
         const target = this.targetBoardYOffset(totalRows);
+
+        // Peel-animation compensation.
+        //
+        // When `manageEndlessBoard` splices bottom-most gray rows
+        // (grayCount > cap), `totalRows` drops. Every remaining row's
+        // local Y = Y_BOTTOM + (totalRows-1-R)*CELL — a drop in
+        // totalRows subtracts CELL from every row's local Y, which
+        // translates to a `scale*CELL` (0.75 unit) drop in world Y for
+        // the ENTIRE tower on the very next render.
+        //
+        // Left alone, that's an instantaneous teleport — no animation.
+        // Compensating: bump `currentBoardYOffsetVal` UP by the same
+        // amount right after the peel, so the tower appears to hold
+        // its old position for a frame. The lerp below then eases the
+        // offset back toward `target` (unchanged post-cap), which
+        // visually plays as a smooth 0.75-unit slide-down of the whole
+        // tower — matching the pre-cap `pendingShift` animation and
+        // fixing the "no visible drop after 20 rows" report.
+        if (this.lastKnownTotalRows > 0 && totalRows < this.lastKnownTotalRows) {
+            const peeled = this.lastKnownTotalRows - totalRows;
+            this.currentBoardYOffsetVal += peeled * GameController.TOWER_VIEW_SCALE * CELL_SIZE;
+        }
+        this.lastKnownTotalRows = totalRows;
+
         // Snap on first frame after a new board, ease toward the target
         // afterwards. `0.18` is a critically-damped feel: catches up to
         // a single-row delta in ~6 frames at 60fps, no overshoot, no
@@ -3160,6 +3190,7 @@ export class GameController extends Component {
             this._activeLevelIdx = idx;
             this.gameState.startLevel(lvl);
             this.boardYOffsetInitialised = false;
+            this.lastKnownTotalRows = -1;
             this.prevPieceRef = null;
             this.fallAnimations.clear();
             this.pendingFallMoves.clear();
@@ -3803,6 +3834,7 @@ export class GameController extends Component {
         // first piece can then draw the custom shape.
         this.gameState.newGame(customPiece);
         this.boardYOffsetInitialised = false;
+        this.lastKnownTotalRows = -1;
         log('[TowerBlocks] endless mode started.');
     }
 
@@ -3832,6 +3864,7 @@ export class GameController extends Component {
         this.gameState.tutorialActive = true;
         this.gameState.startLevel(buildTutorialLevel());
         this.boardYOffsetInitialised = false;
+        this.lastKnownTotalRows = -1;
         log('[TowerBlocks] tutorial started');
     }
 
@@ -3874,6 +3907,7 @@ export class GameController extends Component {
         this._activeLevelIdx = -1;
         this.gameState.newBlindGame();
         this.boardYOffsetInitialised = false;
+        this.lastKnownTotalRows = -1;
         // Flip the top column indicator on. setHudVisible also flips
         // this based on mode, but calling here handles direct start
         // paths (retry from result panel) without relying on a
