@@ -1344,25 +1344,27 @@ export class GameState {
         } else {
             // Endless / blind mode branch (both use trapped-hole + stack-
             // too-tall failure model rather than the level-completion model).
-            // Blind mode fires per-row `onPartialShatter` before the peel
-            // wipes the row, so the player gets the same rainbow-flash
-            // "row cleared" FX level mode has (via `clearLines`). Endless
-            // skips the shatter — the row stays visible as gray so a
-            // per-row flash would just make the freshly-converted band
-            // strobe once before settling; the `onEndlessRowsFilled`
-            // sound cue below covers audio for that mode.
+            // Both modes now fire per-row `onPartialShatter` for the
+            // freshly-filled colored content, giving the same rainbow-
+            // flash "row cleared" FX level mode has (via `clearLines`).
+            //   - Blind: the row is then peeled, so the flash reads as
+            //     "row cleared and gone" (classic tetris feel).
+            //   - Endless: the row stays as gray after the flash — the
+            //     shatter animates the "just filled" moment before the
+            //     cells settle into the gray foundation. Was skipped
+            //     earlier out of concern about a strobe artefact; user
+            //     wants the visual cue back for mortar-filled rows too.
             const filled = convertCompleteRowsToGray(
                 this.state,
-                this.mode === 'blind'
-                    ? (r, content) => this.hooks.onPartialShatter?.(r, content)
-                    : undefined,
+                (r, content) => this.hooks.onPartialShatter?.(r, content),
             );
-            // `onEndlessRowsFilled` plays a single `line_clear` per lock;
-            // suppress it in blind mode because `onPartialShatter` above
-            // already fires `line_clear` per row (avoids double-audio).
-            if (filled > 0 && this.mode !== 'blind') {
-                this.hooks.onEndlessRowsFilled?.(filled);
-            }
+            // `onEndlessRowsFilled` used to play `line_clear` once per
+            // lock as a fallback for modes without shatter. Now shatter
+            // fires for BOTH endless and blind and it plays `line_clear`
+            // itself per row — suppress this hook entirely to avoid
+            // double-audio. Kept in the hook interface for potential
+            // future modes.
+            void filled;
             // (naturalClearsThisLock was already captured before detonate; in
             // endless that equals `filled` plus any rows the col-blast skip
             // logic preserved. It's the correct figure for the bomb reward.)
@@ -1872,21 +1874,19 @@ export class GameState {
             }
         } else {
             // Endless / blind (post-storm-resolution branch). Same
-            // per-row shatter wiring as the main convertCompleteRowsToGray
-            // call above — blind mode gets the rainbow-flash FX for each
-            // freshly-filled row so peel-per-fill doesn't silently swallow
-            // the "row cleared" cue. Endless-only for the sound hook to
-            // avoid double audio in blind (`onPartialShatter` also plays
-            // `line_clear`).
+            // shatter wiring as the primary convertCompleteRowsToGray
+            // call above — both modes fire per-row `onPartialShatter`
+            // for the freshly-filled colored content so the player
+            // gets the rainbow-flash cue whether the row came from a
+            // normal lock or from a storm follow-up (mortar drops
+            // hitting the pile after the piece already locked). Also
+            // covers the "灰泥填满 24 列没特效" case reported by the
+            // user — mortar-triggered fills go through here.
             const filledPost = convertCompleteRowsToGray(
                 this.state,
-                this.mode === 'blind'
-                    ? (r, content) => this.hooks.onPartialShatter?.(r, content)
-                    : undefined,
+                (r, content) => this.hooks.onPartialShatter?.(r, content),
             );
-            if (filledPost > 0 && this.mode !== 'blind') {
-                this.hooks.onEndlessRowsFilled?.(filledPost);
-            }
+            void filledPost;   // `onEndlessRowsFilled` suppressed — see main branch above
             if (checkTrappedHole(this.state)) { this.failGame(1); return; }
             // `checkStackTooTall` removed — see comment above.
             const rowsAdded = manageEndlessBoard(this.state);
