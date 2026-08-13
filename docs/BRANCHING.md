@@ -13,8 +13,27 @@ main                          — stable baseline; only tested code lands here
    │                            ← tagged `stable-YYYYMMDD` at each merge in
    ├─ channel/google-play     — long-lived, only Google Play differences
    ├─ channel/app-store       — long-lived, only App Store differences
+   ├─ channel/huawei          — (未来) 华为应用市场
+   ├─ channel/vivo            — (未来) Vivo 应用商店
+   ├─ channel/xiaomi          — (未来) 小米应用商店 / Get Apps
+   ├─ channel/oppo            — (未来) OPPO 软件商店
+   ├─ channel/taptap          — (未来) TapTap 国内 & 国际
    └─ release/{channel}-{ver} — short-lived, cut per store submission
 ```
+
+**Channel topology = flat**. Each store branch sits at the same level,
+merges from `main` directly. No intermediate `channel/android` layer
+even for the multi-Android-channel case — the truly shared Android
+code (Manifest permissions, common gradle config, AppActivity.java
+base, launcher icons) lives on `main`, and channels only diverge on
+store-specific SDK integration (IAP / login / push / ads / analytics),
+which is completely different per store and can't be usefully shared.
+
+Flat structure keeps merges to a single hop (`main → channel/xxx`) and
+avoids the "channel/android/base → channel/android/huawei" two-step
+merge that trips up multi-layer nesting. If channel count ever grows
+past 8-10 with significant shared Android-only code, revisit and
+consider adding a `channel/android` intermediate layer at that point.
 
 **Golden rule**: `main` never has broken code. If you're not sure it's
 tested, it goes on `develop`. Channels only ever merge from `main` —
@@ -76,8 +95,37 @@ git merge --no-ff main
 git checkout develop
 ```
 
+Or use the helper script (auto-loops over every `channel/*` branch,
+so newly added channels get synced automatically):
+
+```bash
+./scripts/promote-to-channels.sh
+```
+
 **Merge, don't rebase** — rebasing a long-lived shared branch rewrites
 history you or a teammate may already have pulled.
+
+### Add a new channel (e.g. 华为 / Vivo / 小米)
+
+```bash
+git checkout main
+git checkout -b channel/huawei
+# On the new branch:
+#   1. Install channel SDK jars/aars in native/engine/android/app/libs/
+#   2. Edit native/engine/android/app/build.gradle → add SDK deps
+#   3. Edit native/engine/android/app/AndroidManifest.xml → add
+#      SDK permissions & <meta-data> (Huawei App ID etc.)
+#   4. Create assets/scripts/channels/huawei/HuaweiPurchaseProvider.ts
+#      (implements IPurchaseProvider using Huawei IapClient)
+#   5. Register in boot: Providers.setPurchase(new HuaweiPurchaseProvider())
+#   6. Update this doc's channel table + add to promote-to-channels.sh
+git add -A
+git commit -m "feat(huawei): integrate HMS Core IAP"
+```
+
+Then update `scripts/promote-to-channels.sh` to include the new branch
+(it auto-discovers via `git for-each-ref refs/heads/channel/*`, so no
+edit needed unless you want to skip one).
 
 ### Cut a release (submitting to a store)
 
