@@ -32,6 +32,11 @@ import { LeaderboardController } from './LeaderboardController';
 import { TopUpController } from './TopUpController';
 import { LevelProgress } from '../core/LevelProgress';
 import { t } from '../core/i18n/I18n';
+// Channel boot side-effect — registers StoreKitProvider on iOS.
+// Module load runs before LoadingController.start(), so Providers.purchase
+// is already wired by the time any UI can trigger a buy(). Kept as an
+// import (not a call) to hide the platform detail from main code.
+import '../channels/apple/AppStoreBoot';
 
 const { ccclass, property } = _decorator;
 

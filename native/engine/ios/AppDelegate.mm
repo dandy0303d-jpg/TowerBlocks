@@ -32,6 +32,7 @@
 #include "platform/ios/IOSPlatform.h"
 #import "platform/ios/AppDelegateBridge.h"
 #import "service/SDKWrapper.h"
+#import "service/iap/PurchaseBridgeGlue.h"
 
 @implementation AppDelegate
 @synthesize window;
@@ -57,6 +58,14 @@
 
     [self.window makeKeyAndVisible];
     [appDelegateBridge application:application didFinishLaunchingWithOptions:launchOptions];
+
+    // Register the StoreKit 2 bridge so JS can drive purchases via
+    // native.bridge.sendToNative("iap.*", ...). Safe to call multiple
+    // times — internally guarded by dispatch_once.
+    if (@available(iOS 15.0, *)) {
+        [PurchaseBridgeGlue registerWithCocos];
+    }
+
     return YES;
 }
 
