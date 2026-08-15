@@ -41,6 +41,11 @@ import {
 import { SoundManager } from '../audio/SoundManager';
 import { BgmManager } from '../audio/BgmManager';
 import { LevelProgress } from '../core/LevelProgress';
+// SIWA on channel/app-store. Imports resolve to no-op / iOS-only paths;
+// on non-iOS platforms AppleAuth.signIn() rejects with 'platform-unsupported'
+// so the button click handler surfaces a benign toast rather than crashing.
+import { AppleAuth } from '../channels/apple/AppleAuth';
+import { linkAppleAccount, fetchLinkedAccounts } from '../channels/apple/AppleAuthApi';
 
 const { ccclass, property } = _decorator;
 
@@ -1375,7 +1380,7 @@ export class MenuController extends Component {
         if (this.authoredSettingsAppleLoginButton) {
             this.authoredSettingsAppleLoginButton.node.off('click');
             this.authoredSettingsAppleLoginButton.node.on('click',
-                () => log('[Settings] Apple login tapped — SDK integration TODO'), this);
+                () => this.handleAppleLoginClick(), this);
         }
         // ---- Google / Apple linked toggles (stubs) ----
         // The 'toggle' event fires AFTER the check state flips. For now
@@ -1441,6 +1446,41 @@ export class MenuController extends Component {
             sys.openURL(url);
         } catch (err) {
             console.warn('[Settings] sys.openURL failed:', err);
+        }
+    }
+
+    /** Sign in with Apple → link current guest uuid → refresh UI.
+     *
+     *  If already linked, no-op with a friendly log.
+     *  If Apple returns user-cancelled, silent — user just backed out.
+     *  Otherwise log the error kind; UI shows unchanged (toggle stays OFF).
+     *
+     *  In-flight guard: the button node is disabled while the sheet is
+     *  up, so double-taps don't trigger overlapping flows. */
+    private async handleAppleLoginClick(): Promise<void> {
+        if (PlayerProfile.accountType === 'apple') {
+            log('[Settings] Apple already linked — no-op');
+            return;
+        }
+        const btnNode = this.authoredSettingsAppleLoginButton?.node;
+        if (btnNode) btnNode.getComponent(Button)!.interactable = false;
+        try {
+            log('[Settings] Apple login tapped — starting SIWA flow');
+            const cred = await AppleAuth.signIn();
+            log(`[Settings] SIWA success — appleSub=${cred.appleSub.substring(0, 12)}..., calling /player/link/apple`);
+            const result = await linkAppleAccount(cred.identityToken, cred.appleSub);
+            log(`[Settings] link result — linked=${result.linked}, alreadyLinked=${result.alreadyLinked}`);
+            PlayerProfile.setAccountType('apple');
+            this.refreshAuthoredSettingsValues();
+        } catch (err) {
+            const msg = (err as Error).message ?? String(err);
+            if (msg.startsWith('user-cancelled') || msg.startsWith('platform-unsupported')) {
+                log(`[Settings] SIWA aborted: ${msg}`);
+                return;
+            }
+            console.warn(`[Settings] SIWA / link failed: ${msg}`);
+        } finally {
+            if (btnNode) btnNode.getComponent(Button)!.interactable = true;
         }
     }
 
@@ -1632,7 +1672,9 @@ export class MenuController extends Component {
         }
         // Google / Apple toggles — reflect the real bind state. Until
         // real OAuth is wired every player is `anonymous`, so both
-        // toggles read as OFF.
+        // toggles read as OFF. First paint is from local state (fast,
+        // no flash); the server-side reconcile below then corrects
+        // any drift.
         const acct = PlayerProfile.accountType;
         if (this.authoredSettingsGoogleToggle) {
             this.authoredSettingsGoogleToggle.isChecked = (acct === 'google');
@@ -1643,6 +1685,55 @@ export class MenuController extends Component {
         // Avatar Sprite — repaint from PlayerProfile in case the player
         // picked a new one since the last open.
         this.paintSettingsAvatar();
+        // Ask the server what we're ACTUALLY bound to and reconcile
+        // local state / toggles. Handles the case where:
+        //   - the local accountType is stale (localStorage restored
+        //     from an old backup, or user manually cleared)
+        //   - the server-side link was removed (admin action, refund
+        //     of Apple ID, etc.)
+        //   - the app was reinstalled and the local state got out of
+        //     sync with the recovered uuid
+        this.reconcileLinkedAccountsFromServer();
+    }
+
+    /** Fetch the server-authoritative list of providers this uuid is
+     *  bound to and repaint the Settings toggles + label. Silent on
+     *  network failure — local state (already painted) is a fine
+     *  fallback. Fire-and-forget from refreshAuthoredSettingsValues. */
+    private reconcileLinkedAccountsFromServer(): void {
+        fetchLinkedAccounts()
+            .then((r) => {
+                const hasApple  = r.providers.indexOf('apple')  >= 0;
+                const hasGoogle = r.providers.indexOf('google') >= 0;
+                // Update local PlayerProfile so subsequent reads (e.g.
+                // handleAppleLoginClick's early-out) see the truth.
+                // Priority order: apple > google > anonymous. Since we
+                // only support one label at a time today, apple wins
+                // if both are ever bound. Revisit when we have UI to
+                // display multiple bindings simultaneously.
+                const newAcct = hasApple  ? 'apple'
+                              : hasGoogle ? 'google'
+                              : 'anonymous';
+                if (PlayerProfile.accountType !== newAcct) {
+                    log(`[Settings] server reconcile — accountType ${PlayerProfile.accountType} → ${newAcct}`);
+                    PlayerProfile.setAccountType(newAcct);
+                }
+                // Repaint the toggles with the server truth.
+                if (this.authoredSettingsGoogleToggle) {
+                    this.authoredSettingsGoogleToggle.isChecked = hasGoogle;
+                }
+                if (this.authoredSettingsAppleToggle) {
+                    this.authoredSettingsAppleToggle.isChecked = hasApple;
+                }
+                // Repaint the account-type label as well.
+                if (this.authoredSettingsAccountTypeLabel) {
+                    this.authoredSettingsAccountTypeLabel.string
+                        = this.accountTypeText(PlayerProfile.accountType);
+                }
+            })
+            .catch((err) => {
+                console.warn('[Settings] fetchLinkedAccounts failed (offline?):', err?.message);
+            });
     }
 
     /** Translate PlayerProfile.accountType into the settings-label

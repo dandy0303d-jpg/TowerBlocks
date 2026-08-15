@@ -116,6 +116,16 @@ class Profile {
         return this._accountType;
     }
 
+    /** Persist a change to the player's linked-account kind. Called
+     *  by the channel-specific link handlers after a successful bind
+     *  (e.g. Sign in with Apple returns → set to 'apple'). Also used
+     *  on unbind flows to demote back to 'anonymous'. */
+    setAccountType(next: AccountType): void {
+        this._accountType = next;
+        sys.localStorage.setItem(ACCOUNT_KEY, next);
+        console.log(`[PlayerProfile] setAccountType → ${next}`);
+    }
+
     /** Persist a new display name. Server-side truncates to MAX_NAME_LEN.
      *  Ignored for empty / whitespace-only strings so accidental clears
      *  don't wipe the current name. Also fires a fire-and-forget PUT
