@@ -145,6 +145,61 @@ class Profile {
         console.log('[PlayerProfile] in-memory state wiped');
     }
 
+    /** Swap the current player identity to a RECOVERED one — used by
+     *  the "this Apple ID is bound to another account, restore it?"
+     *  UX. Called after /player/login/apple returns the previously-
+     *  linked uuid + a freshly-minted bearer.
+     *
+     *  This is destructive — the guest account the caller was on
+     *  BEFORE recovery is abandoned (server-side it's still there,
+     *  just no longer connected to this device). Not undoable
+     *  without another /login/apple round-trip.
+     *
+     *  We derive expEpochSec by decoding the bearer's middle segment
+     *  (base64url(expEpochSec)) so we don't need the server to return
+     *  it separately.
+     *
+     *  Avatar is deliberately NOT reset — many players change avatar
+     *  BEFORE binding Apple, and we want them to keep it. If the
+     *  recovered account had a different avatar on another device,
+     *  the recovered device's local pick wins locally, and the
+     *  server-side one syncs down on next fetch. */
+    swapToRecoveredAccount(uuid: string, bearer: string): void {
+        // Decode the token's exp claim (second base64url segment).
+        let expEpochSec = 0;
+        try {
+            const parts = bearer.split('.');
+            if (parts.length === 3) {
+                const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+                const pad = b64.length % 4;
+                const b64Padded = pad ? b64 + '='.repeat(4 - pad) : b64;
+                expEpochSec = parseInt(atob(b64Padded), 10);
+            }
+        } catch {
+            // Fall through; server-side we'll fail the very next
+            // authenticated call and re-register anonymously.
+        }
+
+        // In-memory: reset then set new identity.
+        this._uuid = uuid;
+        this._name = null;               // name getter will fall back to 'user-<hex>' until updated
+        this._accountType = 'apple';
+        // _avatarIdx intentionally kept
+
+        // Persist to localStorage.
+        sys.localStorage.setItem(UUID_KEY, uuid);
+        sys.localStorage.setItem(ACCOUNT_KEY, 'apple');
+        sys.localStorage.setItem(TOKEN_KEY, bearer);
+        sys.localStorage.setItem(TOKEN_EXP_KEY, String(expEpochSec));
+        // Clear the old NAME_KEY so the getter falls back correctly.
+        sys.localStorage.removeItem(NAME_KEY);
+
+        // Wire the new bearer into the Http module for subsequent calls.
+        setBearerToken(bearer);
+
+        console.log(`[PlayerProfile] swapped to recovered account: ${uuid} (accountType=apple)`);
+    }
+
     /** Persist a new display name. Server-side truncates to MAX_NAME_LEN.
      *  Ignored for empty / whitespace-only strings so accidental clears
      *  don't wipe the current name. Also fires a fire-and-forget PUT

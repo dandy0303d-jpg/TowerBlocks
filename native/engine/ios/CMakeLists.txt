@@ -53,7 +53,7 @@ list(APPEND CC_ALL_SOURCES
 
 # Bundle the privacy manifest (Apple 2024-05 requirement) into the
 # built .app. Adding to CC_ALL_SOURCES + marking as a Resource is the
-# Xcode-native way to have it end up at CocosGame.app/PrivacyInfo.xcprivacy
+# Xcode-native way to have it end up at Tetri Tower: To the Heavens.app/PrivacyInfo.xcprivacy
 # (the exact path Apple's App Store validator scans for).
 set(PRIVACY_MANIFEST ${CC_PROJECT_DIR}/PrivacyInfo.xcprivacy)
 list(APPEND CC_ALL_SOURCES ${PRIVACY_MANIFEST})

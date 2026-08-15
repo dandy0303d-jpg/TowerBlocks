@@ -215,6 +215,9 @@ export const ZH: Record<string, string> = {
     'settings.deleteAccount.confirm':  '再次点击确认删除',
     'settings.deleteAccount.pending':  '删除中...',
     'settings.deleteAccount.failed':   '删除失败，请重试',
+    'settings.appleRecovery.confirm':  '此 Apple 已绑其他账号，再点确认恢复',
+    'settings.appleRecovery.pending':  '恢复中...',
+    'settings.appleRecovery.failed':   '恢复失败，请重试',
     // 钻石不足弹窗
     'gems.insufficient': '钻石不足\n需要 {need}，当前 {have}',
     'gems.goTopUp':      '去充值',

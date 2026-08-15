@@ -210,6 +210,9 @@ export const EN: Record<string, string> = {
     'settings.deleteAccount.confirm':  'Tap again to confirm delete',
     'settings.deleteAccount.pending':  'Deleting...',
     'settings.deleteAccount.failed':   'Delete failed, try again',
+    'settings.appleRecovery.confirm':  'This Apple ID is linked elsewhere. Tap again to restore',
+    'settings.appleRecovery.pending':  'Restoring...',
+    'settings.appleRecovery.failed':   'Restore failed, try again',
     // Not-enough-gems popup
     'gems.insufficient': 'Not enough gems\nNeed {need}, have {have}',
     'gems.goTopUp':      'Top Up',

@@ -209,6 +209,9 @@ export const KO: Record<string, string> = {
     'settings.deleteAccount.confirm':  '삭제하려면 다시 탭하세요',
     'settings.deleteAccount.pending':  '삭제 중...',
     'settings.deleteAccount.failed':   '삭제 실패, 다시 시도',
+    'settings.appleRecovery.confirm':  '이 Apple 계정은 다른 계정과 연결됨. 다시 탭하여 복구',
+    'settings.appleRecovery.pending':  '복구 중...',
+    'settings.appleRecovery.failed':   '복구 실패, 다시 시도',
     // 다이아 부족 팝업
     'gems.insufficient': '다이아가 부족합니다\n필요 {need}, 보유 {have}',
     'gems.goTopUp':      '충전하러 가기',

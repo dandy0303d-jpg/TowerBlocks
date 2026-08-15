@@ -45,7 +45,7 @@ import { LevelProgress } from '../core/LevelProgress';
 // on non-iOS platforms AppleAuth.signIn() rejects with 'platform-unsupported'
 // so the button click handler surfaces a benign toast rather than crashing.
 import { AppleAuth } from '../channels/apple/AppleAuth';
-import { linkAppleAccount, fetchLinkedAccounts } from '../channels/apple/AppleAuthApi';
+import { linkAppleAccount, fetchLinkedAccounts, loginWithApple } from '../channels/apple/AppleAuthApi';
 import { deletePlayerSelf } from '../core/PlayerApi';
 
 const { ccclass, property } = _decorator;
@@ -1478,9 +1478,11 @@ export class MenuController extends Component {
         }
         const btnNode = this.authoredSettingsAppleLoginButton?.node;
         if (btnNode) btnNode.getComponent(Button)!.interactable = false;
+        let cachedIdentityToken: string | null = null;
         try {
             log('[Settings] Apple login tapped — starting SIWA flow');
             const cred = await AppleAuth.signIn();
+            cachedIdentityToken = cred.identityToken;
             log(`[Settings] SIWA success — appleSub=${cred.appleSub.substring(0, 12)}..., calling /player/link/apple`);
             const result = await linkAppleAccount(cred.identityToken, cred.appleSub, cred.authorizationCode);
             log(`[Settings] link result — linked=${result.linked}, alreadyLinked=${result.alreadyLinked}`);
@@ -1492,10 +1494,98 @@ export class MenuController extends Component {
                 log(`[Settings] SIWA aborted: ${msg}`);
                 return;
             }
+            // "This Apple ID is bound to another player" — offer recovery.
+            // The server returns 409 with body {"error":"apple already linked"}
+            // which Http.ts serializes as `HTTP 409: {"error":"..."}`.
+            if (msg.includes('apple already linked') && cachedIdentityToken) {
+                this.armAppleRecovery(cachedIdentityToken);
+                return;
+            }
             console.warn(`[Settings] SIWA / link failed: ${msg}`);
         } finally {
             if (btnNode) btnNode.getComponent(Button)!.interactable = true;
         }
+    }
+
+    /** Double-tap-confirm arm state for account recovery. When null,
+     *  the button is idle; when non-null, a second tap within
+     *  RECOVERY_ARM_WINDOW_MS commits the recovery. */
+    private appleRecoveryArm: {
+        identityToken: string;
+        timer: number;
+    } | null = null;
+
+    private static readonly RECOVERY_ARM_WINDOW_MS = 10_000;
+
+    /** First failed link with "apple already linked" — arm a recovery
+     *  window. Second tap within 10s calls /player/login/apple, swaps
+     *  the local uuid/bearer to the recovered account, and refreshes
+     *  the UI. Times out silently after the window. */
+    private armAppleRecovery(identityToken: string): void {
+        const btn = this.authoredSettingsAppleLoginButton;
+        const lab = btn?.getComponentInChildren(Label);
+
+        // If already armed, this IS the second tap — commit.
+        if (this.appleRecoveryArm) {
+            clearTimeout(this.appleRecoveryArm.timer);
+            const token = this.appleRecoveryArm.identityToken;
+            this.appleRecoveryArm = null;
+            void this.commitAppleRecovery(token);
+            return;
+        }
+
+        // First tap — arm.
+        log('[Settings] Apple already linked to another player — recovery armed (10s)');
+        if (lab) lab.string = t('settings.appleRecovery.confirm');
+        // Highlight button to signal "action pending".
+        const bgSprite = btn?.node.getComponent(Sprite);
+        const originalColor = bgSprite ? bgSprite.color.clone() : null;
+        if (bgSprite) bgSprite.color = new Color(255, 149, 0, 255);   // orange-ish
+
+        const timer = setTimeout(() => {
+            this.appleRecoveryArm = null;
+            log('[Settings] Apple recovery window timed out — reset');
+            if (lab) lab.string = t('settings.account.apple');   // reuse the "Apple 登录" i18n key
+            if (bgSprite && originalColor) bgSprite.color = originalColor;
+        }, MenuController.RECOVERY_ARM_WINDOW_MS) as unknown as number;
+
+        this.appleRecoveryArm = { identityToken, timer };
+    }
+
+    /** Actually recover the linked account.
+     *  1. POST /player/login/apple with the identity token
+     *  2. Server returns {uuid, bearer} for the previously-linked account
+     *  3. Swap local PlayerProfile state (uuid, bearer, accountType='apple')
+     *  4. Refresh Settings UI — wallet / linked accounts re-fetch under the new uuid */
+    private async commitAppleRecovery(identityToken: string): Promise<void> {
+        const btn = this.authoredSettingsAppleLoginButton;
+        const lab = btn?.getComponentInChildren(Label);
+        const bgSprite = btn?.node.getComponent(Sprite);
+        if (btn) btn.getComponent(Button)!.interactable = false;
+        if (lab) lab.string = t('settings.appleRecovery.pending');
+
+        try {
+            log('[Settings] Apple recovery — calling /player/login/apple');
+            const r = await loginWithApple(identityToken);
+            log(`[Settings] Apple recovery success — recovered uuid=${r.uuid}`);
+            PlayerProfile.swapToRecoveredAccount(r.uuid, r.bearer);
+            // Reset button label / color; refreshAuthoredSettingsValues
+            // will then repaint everything (wallet, toggles, account label).
+            if (lab) lab.string = t('settings.account.apple');
+            if (bgSprite) bgSprite.color = new Color(255, 255, 255, 255);
+            this.refreshAuthoredSettingsValues();
+        } catch (err) {
+            const msg = (err as Error).message ?? String(err);
+            console.warn(`[Settings] Apple recovery failed: ${msg}`);
+            if (lab) lab.string = t('settings.appleRecovery.failed');
+            setTimeout(() => {
+                if (btn) btn.getComponent(Button)!.interactable = true;
+                if (lab) lab.string = t('settings.account.apple');
+                if (bgSprite) bgSprite.color = new Color(255, 255, 255, 255);
+            }, 3000);
+            return;
+        }
+        if (btn) btn.getComponent(Button)!.interactable = true;
     }
 
     /** Double-tap-confirm state for the Delete Account button. When
