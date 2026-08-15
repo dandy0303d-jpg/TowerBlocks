@@ -126,6 +126,25 @@ class Profile {
         console.log(`[PlayerProfile] setAccountType → ${next}`);
     }
 
+    /** Wipe ALL in-memory state — used by the delete-account flow.
+     *  After this, PlayerProfile behaves as if the app just started
+     *  fresh with no prior state. Caller MUST also clear localStorage
+     *  keys BEFORE calling this (otherwise the getters will re-read
+     *  from storage on next access), AND MUST then re-run
+     *  ensureRegistered() to get a new server-issued anonymous account.
+     *
+     *  Also clears the Http module's bearer-token cache so subsequent
+     *  requests don't send a stale token that no longer matches any
+     *  server-side player row. */
+    resetInMemoryState(): void {
+        this._uuid = null;
+        this._name = null;
+        this._accountType = undefined;   // force reload from localStorage on next read
+        this._avatarIdx = null;
+        setBearerToken(null);
+        console.log('[PlayerProfile] in-memory state wiped');
+    }
+
     /** Persist a new display name. Server-side truncates to MAX_NAME_LEN.
      *  Ignored for empty / whitespace-only strings so accidental clears
      *  don't wipe the current name. Also fires a fire-and-forget PUT

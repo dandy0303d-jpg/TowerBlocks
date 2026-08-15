@@ -1558,23 +1558,35 @@ export class MenuController extends Component {
         try {
             log('[Settings] Delete account — calling DELETE /player/self');
             await deletePlayerSelf();
-            log('[Settings] Server-side delete OK — wiping localStorage');
-            // Wipe every player-scoped key. Nuclear option (localStorage.clear())
-            // would also wipe settings like volume/language which players
-            // probably want to keep — enumerate the player-identity keys
-            // explicitly. Anything else PlayerProfile / Http may cache
-            // in-module state also needs to be reset in ensureRegistered.
+            log('[Settings] Server-side delete OK — wiping local state');
+            // Wipe every player-scoped localStorage key. Nuclear option
+            // (localStorage.clear()) would also wipe settings like
+            // volume/language which players probably want to keep —
+            // enumerate the player-identity keys explicitly.
             sys.localStorage.removeItem('tt.player.uuid');
             sys.localStorage.removeItem('tt.player.name');
             sys.localStorage.removeItem('tt.player.accountType');
             sys.localStorage.removeItem('tt.player.token');
             sys.localStorage.removeItem('tt.player.tokenExpEpochSec');
             sys.localStorage.removeItem('tt.player.avatarIdx');
-            log('[Settings] Local storage wiped — reloading scene into guest state');
-            // Reload the current scene. LoadingController → ensureRegistered()
-            // will see no uuid and call /player/register for a fresh guest.
-            const sceneName = director.getScene()?.name ?? 'Menu';
-            director.loadScene(sceneName);
+            // Wipe PlayerProfile's in-memory cache. Without this the
+            // module-level singleton would keep serving the deleted
+            // uuid, which no longer exists server-side → any subsequent
+            // API call fails with 500 (FK violation on player_wallets)
+            // or 401 (bearer no longer maps to a player row).
+            PlayerProfile.resetInMemoryState();
+            log('[Settings] Re-registering as fresh guest…');
+            // Re-run register to mint a new anonymous uuid + bearer.
+            // This is ~200ms — much cheaper than reloading the whole
+            // scene (30-60 seconds on iOS due to asset/pool teardown).
+            await PlayerProfile.ensureRegistered();
+            log('[Settings] Fresh guest ready — refreshing Settings UI');
+            // Repaint whatever's currently visible in Settings:
+            //   - wallet balance → 0
+            //   - Apple toggle → OFF
+            //   - AccountTypeLabel → "游客"
+            //   - nickname EditBox → new user-XXXX
+            this.refreshAuthoredSettingsValues();
         } catch (err) {
             const msg = (err as Error).message ?? String(err);
             console.warn(`[Settings] delete account failed: ${msg}`);

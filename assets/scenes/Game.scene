@@ -17702,7 +17702,7 @@
   },
   {
     "__type__": "cc.Node",
-    "_name": "tosBtn-001",
+    "_name": "deleteAccountBTN",
     "_objFlags": 0,
     "__editorExtras__": {},
     "_parent": {
@@ -38590,6 +38590,9 @@
     },
     "authoredSettingsPrivacyButton": {
       "__id__": 445
+    },
+    "authoredSettingsDeleteAccountButton": {
+      "__id__": 459
     },
     "authoredSettingsAvatarSprite": {
       "__id__": 328
