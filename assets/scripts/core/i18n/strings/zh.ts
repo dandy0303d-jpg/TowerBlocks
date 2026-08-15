@@ -211,6 +211,10 @@ export const ZH: Record<string, string> = {
     'settings.nickname.tooLong': '昵称最多 {n} 个字符',
     'settings.tos':     '服务条款',
     'settings.privacy': '隐私政策',
+    'settings.deleteAccount':          '删除账号',
+    'settings.deleteAccount.confirm':  '再次点击确认删除',
+    'settings.deleteAccount.pending':  '删除中...',
+    'settings.deleteAccount.failed':   '删除失败，请重试',
     // 钻石不足弹窗
     'gems.insufficient': '钻石不足\n需要 {need}，当前 {have}',
     'gems.goTopUp':      '去充值',

@@ -205,6 +205,10 @@ export const KO: Record<string, string> = {
     'settings.nickname.tooLong': '닉네임은 최대 {n}자입니다',
     'settings.tos':     '이용약관',
     'settings.privacy': '개인정보 처리방침',
+    'settings.deleteAccount':          '계정 삭제',
+    'settings.deleteAccount.confirm':  '삭제하려면 다시 탭하세요',
+    'settings.deleteAccount.pending':  '삭제 중...',
+    'settings.deleteAccount.failed':   '삭제 실패, 다시 시도',
     // 다이아 부족 팝업
     'gems.insufficient': '다이아가 부족합니다\n필요 {need}, 보유 {have}',
     'gems.goTopUp':      '충전하러 가기',

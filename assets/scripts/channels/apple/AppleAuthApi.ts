@@ -36,13 +36,21 @@ export interface LinkAppleResult {
 
 /** Bind the current player's uuid to the given Apple identity.
  *  Requires the current bearer token — caller must be authenticated
- *  as the guest uuid they want to attach. */
+ *  as the guest uuid they want to attach.
+ *
+ *  `authorizationCode` is what the native SIWA sheet returns alongside
+ *  the identityToken. Server exchanges it for a refresh_token which is
+ *  needed to call Apple's /auth/revoke when the user later deletes
+ *  their account (App Store review requires it). Missing it works but
+ *  the account-delete will only wipe our DB — Apple-side authorization
+ *  will stay until it naturally expires. */
 export async function linkAppleAccount(
     identityToken: string,
     appleSub: string,
+    authorizationCode: string,
 ): Promise<LinkAppleResult> {
     const url = `${BACKEND_BASE_URL}/player/link/apple`;
-    return httpPostJson<LinkAppleResult>(url, { identityToken, appleSub });
+    return httpPostJson<LinkAppleResult>(url, { identityToken, appleSub, authorizationCode });
 }
 
 export interface LoginAppleResult {

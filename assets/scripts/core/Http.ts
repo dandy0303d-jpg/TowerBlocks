@@ -189,7 +189,7 @@ function pathOf(url: string): string {
  *   - `X-Signature` + `X-Signature-Ts` on every mutating request
  *     (`sign=true`), HMAC-SHA256 over METHOD|PATH|BODY|TS. */
 function xhrJson<T>(
-    method: 'GET' | 'POST' | 'PUT',
+    method: 'GET' | 'POST' | 'PUT' | 'DELETE',
     url: string,
     body: string | null,
     timeoutMs: number,
@@ -220,6 +220,13 @@ function xhrJson<T>(
             const ms = Date.now() - startedAt;
             if (status >= 200 && status < 300) {
                 console.log(`${tag} ← ${status} OK (${ms}ms) ${text.slice(0, 200)}`);
+                // 204 No Content (and any other empty body) — resolve with
+                // null cast to T so DELETE-style endpoints don't crash on
+                // JSON.parse('').
+                if (!text || text.length === 0) {
+                    resolve(null as unknown as T);
+                    return;
+                }
                 try {
                     resolve(JSON.parse(text) as T);
                 } catch (e) {
@@ -272,4 +279,15 @@ export function httpPutJson<T>(
     timeoutMs = 8000,
 ): Promise<T> {
     return xhrJson<T>('PUT', url, JSON.stringify(body), timeoutMs, true);
+}
+
+/** DELETE a URL. Always signed (destructive operation). Response is
+ *  usually 204 No Content — the returned Promise resolves with null
+ *  in that case. T defaults to `void` for the common empty-response
+ *  case; pass an explicit type if the endpoint returns a body. */
+export function httpDelete<T = void>(
+    url: string,
+    timeoutMs = 8000,
+): Promise<T> {
+    return xhrJson<T>('DELETE', url, null, timeoutMs, true);
 }

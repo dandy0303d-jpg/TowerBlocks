@@ -46,6 +46,7 @@ import { LevelProgress } from '../core/LevelProgress';
 // so the button click handler surfaces a benign toast rather than crashing.
 import { AppleAuth } from '../channels/apple/AppleAuth';
 import { linkAppleAccount, fetchLinkedAccounts } from '../channels/apple/AppleAuthApi';
+import { deletePlayerSelf } from '../core/PlayerApi';
 
 const { ccclass, property } = _decorator;
 
@@ -275,6 +276,9 @@ export class MenuController extends Component {
 
     @property({ type: Button, tooltip: '"隐私政策 / Privacy Policy" 按钮 — 点击 → 用系统浏览器打开服务器 /legal/privacy 页面。可空' })
     authoredSettingsPrivacyButton: Button | null = null;
+
+    @property({ type: Button, tooltip: '"删除账号" 按钮（Apple 审核 5.1.1(v) 要求）— 双击确认：第一次点变红色 "再次点击确认删除"，5 秒内再点才真删。可空但会导致过审失败。' })
+    authoredSettingsDeleteAccountButton: Button | null = null;
 
     // ---- 头像选择弹窗 ----
     @property({ type: Sprite, tooltip: '设置面板里"头像按钮"内的 Sprite（脚本会写玩家当前选中头像 SpriteFrame；不拖也能用，会 getComponentInChildren 找）— 可空' })
@@ -1423,6 +1427,16 @@ export class MenuController extends Component {
             const lab = this.authoredSettingsPrivacyButton.getComponentInChildren(Label);
             if (lab) this.trackI18nLabel(lab, 'settings.privacy');
         }
+        // ---- Delete account button — required by App Store 5.1.1(v) ----
+        if (this.authoredSettingsDeleteAccountButton) {
+            this.authoredSettingsDeleteAccountButton.node.off('click');
+            this.authoredSettingsDeleteAccountButton.node.on('click',
+                () => this.handleDeleteAccountClick(), this);
+            const lab = this.authoredSettingsDeleteAccountButton.getComponentInChildren(Label);
+            // Store the "normal" label text so we can restore it after
+            // the arm-then-cancel timeout resets. Uses i18n key.
+            if (lab) this.trackI18nLabel(lab, 'settings.deleteAccount');
+        }
     }
 
     /** Open a legal document (TOS or Privacy) in the system browser.
@@ -1468,7 +1482,7 @@ export class MenuController extends Component {
             log('[Settings] Apple login tapped — starting SIWA flow');
             const cred = await AppleAuth.signIn();
             log(`[Settings] SIWA success — appleSub=${cred.appleSub.substring(0, 12)}..., calling /player/link/apple`);
-            const result = await linkAppleAccount(cred.identityToken, cred.appleSub);
+            const result = await linkAppleAccount(cred.identityToken, cred.appleSub, cred.authorizationCode);
             log(`[Settings] link result — linked=${result.linked}, alreadyLinked=${result.alreadyLinked}`);
             PlayerProfile.setAccountType('apple');
             this.refreshAuthoredSettingsValues();
@@ -1481,6 +1495,95 @@ export class MenuController extends Component {
             console.warn(`[Settings] SIWA / link failed: ${msg}`);
         } finally {
             if (btnNode) btnNode.getComponent(Button)!.interactable = true;
+        }
+    }
+
+    /** Double-tap-confirm state for the Delete Account button. When
+     *  null the button is idle; when non-null the button is "armed"
+     *  and a second click within DELETE_ARM_WINDOW_MS commits. */
+    private deleteAccountArmTimer: number | null = null;
+
+    private static readonly DELETE_ARM_WINDOW_MS = 5000;
+
+    /** Delete Account button handler. Two-tap pattern:
+     *    1st tap  → arm — button label flips to "再次点击确认删除",
+     *               5-second timer resets it back if no follow-up.
+     *    2nd tap  → commit — API call + wipe local storage + reload
+     *               the current scene into fresh guest state.
+     *
+     *  We deliberately DON'T pop a native modal — Cocos 3.x doesn't
+     *  ship one, and Apple's App Review has accepted this in-app-only
+     *  double-confirm pattern (see e.g. many indie games shipping the
+     *  same UX). If reviewers ever push back we upgrade to a proper
+     *  confirmation panel or a native UIAlertController bridge. */
+    private handleDeleteAccountClick(): void {
+        const btn = this.authoredSettingsDeleteAccountButton;
+        if (!btn) return;
+        const lab = btn.getComponentInChildren(Label);
+
+        // Second click inside the arm window — commit.
+        if (this.deleteAccountArmTimer !== null) {
+            clearTimeout(this.deleteAccountArmTimer);
+            this.deleteAccountArmTimer = null;
+            this.commitDeleteAccount();
+            return;
+        }
+
+        // First click — arm.
+        log('[Settings] Delete account armed — waiting 5s for confirmation click');
+        if (lab) lab.string = t('settings.deleteAccount.confirm');
+        // Turn the button red-ish while armed. Only if it has a Sprite
+        // to color — best-effort; skip if not.
+        const bgSprite = btn.node.getComponent(Sprite);
+        const originalColor = bgSprite ? bgSprite.color.clone() : null;
+        if (bgSprite) bgSprite.color = new Color(220, 60, 60, 255);
+
+        this.deleteAccountArmTimer = setTimeout(() => {
+            this.deleteAccountArmTimer = null;
+            log('[Settings] Delete account confirmation timed out — reset');
+            if (lab) lab.string = t('settings.deleteAccount');
+            if (bgSprite && originalColor) bgSprite.color = originalColor;
+        }, MenuController.DELETE_ARM_WINDOW_MS) as unknown as number;
+    }
+
+    /** Actually delete the account. Called after the second confirmation
+     *  tap. Fire-and-forget promise chain — failures log but don't
+     *  brick the UI (button reset happens either way in the caller). */
+    private async commitDeleteAccount(): Promise<void> {
+        const btn = this.authoredSettingsDeleteAccountButton;
+        const lab = btn?.getComponentInChildren(Label) ?? null;
+        // Disable to prevent further clicks during the network round-trip.
+        if (btn) btn.getComponent(Button)!.interactable = false;
+        if (lab) lab.string = t('settings.deleteAccount.pending');
+        try {
+            log('[Settings] Delete account — calling DELETE /player/self');
+            await deletePlayerSelf();
+            log('[Settings] Server-side delete OK — wiping localStorage');
+            // Wipe every player-scoped key. Nuclear option (localStorage.clear())
+            // would also wipe settings like volume/language which players
+            // probably want to keep — enumerate the player-identity keys
+            // explicitly. Anything else PlayerProfile / Http may cache
+            // in-module state also needs to be reset in ensureRegistered.
+            sys.localStorage.removeItem('tt.player.uuid');
+            sys.localStorage.removeItem('tt.player.name');
+            sys.localStorage.removeItem('tt.player.accountType');
+            sys.localStorage.removeItem('tt.player.token');
+            sys.localStorage.removeItem('tt.player.tokenExpEpochSec');
+            sys.localStorage.removeItem('tt.player.avatarIdx');
+            log('[Settings] Local storage wiped — reloading scene into guest state');
+            // Reload the current scene. LoadingController → ensureRegistered()
+            // will see no uuid and call /player/register for a fresh guest.
+            const sceneName = director.getScene()?.name ?? 'Menu';
+            director.loadScene(sceneName);
+        } catch (err) {
+            const msg = (err as Error).message ?? String(err);
+            console.warn(`[Settings] delete account failed: ${msg}`);
+            if (lab) lab.string = t('settings.deleteAccount.failed');
+            // Re-enable button after a brief cool-down so user can retry.
+            setTimeout(() => {
+                if (btn) btn.getComponent(Button)!.interactable = true;
+                if (lab) lab.string = t('settings.deleteAccount');
+            }, 3000);
         }
     }
 
