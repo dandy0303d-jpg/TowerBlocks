@@ -42,7 +42,21 @@ namespace {
 
 
 - (BOOL) shouldAutorotate {
-    return YES;
+    // Lock to portrait — no rotation allowed even if device is
+    // physically rotated.
+    return NO;
+}
+
+- (UIInterfaceOrientationMask) supportedInterfaceOrientations {
+    // Combined with Info.plist's UISupportedInterfaceOrientations~ipad,
+    // this pins the view controller to portrait on all devices. Without
+    // this method iOS falls back to the Info.plist entry alone, which
+    // some Cocos setups override.
+    return UIInterfaceOrientationMaskPortrait;
+}
+
+- (UIInterfaceOrientation) preferredInterfaceOrientationForPresentation {
+    return UIInterfaceOrientationPortrait;
 }
 
 //fix not hide status on ios7

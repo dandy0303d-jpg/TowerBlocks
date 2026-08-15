@@ -46,14 +46,20 @@ list(APPEND CC_ALL_SOURCES
     ${CC_PROJECT_DIR}/service/iap/PurchaseBridge.swift
     ${CC_PROJECT_DIR}/service/iap/PurchaseBridgeGlue.h
     ${CC_PROJECT_DIR}/service/iap/PurchaseBridgeGlue.mm
+    ${CC_PROJECT_DIR}/service/auth/AppleAuthBridge.swift
+    ${CC_PROJECT_DIR}/service/auth/AppleAuthBridgeGlue.h
+    ${CC_PROJECT_DIR}/service/auth/AppleAuthBridgeGlue.mm
 )
 
 cc_ios_before_target(${EXECUTABLE_NAME})
 add_executable(${EXECUTABLE_NAME} ${CC_ALL_SOURCES})
 cc_ios_after_target(${EXECUTABLE_NAME})
 
-# ---- StoreKit 2 framework + Swift build settings ----
-target_link_libraries(${EXECUTABLE_NAME} "-framework StoreKit")
+# ---- StoreKit 2 + SIWA frameworks + Swift build settings ----
+target_link_libraries(${EXECUTABLE_NAME}
+    "-framework StoreKit"
+    "-framework AuthenticationServices"
+)
 
 # The Swift-to-ObjC generated header is #import'ed from
 # PurchaseBridgeGlue.mm as "tower_blocks_mobile-Swift.h". Xcode

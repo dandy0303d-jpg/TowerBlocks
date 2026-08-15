@@ -98,8 +98,29 @@ import StoreKit
     /// transactionId once the server has credited the purchase.
     @objc public func buy(skuId: String, completion: @escaping (String) -> Void) {
         Task {
+            // Auto-fetch fallback: if the TS layer never called
+            // fetchLocalizedPrices for this SKU (e.g. TopUpController
+            // hasn't wired the price-display step yet), pull just this
+            // one product on-demand so buy() still works. Small extra
+            // network round-trip; only happens the first time each SKU
+            // is bought in a session.
+            if self.productCache[skuId] == nil {
+                do {
+                    let fetched = try await Product.products(for: [skuId])
+                    for p in fetched {
+                        self.productCache[p.id] = p
+                    }
+                } catch {
+                    completion(Self.errorJSON(kind: "network", detail: "product fetch failed: \(error.localizedDescription)"))
+                    return
+                }
+            }
             guard let product = self.productCache[skuId] else {
-                completion(Self.errorJSON(kind: "unknown", detail: "product not loaded — call fetchProducts first"))
+                // Product truly doesn't exist in the App Store for this
+                // sandbox / storefront. Common causes: SKU not created
+                // in ASC yet, product ID typo, or ASC propagation delay
+                // (new IAPs take 15-60 minutes to reach StoreKit).
+                completion(Self.errorJSON(kind: "unknown", detail: "product not available in App Store (check ASC + wait 15-60 min for new IAPs to propagate)"))
                 return
             }
             do {

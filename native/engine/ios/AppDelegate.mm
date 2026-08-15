@@ -33,6 +33,7 @@
 #import "platform/ios/AppDelegateBridge.h"
 #import "service/SDKWrapper.h"
 #import "service/iap/PurchaseBridgeGlue.h"
+#import "service/auth/AppleAuthBridgeGlue.h"
 
 @implementation AppDelegate
 @synthesize window;
@@ -64,6 +65,11 @@
     // times — internally guarded by dispatch_once.
     if (@available(iOS 15.0, *)) {
         [PurchaseBridgeGlue registerWithCocos];
+    }
+
+    // Register the Sign in with Apple bridge — 'siwa.*' events.
+    if (@available(iOS 13.0, *)) {
+        [AppleAuthBridgeGlue registerWithCocos];
     }
 
     return YES;
@@ -111,6 +117,18 @@
 
 - (void)applicationDidReceiveMemoryWarning:(UIApplication *)application {
     [[SDKWrapper shared] applicationDidReceiveMemoryWarning:application];
+}
+
+// Highest-priority orientation hook — iOS asks the app delegate first,
+// before falling through to the root view controller. Returning
+// Portrait here overrides any child view-controller that might allow
+// rotation, and covers presented sheets / alerts as well. Combined
+// with ViewController.mm's supportedInterfaceOrientations and
+// Info.plist's UISupportedInterfaceOrientations, this locks the app
+// to portrait on every device / iOS version.
+- (UIInterfaceOrientationMask)application:(UIApplication *)application
+    supportedInterfaceOrientationsForWindow:(UIWindow *)window {
+    return UIInterfaceOrientationMaskPortrait;
 }
 
 @end

@@ -23,6 +23,20 @@
 //  layer (we don't multiplex — one buy() at a time is fine for an IAP
 //  UI). The TS provider serialises calls to keep it simple.
 //
+//  MEMORY NOTE: Cocos 3.8.8's JsbBridgeWrapper is compiled with old
+//  manual retain/release (MRC). Its addScriptEventListener stores the
+//  listener block in an NSMutableArray WITHOUT calling [block copy]
+//  first. Passing a stack-allocated block from an ARC caller leaves
+//  the stored pointer dangling → EXC_BAD_ACCESS at trigger time. Every
+//  listener passed to addScriptEventListener is [^{...} copy]'d.
+//
+//  THREADING NOTE: Cocos's V8 JS engine is single-threaded (main
+//  thread). Any call to dispatchEventToScript MUST be made from the
+//  main queue, otherwise V8::Isolate::GetCurrent() returns garbage
+//  and we crash inside se::AutoHandleScope. Since Swift's async Task
+//  completions fire on a background concurrent queue, we bounce every
+//  reply through dispatch_async(main_queue, ...).
+//
 
 #import "PurchaseBridgeGlue.h"
 #import "platform/apple/JsbBridgeWrapper.h"
@@ -31,6 +45,19 @@
 // after the product/module. If your Cocos build sets a different
 // Swift module name, adjust the import below.
 #import "tower_blocks_mobile-Swift.h"
+
+/// Small helper — always dispatch the reply to JS on the main queue.
+/// Keeps every callsite one line, and the queue hop is a no-op when
+/// we're already on main (dispatch_async is safe to call from any
+/// thread including main).
+static inline void DispatchToJS(NSString *event, NSString *arg) {
+    // Capture arg strongly so the block runs after the outer scope exits.
+    NSString *eventCopy = [event copy];
+    NSString *argCopy   = [arg copy];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [[JsbBridgeWrapper sharedInstance] dispatchEventToScript:eventCopy arg:argCopy];
+    });
+}
 
 @implementation PurchaseBridgeGlue
 
@@ -41,54 +68,57 @@
         PurchaseBridge *impl = [PurchaseBridge shared];
 
         // -- iap.fetchProducts --------------------------------------------
-        [bridge addScriptEventListener:@"iap.fetchProducts" listener:^(NSString *jsonSkus) {
+        OnScriptEventListener fetchListener = [^(NSString *jsonSkus) {
             NSData *d = [jsonSkus dataUsingEncoding:NSUTF8StringEncoding];
             NSArray *skus = [NSJSONSerialization JSONObjectWithData:d options:0 error:nil];
             if (![skus isKindOfClass:[NSArray class]]) skus = @[];
             [impl fetchProductsWithSkus:skus completion:^(NSString *result) {
-                [[JsbBridgeWrapper sharedInstance] dispatchEventToScript:@"iap.products" arg:result];
+                DispatchToJS(@"iap.products", result);
             }];
-        }];
+        } copy];
+        [bridge addScriptEventListener:@"iap.fetchProducts" listener:fetchListener];
 
         // -- iap.buy ------------------------------------------------------
-        [bridge addScriptEventListener:@"iap.buy" listener:^(NSString *sku) {
+        OnScriptEventListener buyListener = [^(NSString *sku) {
             if (![sku isKindOfClass:[NSString class]] || sku.length == 0) {
-                [[JsbBridgeWrapper sharedInstance]
-                    dispatchEventToScript:@"iap.buyResult"
-                    arg:@"{\"success\":false,\"kind\":\"unknown\",\"error\":\"empty sku\"}"];
+                DispatchToJS(@"iap.buyResult",
+                             @"{\"success\":false,\"kind\":\"unknown\",\"error\":\"empty sku\"}");
                 return;
             }
             [impl buyWithSkuId:sku completion:^(NSString *result) {
-                [[JsbBridgeWrapper sharedInstance] dispatchEventToScript:@"iap.buyResult" arg:result];
+                DispatchToJS(@"iap.buyResult", result);
             }];
-        }];
+        } copy];
+        [bridge addScriptEventListener:@"iap.buy" listener:buyListener];
 
         // -- iap.consume --------------------------------------------------
-        [bridge addScriptEventListener:@"iap.consume" listener:^(NSString *txId) {
+        OnScriptEventListener consumeListener = [^(NSString *txId) {
             if (![txId isKindOfClass:[NSString class]] || txId.length == 0) {
-                [[JsbBridgeWrapper sharedInstance]
-                    dispatchEventToScript:@"iap.consumeResult"
-                    arg:@"{\"success\":false,\"error\":\"empty transactionId\"}"];
+                DispatchToJS(@"iap.consumeResult",
+                             @"{\"success\":false,\"error\":\"empty transactionId\"}");
                 return;
             }
             [impl consumeWithTransactionId:txId completion:^(NSString *result) {
-                [[JsbBridgeWrapper sharedInstance] dispatchEventToScript:@"iap.consumeResult" arg:result];
+                DispatchToJS(@"iap.consumeResult", result);
             }];
-        }];
+        } copy];
+        [bridge addScriptEventListener:@"iap.consume" listener:consumeListener];
 
         // -- iap.restore --------------------------------------------------
-        [bridge addScriptEventListener:@"iap.restore" listener:^(NSString *_ignored) {
+        OnScriptEventListener restoreListener = [^(NSString *_ignored) {
             [impl restoreWithCompletion:^(NSString *result) {
-                [[JsbBridgeWrapper sharedInstance] dispatchEventToScript:@"iap.restoreResult" arg:result];
+                DispatchToJS(@"iap.restoreResult", result);
             }];
-        }];
+        } copy];
+        [bridge addScriptEventListener:@"iap.restore" listener:restoreListener];
 
         // -- Pending transactions (unsolicited) ---------------------------
-        // The Swift side surfaces these via a callback block. Wire it up
-        // to dispatch to JS as "iap.pendingTx".
-        impl.onPendingTransaction = ^(NSString *jsonPayload) {
-            [[JsbBridgeWrapper sharedInstance] dispatchEventToScript:@"iap.pendingTx" arg:jsonPayload];
-        };
+        // Swift side already dispatches onPendingTransaction to main, but
+        // route through DispatchToJS for consistency (double-dispatch to
+        // main is a no-op).
+        impl.onPendingTransaction = [^(NSString *jsonPayload) {
+            DispatchToJS(@"iap.pendingTx", jsonPayload);
+        } copy];
 
         NSLog(@"[IAP] PurchaseBridgeGlue registered — 4 event listeners active");
     });

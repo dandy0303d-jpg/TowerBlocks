@@ -21,6 +21,7 @@
 import { sys } from 'cc';
 import { Providers } from '../../core/channels/Providers';
 import { StoreKitProvider } from './StoreKitProvider';
+import { AppleAuth } from './AppleAuth';
 
 (function initAppStore(): void {
     if (sys.os !== sys.OS.IOS) {
@@ -32,6 +33,35 @@ import { StoreKitProvider } from './StoreKitProvider';
     const provider = new StoreKitProvider();
     Providers.setPurchase(provider);
     console.log('[AppStoreBoot] registered StoreKitProvider — init runs at first Providers.purchase.init() call');
+
+    // ---- DEBUG: expose SIWA to globalThis so we can trigger it from
+    // Safari Web Inspector while the Settings-screen UI is still WIP.
+    // Remove once the real UI button is wired.
+    (globalThis as any).__testSIWA = async () => {
+        try {
+            const cred = await AppleAuth.signIn();
+            console.log('[SIWA][test] success');
+            console.log('[SIWA][test] appleSub =', cred.appleSub);
+            console.log('[SIWA][test] identityToken (first 60 chars) =',
+                cred.identityToken.substring(0, 60) + '...');
+            console.log('[SIWA][test] authorizationCode =', cred.authorizationCode);
+            return cred;
+        } catch (e) {
+            console.warn('[SIWA][test] failed:', (e as Error).message);
+        }
+    };
+    (globalThis as any).__testSIWAState = async (sub: string) => {
+        try {
+            const s = await AppleAuth.getCredentialState(sub);
+            console.log('[SIWA][test] state =', s);
+            return s;
+        } catch (e) {
+            console.warn('[SIWA][test] getCredentialState failed:', (e as Error).message);
+        }
+    };
+    console.log('[AppStoreBoot] SIWA debug hooks installed — call __testSIWA() from a UI hook');
+    // Auto-trigger removed after Phase 1 verified end-to-end. The real
+    // trigger lives in the Settings-screen "Bind Apple ID" button (Phase 3).
 
     // Note: init() runs from TopUpController.onLoad which fires as soon
     // as the topup panel prefab is spawned. If you want the StoreKit
