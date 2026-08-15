@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+    Privacy Manifest — required by Apple since 2024-05.
+    Docs: https://developer.apple.com/documentation/bundleresources/privacy_manifest_files
+
+    This manifest declares:
+      1. Whether the app tracks users across apps/websites (we do NOT).
+      2. Which categories of user data the app collects (uuid, purchases,
+         gameplay progress).
+      3. Which "Required Reason APIs" (RRA) the app calls, and why.
+
+    The 4 RRAs declared below are conservatively over-declared: Cocos
+    Creator's iOS runtime touches all of them for engine-internal purposes
+    (settings persistence, asset caching, uptime measurement, storage
+    availability). Apple accepts these standard reasons for game engines.
+
+    Update this file when:
+      - We add a new third-party SDK that has its own data-collection
+      - We add cross-app tracking (SKAdNetwork, advertising IDs, etc.)
+      - We integrate new APIs from Apple's Required Reason list
+
+    Category strings are Apple's fixed vocabulary — don't invent new ones.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- ================================================================
+         Section 1: Tracking
+         Are we linking user data collected here to third-party data for
+         advertising / cross-app tracking? No — TetriTower has no ads,
+         no analytics SDK, no cross-app tracking.
+         ================================================================ -->
+    <key>NSPrivacyTracking</key>
+    <false/>
+
+    <key>NSPrivacyTrackingDomains</key>
+    <array/>
+
+    <!-- ================================================================
+         Section 2: Collected Data Types
+         Per Apple: only list things that leave the device. All three
+         below are sent to our own backend (tetritower.konenine.kr).
+         ================================================================ -->
+    <key>NSPrivacyCollectedDataTypes</key>
+    <array>
+        <!-- 1) Player UUID (server-issued identifier).
+             Linked to identity (it IS the identity from our POV).
+             Not used for tracking. Purpose = app functionality (needed
+             to persist wallet balance, leaderboard entries, purchase
+             history across sessions/devices). -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeUserID</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+
+        <!-- 2) Purchase History (which gem SKU was bought, when, for how
+             much). Server-side purchase_log — needed for player-visible
+             purchase history + tax/receipt records + fraud-refund
+             reconciliation. -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypePurchaseHistory</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+
+        <!-- 3) Other User Content — game progress + leaderboard scores.
+             We send: current level, best-score-per-mode, endless attempt
+             history. Not sensitive per se, but Apple wants it declared
+             since it leaves the device. -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeOtherUserContent</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <false/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+            </array>
+        </dict>
+    </array>
+
+    <!-- ================================================================
+         Section 3: Required Reason APIs
+         Apple's fingerprinting-abuse-prevention list. For each API
+         category we call, we must justify with one of Apple's approved
+         reason codes. Cocos Creator's runtime touches these four:
+         ================================================================ -->
+    <key>NSPrivacyAccessedAPITypes</key>
+    <array>
+        <!-- UserDefaults: Cocos engine stores audio settings (volume,
+             mute), language preference, tutorial-complete flags here.
+             Reason CA92.1: "Access info from same app, per documentation." -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>CA92.1</string>
+            </array>
+        </dict>
+
+        <!-- File Timestamp: Cocos asset system compares file mtimes
+             against remote-config timestamps for hot-update logic +
+             cache invalidation.
+             Reason C617.1: "Access files inside the app container." -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>C617.1</string>
+            </array>
+        </dict>
+
+        <!-- System Boot Time: Cocos uses monotonic time (based on boot
+             uptime) for frame pacing + tween accuracy.
+             Reason 35F9.1: "Measure elapsed time within the app scope." -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategorySystemBootTime</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>35F9.1</string>
+            </array>
+        </dict>
+
+        <!-- Disk Space: Cocos checks free space before downloading
+             hot-update packs / caching remote assets.
+             Reason E174.1: "Show disk space to the user." -->
+        <dict>
+            <key>NSPrivacyAccessedAPIType</key>
+            <string>NSPrivacyAccessedAPICategoryDiskSpace</string>
+            <key>NSPrivacyAccessedAPITypeReasons</key>
+            <array>
+                <string>E174.1</string>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>
