@@ -18,6 +18,7 @@ import {
     director,
     log,
     sys,
+    native,
 } from 'cc';
 import { GameController } from './GameController';
 import { HudController } from './HudController';
@@ -1450,25 +1451,39 @@ export class MenuController extends Component {
             this.authoredSettingsAppleLoginButton.node.on('click',
                 () => this.handleAppleLoginClick(), this);
         }
-        // ---- Google / Apple linked toggles (stubs) ----
-        // The 'toggle' event fires AFTER the check state flips. For now
-        // we snap the toggle back to whatever the real bind state says
-        // (via refreshAuthoredSettingsValues) so the UI doesn't lie
-        // until the unbind flow is wired.
+        // ---- Google / Apple linked toggles ----
+        // Toggle ON when NOT bound  → same as tapping the "Apple 登录" btn
+        //                             (kicks off SIWA + link flow).
+        // Toggle OFF when bound     → unbind not implemented yet. We snap
+        //                             the check back on via refresh so
+        //                             the UI stays truthful. If we ever
+        //                             ship an unbind flow, replace the
+        //                             snap-back with the real call.
+        // Toggle ON when already ON → no-op (handleAppleLoginClick's
+        //                             own early-out covers this).
         if (this.authoredSettingsGoogleToggle) {
-            const t = this.authoredSettingsGoogleToggle;
-            t.node.off('toggle');
-            t.node.on('toggle', () => {
-                log(`[Settings] Google toggle → ${t.isChecked} — unbind flow TODO`);
+            const gt = this.authoredSettingsGoogleToggle;
+            gt.node.off('toggle');
+            gt.node.on('toggle', () => {
+                log(`[Settings] Google toggle → ${gt.isChecked} — SDK integration TODO`);
+                // Snap back until real Google Sign-In is wired.
                 this.refreshAuthoredSettingsValues();
             }, this);
         }
         if (this.authoredSettingsAppleToggle) {
-            const t = this.authoredSettingsAppleToggle;
-            t.node.off('toggle');
-            t.node.on('toggle', () => {
-                log(`[Settings] Apple toggle → ${t.isChecked} — unbind flow TODO`);
-                this.refreshAuthoredSettingsValues();
+            const at = this.authoredSettingsAppleToggle;
+            at.node.off('toggle');
+            at.node.on('toggle', () => {
+                log(`[Settings] Apple toggle → ${at.isChecked}`);
+                if (at.isChecked && PlayerProfile.accountType !== 'apple') {
+                    // Fresh bind attempt — reuse the button's handler so
+                    // we hit the same 409-recovery path.
+                    void this.handleAppleLoginClick();
+                } else if (!at.isChecked && PlayerProfile.accountType === 'apple') {
+                    // Unbind not supported yet — snap check back on.
+                    log('[Settings] Apple toggle OFF — unbind not implemented, snapping back');
+                    this.refreshAuthoredSettingsValues();
+                }
             }, this);
         }
 
@@ -1602,8 +1617,20 @@ export class MenuController extends Component {
             const r = await loginWithApple(identityToken);
             log(`[Settings] Apple recovery success — recovered uuid=${r.uuid}`);
             PlayerProfile.swapToRecoveredAccount(r.uuid, r.bearer);
+            // swap wipes the local name (it belongs to the OLD guest uuid).
+            // Pull the recovered account's real name + avatar from the
+            // server so the Settings panel doesn't briefly show a
+            // 'user-<hex>' placeholder. Non-fatal if the fetch fails —
+            // the placeholder will be replaced on next open.
+            try {
+                const p = await PlayerProfile.fetchProfile();
+                log(`[Settings] recovered profile — name="${p.name}", avatarIdx=${p.avatarIdx}`);
+            } catch (e) {
+                console.warn(`[Settings] fetchProfile after recovery failed: ${(e as Error).message}`);
+            }
             // Reset button label / color; refreshAuthoredSettingsValues
-            // will then repaint everything (wallet, toggles, account label).
+            // will then repaint everything (wallet, toggles, account label,
+            // nickname) using the freshly-loaded profile.
             if (lab) lab.string = t('settings.account.apple');
             if (bgSprite) bgSprite.color = new Color(255, 255, 255, 255);
             this.refreshAuthoredSettingsValues();
@@ -2129,6 +2156,21 @@ export class MenuController extends Component {
         let copied = false;
         let method = 'none';
         const anySys = sys as any;
+
+        // (0) Native bridge — ClipboardBridgeGlue.mm hands off to
+        // UIPasteboard directly. Only path that actually works on the
+        // Cocos native iOS runtime; sys.setClipboard* below are either
+        // missing or no-ops there. Fire-and-forget: assume success on
+        // native iOS, don't try the JS/web fallbacks after.
+        if (!copied && sys.isNative && sys.os === sys.OS.IOS) {
+            try {
+                (native as any).bridge.sendToNative('clipboard.copy', text);
+                copied = true;
+                method = 'native.bridge/clipboard.copy';
+            } catch (e) {
+                console.warn('[Settings] native clipboard bridge threw:', e);
+            }
+        }
 
         // (1) Cocos 3.x legacy: sys.setClipboardText
         if (!copied && typeof anySys.setClipboardText === 'function') {

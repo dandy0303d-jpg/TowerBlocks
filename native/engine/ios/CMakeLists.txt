@@ -49,6 +49,8 @@ list(APPEND CC_ALL_SOURCES
     ${CC_PROJECT_DIR}/service/auth/AppleAuthBridge.swift
     ${CC_PROJECT_DIR}/service/auth/AppleAuthBridgeGlue.h
     ${CC_PROJECT_DIR}/service/auth/AppleAuthBridgeGlue.mm
+    ${CC_PROJECT_DIR}/service/ClipboardBridgeGlue.h
+    ${CC_PROJECT_DIR}/service/ClipboardBridgeGlue.mm
 )
 
 # Bundle the privacy manifest (Apple 2024-05 requirement) into the

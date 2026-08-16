@@ -34,6 +34,7 @@
 #import "service/SDKWrapper.h"
 #import "service/iap/PurchaseBridgeGlue.h"
 #import "service/auth/AppleAuthBridgeGlue.h"
+#import "service/ClipboardBridgeGlue.h"
 
 @implementation AppDelegate
 @synthesize window;
@@ -71,6 +72,10 @@
     if (@available(iOS 13.0, *)) {
         [AppleAuthBridgeGlue registerWithCocos];
     }
+
+    // Register the clipboard bridge — 'clipboard.copy' event. UIPasteboard
+    // has been available since iOS 3; no version guard needed.
+    [ClipboardBridgeGlue registerWithCocos];
 
     return YES;
 }
