@@ -1978,6 +1978,18 @@ export class MenuController extends Component {
         if (lc) lc.showAccountSwapOverlay();
         try {
             await body();
+            // Rebuild the level-select tower for the (possibly changed)
+            // LevelProgress.currentIdx. Body has already restored the
+            // progress state, so this now points at the correct level.
+            // Runs inside the overlay so the player doesn't see the
+            // rebuild hitch on their first level-select tap after the
+            // swap. Also give Cocos one paint frame after activating
+            // the stage so the shader compile actually happens under
+            // the overlay rather than on that first tap.
+            if (lc) {
+                lc.rebuildLevelTowerForCurrentAccount();
+                await new Promise<void>((r) => setTimeout(r, 32));
+            }
         } finally {
             const elapsed = performance.now() - startTs;
             const remaining = Math.max(0, minOverlayMs - elapsed);

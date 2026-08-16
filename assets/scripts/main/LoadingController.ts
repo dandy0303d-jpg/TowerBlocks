@@ -369,6 +369,41 @@ export class LoadingController extends Component {
         if (this.loadingPanel) this.loadingPanel.active = false;
     }
 
+    /** Re-build the level-select tower under the loading overlay for
+     *  the account that's currently active. The prebuilt tower from
+     *  boot points at the OLD account's currentIdx — after an account
+     *  swap it's stale, so the first `showForLevel()` from the level
+     *  select menu would pay the full ~2000-cube instantiation cost
+     *  again. Running the rebuild here (while the loading panel is
+     *  visible) hides that hitch inside the intentional loading
+     *  transition instead.
+     *
+     *  Same pattern as beginBootFrame3: activate the stage node briefly
+     *  so the GPU renders/uploads the new cubes, then deactivate again
+     *  so the level-select panel doesn't see it flash on the main menu
+     *  when the overlay hides. Safe to call multiple times — prebuild
+     *  is idempotent when the target idx already matches. No-op if the
+     *  stage isn't wired.
+     */
+    public rebuildLevelTowerForCurrentAccount(): void {
+        if (!this.levelStage3D) {
+            console.warn('[Loading] levelStage3D not wired — tower rebuild skipped');
+            return;
+        }
+        try {
+            const idx = LevelProgress.currentIdx ?? 0;
+            console.log(`[Loading] rebuilding level tower for currentIdx=${idx}`);
+            this.levelStage3D.node.active = true;
+            this.levelStage3D.prebuild(idx);
+            this.setProgress(0.7);
+            // Deactivate again so the tower doesn't linger visible over
+            // the main menu after the overlay drops.
+            this.levelStage3D.node.active = false;
+        } catch (err) {
+            console.error('[Loading] tower rebuild THREW:', err);
+        }
+    }
+
     /** Walk from `node` up to the scene root and mark every ancestor
      *  `active = true`. Guards against the common editor wiring
      *  mistake of leaving a container node unchecked — a hidden
