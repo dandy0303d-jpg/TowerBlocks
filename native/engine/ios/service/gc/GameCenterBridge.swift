@@ -33,9 +33,17 @@ import UIKit
 /// the panel when the player taps "Done". Singleton because there's
 /// never more than one panel up at a time, and the delegate needs a
 /// strong retainer (GKGameCenterViewController holds it weakly).
-@objc public class GameCenterUIDelegate: NSObject, GKGameCenterControllerDelegate {
-    @objc public static let shared = GameCenterUIDelegate()
-    public func gameCenterViewControllerDidFinish(_ gameCenterViewController: GKGameCenterViewController) {
+///
+/// Deliberately NOT `@objc public` — that would emit the class into
+/// the auto-generated `tower_blocks_mobile-Swift.h` header, and
+/// every ObjC glue file that imports that header would then need
+/// `#import <GameKit/GameKit.h>` up top to satisfy the
+/// GKGameCenterControllerDelegate reference. Keeping it Swift-only
+/// (referenced only from GameCenterBridge.showUI) avoids that
+/// cross-file rebuild dependency.
+class GameCenterUIDelegate: NSObject, GKGameCenterControllerDelegate {
+    static let shared = GameCenterUIDelegate()
+    func gameCenterViewControllerDidFinish(_ gameCenterViewController: GKGameCenterViewController) {
         gameCenterViewController.dismiss(animated: true, completion: nil)
     }
 }

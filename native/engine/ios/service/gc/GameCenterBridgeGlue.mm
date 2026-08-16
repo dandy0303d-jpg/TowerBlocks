@@ -32,12 +32,6 @@
 
 #import "GameCenterBridgeGlue.h"
 #import "platform/apple/JsbBridgeWrapper.h"
-// GameKit MUST be imported before the auto-generated Swift header —
-// the header exposes GameCenterUIDelegate which conforms to
-// GKGameCenterControllerDelegate, and without this import the ObjC
-// compiler doesn't know that protocol exists → 'no type or protocol
-// named GKGameCenterControllerDelegate' build error.
-#import <GameKit/GameKit.h>
 #import "tower_blocks_mobile-Swift.h"
 
 static inline void DispatchToJS(NSString *event, NSString *arg) {
