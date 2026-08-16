@@ -731,7 +731,12 @@ export class HudController extends Component {
         this.buildFateModal(root, w, h);
         this.buildBlindColumnIndicator(root, w, h);
         this.buildFailRevealPrompt(root, w, h);
-        this.buildBlindTowerToggleButton(root, w, h);
+        // "Show Tower" toggle is a DEV-only cheat — it defeats the
+        // whole point of Blind mode. Only build it on development
+        // builds; release builds simply never create the node.
+        if (IS_DEV_BUILD) {
+            this.buildBlindTowerToggleButton(root, w, h);
+        }
     }
 
     /** Wire the authored (Sprite-based) top-strip HUD nodes: cache the
