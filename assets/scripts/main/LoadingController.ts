@@ -109,6 +109,7 @@ export class LoadingController extends Component {
         // ~1s), so no subscribe is needed — a one-shot set is enough.
         if (this.loadingTextLabel) this.loadingTextLabel.string = t('loading.text');
         this.setProgress(0);
+        this.startDotsAnimation();
         // Force the main gameplay camera on so any FX we activate
         // during warmup actually enters the render pipeline. Without
         // this, if the scene authored mainCamera3D as inactive-until-
@@ -319,6 +320,7 @@ export class LoadingController extends Component {
     private finish(): void {
         console.log('[Loading] finish — hiding panel, handing off to MenuController');
         this.setProgress(1);
+        this.stopDotsAnimation();
         if (this.loadingPanel) this.loadingPanel.active = false;
         if (this.menuController && typeof this.menuController.beginBootAfterLoading === 'function') {
             this.menuController.beginBootAfterLoading();
@@ -327,11 +329,43 @@ export class LoadingController extends Component {
         }
     }
 
+    /** Last painted percentage — kept so the dots-animation tick can
+     *  repaint the label without knowing the current value. */
+    private _lastPct: number = 0;
+    /** Dots phase: 1, 2, 3 → back to 1. Advanced by the schedule tick
+     *  registered in onLoad. */
+    private _dotsPhase: number = 1;
+
     private setProgress(pct: number): void {
         pct = Math.max(0, Math.min(1, pct));
+        this._lastPct = pct;
         if (this.progressBar) this.progressBar.fillRange = pct;
-        if (this.progressLabel) this.progressLabel.string = `${Math.round(pct * 100)}%`;
+        this.paintProgressLabel();
     }
+
+    private paintProgressLabel(): void {
+        if (!this.progressLabel) return;
+        const pctStr = `${Math.round(this._lastPct * 100)}%`;
+        const dots = '.'.repeat(this._dotsPhase);
+        this.progressLabel.string = `${pctStr} ${dots}`;
+    }
+
+    /** Kick off the "..." cycle. Runs at ~2.5Hz (400ms period). Safe
+     *  to call multiple times — schedule is keyed on the callback and
+     *  Cocos dedupes. Stopped when the loading panel hides via
+     *  unschedule in finish() / hideAccountSwapOverlay(). */
+    private startDotsAnimation(): void {
+        this.schedule(this._dotsTick, 0.4);
+    }
+    private stopDotsAnimation(): void {
+        this.unschedule(this._dotsTick);
+    }
+    // Bound as a class field so `this` is preserved AND schedule/
+    // unschedule dedupe by identity.
+    private _dotsTick = (): void => {
+        this._dotsPhase = this._dotsPhase >= 3 ? 1 : this._dotsPhase + 1;
+        this.paintProgressLabel();
+    };
 
     /** Show the loading panel as a mid-session overlay — used by the
      *  account-swap flows (delete, bind, recover) so the player sees a
@@ -358,6 +392,7 @@ export class LoadingController extends Component {
         this.loadingPanel.setSiblingIndex(999);
         if (this.loadingTextLabel) this.loadingTextLabel.string = t('loading.text');
         this.setProgress(0.15);
+        this.startDotsAnimation();
     }
 
     /** Hide the account-swap loading overlay. Bumps the progress bar to
@@ -366,6 +401,7 @@ export class LoadingController extends Component {
     public hideAccountSwapOverlay(): void {
         console.log('[Loading] hideAccountSwapOverlay — dismissing overlay');
         this.setProgress(1);
+        this.stopDotsAnimation();
         if (this.loadingPanel) this.loadingPanel.active = false;
     }
 
