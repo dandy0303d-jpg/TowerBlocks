@@ -196,6 +196,7 @@ export const EN: Record<string, string> = {
     'settings.keys.off':     'Off',
     'settings.bgm':          'Music',
     'settings.sfx':          'Sound FX',
+    'settings.haptic':       'Haptics',
     'settings.close':        'Close',
     'audio.off':             'Off',
     'audio.percent':         '{n}%',

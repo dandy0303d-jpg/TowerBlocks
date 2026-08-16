@@ -35,6 +35,7 @@
 #import "service/iap/PurchaseBridgeGlue.h"
 #import "service/auth/AppleAuthBridgeGlue.h"
 #import "service/gc/GameCenterBridgeGlue.h"
+#import "service/haptic/HapticBridgeGlue.h"
 #import "service/ClipboardBridgeGlue.h"
 
 @implementation AppDelegate
@@ -82,6 +83,10 @@
     // authenticateHandler and kicks off silent login. GameKit is
     // available on all iOS versions we support.
     [GameCenterBridgeGlue registerWithCocos];
+
+    // Register the haptic bridge — 'haptic.impact' event. Pre-warms
+    // UIImpactFeedbackGenerators to avoid the first-fire lag.
+    [HapticBridgeGlue registerWithCocos];
 
     return YES;
 }

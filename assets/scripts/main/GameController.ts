@@ -27,6 +27,7 @@ import {
 } from 'cc';
 import { COLS, COLORS, CellValue, ENDLESS_HEIGHT_LIMIT, ENDLESS_GRAY_CAP } from '../core/Constants';
 import { SoundManager } from '../audio/SoundManager';
+import { HapticManager } from '../audio/HapticManager';
 import { LevelProgress } from '../core/LevelProgress';
 import { submitScore } from '../core/LeaderboardApi';
 // Game Center — channel-specific. On non-iOS these calls resolve
@@ -646,6 +647,7 @@ export class GameController extends Component {
                 },
                 onPartialShatter: (r, content) => {
                     SoundManager.instance?.play('line_clear');
+                    HapticManager.instance.impact('light');
                     this.onShatter(r, content);
                 },
                 onCellsFell: moves => this.registerFallAnimations(moves),
@@ -711,6 +713,7 @@ export class GameController extends Component {
                 // regardless of how many rows converted.
                 onEndlessRowsFilled: (_count) => {
                     SoundManager.instance?.play('line_clear');
+                    HapticManager.instance.impact('light');
                 },
                 onMortarLanded: (_r, _c, _color) => {
                     if (!this._mortarLandSfxArmed) return;
@@ -755,6 +758,7 @@ export class GameController extends Component {
                         apply(pool[Math.floor(Math.random() * pool.length)]);
                     }
                     SoundManager.instance?.play('item_pick');
+                    HapticManager.instance.impact('medium');
                 },
                 onEndlessMilestone: (_milestone, _cumulative) => {
                     this.playMilestoneShatter();

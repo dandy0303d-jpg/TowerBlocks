@@ -40,8 +40,10 @@ import { t, cycleLang, getLang, subscribe as subscribeLang } from '../core/i18n/
 import {
     getBgmVolume,   setBgmVolume,   cycleBgmVolume,
     getSfxVolume,   setSfxVolume,   cycleSfxVolume,
+    getHapticMode,  setHapticMode,
 } from '../core/Settings';
 import { SoundManager } from '../audio/SoundManager';
+import { HapticManager } from '../audio/HapticManager';
 import { BgmManager } from '../audio/BgmManager';
 import { LevelProgress } from '../core/LevelProgress';
 import { LoadingController } from './LoadingController';
@@ -264,6 +266,13 @@ export class MenuController extends Component {
 
     @property({ type: Toggle, tooltip: '苹果已绑定开关（isChecked 反映当前是否绑定；切换事件暂时只 log）— 可空' })
     authoredSettingsAppleToggle: Toggle | null = null;
+
+    // ---- 触觉反馈开关 ----
+    @property({ type: Toggle, tooltip: '震动开关（iOS 触觉反馈，isChecked = 开）— 可空，未拖场景 Toggle 时默认永远开启' })
+    authoredSettingsHapticToggle: Toggle | null = null;
+
+    @property({ type: Label, tooltip: '震动行左侧的"震动" i18n 标签，可空' })
+    authoredSettingsHapticLabel: Label | null = null;
 
     // ---- 钻石不足弹窗 ----
     @property({ type: Node, tooltip: '"钻石不足"弹窗根节点（含 dim + 卡片 + 消息 + 去充值/取消 两个按钮）— 默认 active=false' })
@@ -1518,6 +1527,20 @@ export class MenuController extends Component {
             }, this);
         }
 
+        // ---- Haptic feedback toggle ----
+        // On/off flips Settings.hapticMode which HapticManager reads.
+        // Fires a preview 'medium' impact when turned ON so the player
+        // feels the change without needing to trigger gameplay.
+        if (this.authoredSettingsHapticToggle) {
+            const ht = this.authoredSettingsHapticToggle;
+            ht.node.off('toggle');
+            ht.node.on('toggle', () => {
+                setHapticMode(ht.isChecked ? 'on' : 'off');
+                log(`[Settings] haptic → ${ht.isChecked ? 'on' : 'off'}`);
+                if (ht.isChecked) HapticManager.instance.impact('medium');
+            }, this);
+        }
+
         // ---- Legal docs (Terms of Service / Privacy Policy) ----
         // Both open the server-hosted HTML page in the system browser
         // via `sys.openURL` — works on web, native Android, and iOS.
@@ -2248,6 +2271,15 @@ export class MenuController extends Component {
         }
         if (this.authoredSettingsAppleToggle) {
             this.authoredSettingsAppleToggle.isChecked = (acct === 'apple');
+        }
+        // Haptic toggle — reflect Settings state each open (may have
+        // been changed by another entry point, though today it's only
+        // touched from this panel).
+        if (this.authoredSettingsHapticToggle) {
+            this.authoredSettingsHapticToggle.isChecked = (getHapticMode() === 'on');
+        }
+        if (this.authoredSettingsHapticLabel) {
+            this.trackI18nLabel(this.authoredSettingsHapticLabel, 'settings.haptic');
         }
         // Avatar Sprite — repaint from PlayerProfile in case the player
         // picked a new one since the last open.

@@ -52,6 +52,9 @@ list(APPEND CC_ALL_SOURCES
     ${CC_PROJECT_DIR}/service/gc/GameCenterBridge.swift
     ${CC_PROJECT_DIR}/service/gc/GameCenterBridgeGlue.h
     ${CC_PROJECT_DIR}/service/gc/GameCenterBridgeGlue.mm
+    ${CC_PROJECT_DIR}/service/haptic/HapticBridge.swift
+    ${CC_PROJECT_DIR}/service/haptic/HapticBridgeGlue.h
+    ${CC_PROJECT_DIR}/service/haptic/HapticBridgeGlue.mm
     ${CC_PROJECT_DIR}/service/ClipboardBridgeGlue.h
     ${CC_PROJECT_DIR}/service/ClipboardBridgeGlue.mm
 )

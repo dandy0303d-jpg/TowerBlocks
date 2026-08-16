@@ -22,6 +22,7 @@ const STORAGE_KEY_BGM       = 'tetritower.bgmMode';
 const STORAGE_KEY_SFX       = 'tetritower.sfxMode';
 const STORAGE_KEY_BGM_VOL   = 'tetritower.bgmVolume';
 const STORAGE_KEY_SFX_VOL   = 'tetritower.sfxVolume';
+const STORAGE_KEY_HAPTIC    = 'tetritower.hapticMode';
 
 /** The five volume steps the settings cycle exposes: mute + four
  *  levels. 0 is the "off" position (mode also flips to 'off'). */
@@ -221,4 +222,26 @@ export function cycleSfxVolume(): number {
     const nextIdx = idx < 0 ? 0 : (idx + 1) % AUDIO_VOLUME_STEPS.length;
     setSfxVolume(AUDIO_VOLUME_STEPS[nextIdx]);
     return sfxVolume;
+}
+
+// ---------- hapticMode ----------
+// iOS-native touch feedback for line-clear + item-trigger events.
+// Off by default so a player who dislikes vibration doesn't get
+// startled on first launch — flip on from Settings once we tell
+// them. Non-iOS platforms just no-op regardless of this setting.
+function loadHaptic(): AudioMode {
+    return loadAudio(STORAGE_KEY_HAPTIC, 'on');
+}
+let hapticMode: AudioMode = loadHaptic();
+export function getHapticMode(): AudioMode { return hapticMode; }
+export function setHapticMode(mode: AudioMode): void {
+    if (mode !== 'on' && mode !== 'off') return;
+    if (mode === hapticMode) return;
+    hapticMode = mode;
+    try { localStorage?.setItem(STORAGE_KEY_HAPTIC, mode); } catch (_) { /* ignore */ }
+    notify();
+}
+export function toggleHapticMode(): AudioMode {
+    setHapticMode(hapticMode === 'on' ? 'off' : 'on');
+    return hapticMode;
 }

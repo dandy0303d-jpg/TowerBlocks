@@ -200,6 +200,7 @@ export const ZH: Record<string, string> = {
     'settings.keys.off':     '关',
     'settings.bgm':          '背景音乐',
     'settings.sfx':          '音效',
+    'settings.haptic':       '震动',
     'settings.close':        '关闭',
     'audio.off':             '关',
     'audio.percent':         '{n}%',
