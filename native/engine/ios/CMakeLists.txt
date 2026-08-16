@@ -55,6 +55,9 @@ list(APPEND CC_ALL_SOURCES
     ${CC_PROJECT_DIR}/service/haptic/HapticBridge.swift
     ${CC_PROJECT_DIR}/service/haptic/HapticBridgeGlue.h
     ${CC_PROJECT_DIR}/service/haptic/HapticBridgeGlue.mm
+    ${CC_PROJECT_DIR}/service/cloudkv/CloudKVBridge.swift
+    ${CC_PROJECT_DIR}/service/cloudkv/CloudKVBridgeGlue.h
+    ${CC_PROJECT_DIR}/service/cloudkv/CloudKVBridgeGlue.mm
     ${CC_PROJECT_DIR}/service/ClipboardBridgeGlue.h
     ${CC_PROJECT_DIR}/service/ClipboardBridgeGlue.mm
 )

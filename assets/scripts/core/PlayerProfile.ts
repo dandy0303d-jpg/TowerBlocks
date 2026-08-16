@@ -24,6 +24,7 @@
 import { sys } from 'cc';
 import { registerPlayer, updatePlayerProfile, fetchPlayerProfile, refreshPlayerToken } from './LeaderboardApi';
 import { setBearerToken } from './Http';
+import { CloudSync } from './CloudSync';
 
 const UUID_KEY    = 'tt.player.uuid';
 const NAME_KEY    = 'tt.player.name';
@@ -197,7 +198,30 @@ class Profile {
         // Wire the new bearer into the Http module for subsequent calls.
         setBearerToken(bearer);
 
+        // Push the new identity to iCloud so a reinstall on this
+        // player's other iCloud-signed-in device seeds back into
+        // the same server account.
+        this._syncToCloud();
+
         console.log(`[PlayerProfile] swapped to recovered account: ${uuid} (accountType=apple)`);
+    }
+
+    /** Snapshot current identity + push to iCloud. Cheap — the native
+     *  side just stores a JSON blob in NSUbiquitousKeyValueStore and
+     *  lets Apple's daemon sync it in the background. Non-iOS is a
+     *  silent no-op inside CloudSync. */
+    private _syncToCloud(): void {
+        if (!this._uuid) return;
+        const tokenExpStr = sys.localStorage.getItem(TOKEN_EXP_KEY);
+        const tokenExp = tokenExpStr ? parseInt(tokenExpStr, 10) : undefined;
+        const bearer = sys.localStorage.getItem(TOKEN_KEY) ?? undefined;
+        CloudSync.syncNow({
+            uuid:             this._uuid,
+            name:             this._name ?? undefined,
+            avatarIdx:        this._avatarIdx ?? undefined,
+            bearer:           bearer,
+            tokenExpEpochSec: Number.isFinite(tokenExp) ? tokenExp : undefined,
+        });
     }
 
     /** Persist a new display name. Server-side truncates to MAX_NAME_LEN.
@@ -213,6 +237,7 @@ class Profile {
         updatePlayerProfile({ name: trimmed })
             .then((r) => console.log(`[PlayerProfile] setName synced: server saved "${r.name}"`))
             .catch((err) => console.warn(`[PlayerProfile] setName sync FAILED: ${err?.message}`));
+        this._syncToCloud();
     }
 
     /** Currently-selected avatar index. `null` means the player hasn't
@@ -242,6 +267,7 @@ class Profile {
         updatePlayerProfile({ avatarIdx: n })
             .then((r) => console.log(`[PlayerProfile] setAvatarIdx synced: server saved ${r.avatarIdx}`))
             .catch((err) => console.warn(`[PlayerProfile] setAvatarIdx sync FAILED: ${err?.message}`));
+        this._syncToCloud();
     }
 
     /** Pull the authoritative profile from the server (name, avatar,
@@ -276,6 +302,35 @@ class Profile {
      * with a locally-generated UUID fallback. The next launch retries.
      */
     async ensureRegistered(): Promise<void> {
+        // Fresh install / reinstall recovery: if local storage has NO
+        // uuid but iCloud has one from a prior install / another
+        // device, seed local from iCloud BEFORE the register path
+        // fires. This gives guest players seamless continuity across
+        // devices as long as they're signed into the same iCloud.
+        // Non-iOS + no-iCloud-blob → silently no-op, register runs
+        // normally.
+        if (!sys.localStorage.getItem(UUID_KEY)) {
+            try {
+                const cloudId = await CloudSync.restore();
+                if (cloudId && cloudId.uuid) {
+                    console.log(`[PlayerProfile] restoring identity from iCloud: uuid=${cloudId.uuid}`);
+                    sys.localStorage.setItem(UUID_KEY, cloudId.uuid);
+                    if (cloudId.name)      sys.localStorage.setItem(NAME_KEY, cloudId.name);
+                    if (cloudId.avatarIdx !== undefined) sys.localStorage.setItem(AVATAR_KEY, String(cloudId.avatarIdx));
+                    if (cloudId.bearer)    sys.localStorage.setItem(TOKEN_KEY, cloudId.bearer);
+                    if (cloudId.tokenExpEpochSec !== undefined) sys.localStorage.setItem(TOKEN_EXP_KEY, String(cloudId.tokenExpEpochSec));
+                    // Restore accountType to 'anonymous' so the
+                    // already-registered fast path below picks it up.
+                    sys.localStorage.setItem(ACCOUNT_KEY, 'anonymous');
+                    this._accountType = 'anonymous';
+                    this._uuid = cloudId.uuid;
+                    this._name = cloudId.name ?? null;
+                    if (cloudId.avatarIdx !== undefined) this._avatarIdx = cloudId.avatarIdx;
+                }
+            } catch (e) {
+                console.warn('[PlayerProfile] iCloud restore threw:', e);
+            }
+        }
         // Already registered — restore bearer token to Http module and
         // refresh if we're inside the rotation window.
         if (this.accountType && sys.localStorage.getItem(UUID_KEY)) {
@@ -299,10 +354,15 @@ class Profile {
                     sys.localStorage.setItem(TOKEN_EXP_KEY, String(r.expEpochSec));
                     setBearerToken(r.token);
                     console.log('[PlayerProfile] bearer refreshed, new exp:', r.expEpochSec);
+                    this._syncToCloud();   // push the new token to iCloud too
                 } catch (err) {
                     console.warn('[PlayerProfile] token refresh failed (offline?), keeping old:', err);
                 }
             }
+            // Even without a refresh, push current snapshot to iCloud
+            // opportunistically — costs nothing and keeps the blob
+            // fresh in case another device is about to install.
+            this._syncToCloud();
             return;
         }
         try {
@@ -325,6 +385,10 @@ class Profile {
             this._name = nickname;
             this._accountType = 'anonymous';
             console.log('[PlayerProfile] registered with server:', uuid, nickname);
+            // Push the freshly-registered identity to iCloud so the
+            // player's other iCloud-signed-in devices can pick it up
+            // on install instead of registering a new uuid.
+            this._syncToCloud();
         } catch (err) {
             console.warn('[PlayerProfile] server register failed — falling back to local uuid, will retry next launch. Error:', err);
             void this.uuid;
