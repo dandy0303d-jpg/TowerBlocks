@@ -18,6 +18,8 @@ import {
     director,
     log,
     sys,
+    native,
+    game,
 } from 'cc';
 import { GameController } from './GameController';
 import { HudController } from './HudController';
@@ -454,15 +456,26 @@ export class MenuController extends Component {
      *  the boot proceed; the tutorial (step 2) doesn't depend on the
      *  network. */
     public beginBootAfterLoading(): void {
-        // Register the ban handler BEFORE any Http calls fire —
-        // ensureRegistered / fetchWallet may 403 immediately for
-        // banned uuids, and we want the modal to appear right away
-        // instead of the main menu.
+        // Register the ban handler BEFORE any Http calls fire — an
+        // auth'd request that 403s with "banned" latches immediately
+        // and the modal appears without waiting for the player to
+        // navigate somewhere.
         setBannedHandler((s) => this.showBannedModal(s));
         void (async () => {
             // Step 1: register / recover the player identity
             await PlayerProfile.ensureRegistered().catch((e) => {
                 console.warn('[MenuController] ensureRegistered failed:', e);
+            });
+            // ensureRegistered is a no-op for existing players (fast
+            // path — no server round-trip), so it won't trigger the
+            // ban check by itself. Fire a lightweight authenticated
+            // request (wallet fetch) so a banned player hits the 403
+            // + modal BEFORE the main menu shows. Fire-and-forget —
+            // non-ban errors don't block boot.
+            fetchWallet().catch((err) => {
+                if (!getBannedState()) {
+                    console.warn(`[MenuController] boot wallet fetch failed (non-ban): ${err?.message}`);
+                }
             });
             // Ban check — if any auth'd request 403'd above, the
             // handler has fired + modal is up; skip further boot work.
@@ -1698,33 +1711,45 @@ export class MenuController extends Component {
         }
     }
 
-<<<<<<< HEAD
-=======
     /** Ban-detected handler — registered on Http via setBannedHandler
-     *  from beginBootAfterLoading. Hides all panels, then loops the
-     *  confirm modal indefinitely so the player has no way to
-     *  proceed: tapping "OK" reopens the same modal. Http itself is
-     *  already latched (all further requests short-circuit), so even
-     *  in the tiny window between modal reopens no gameplay works.
+     *  from beginBootAfterLoading. Hides all panels, shows the ban
+     *  modal, and quits the app when the player taps OK. Http is
+     *  already latched (all further requests short-circuit) so no
+     *  gameplay is reachable even in the sliver of time before quit.
      *
-     *  Recovery path: player uninstalls, or admin unbans them and
-     *  they relaunch the app. The client has no unban check other
-     *  than "next request no longer returns 403" — which the fresh
-     *  boot naturally exercises. */
+     *  If quit fails (Cocos web preview, an emulator where game.end()
+     *  is a no-op) we fall through to a modal-loop so the player
+     *  still can't proceed. */
     private _bannedModalActive = false;
     private async showBannedModal(state: BannedState): Promise<void> {
-        if (this._bannedModalActive) return;   // idempotent — one loop is enough
+        if (this._bannedModalActive) return;   // idempotent — one modal is enough
         this._bannedModalActive = true;
         console.warn(`[MenuController] SHOWING BAN MODAL — reason: ${state.reason}`);
-        // Hide the main menu / any panel that might be visible under
-        // the modal — we don't want the player to see a working menu
-        // behind an "account banned" popup.
+        // Hide the main menu + gameplay + any open panel so the modal
+        // isn't over a working-looking UI.
         if (this.modeSelectPanel) this.modeSelectPanel.active = false;
         this.setGameplayVisible(false);
-        // Close settings / topup if open.
         if (this.authoredSettingsPanel) this.authoredSettingsPanel.active = false;
-        // Loop the modal forever. showConfirm resolves on either
-        // button — we ignore the result and reopen.
+
+        // Show once. Both Confirm and Cancel labels are "OK" so any
+        // tap resolves. We don't care WHICH — either way we quit.
+        await this.showConfirm(
+            t('banned.title'),
+            t('banned.desc', { reason: state.reason }),
+            t('banned.ok'),
+            t('banned.ok'),
+        );
+
+        // Quit the app. game.end() calls the platform-appropriate
+        // shutdown: on native iOS/Android it terminates the process;
+        // on web preview it's a no-op (fall through to modal loop).
+        log('[MenuController] ban acknowledged — quitting app');
+        try { game.end(); } catch (e) { console.warn('[MenuController] game.end() threw:', e); }
+
+        // Fallback: if the app is still running one frame later
+        // (web / broken quit) keep the modal up so gameplay stays
+        // unreachable.
+        await new Promise<void>((r) => setTimeout(r, 300));
         // eslint-disable-next-line no-constant-condition
         while (true) {
             await this.showConfirm(
@@ -1733,10 +1758,8 @@ export class MenuController extends Component {
                 t('banned.ok'),
                 t('banned.ok'),
             );
-            // Tiny delay so the panel actually paints between opens
-            // (otherwise showConfirm's Promise chains microtask-fast
-            // and Cocos never gets a render frame).
-            await new Promise<void>((r) => setTimeout(r, 50));
+            try { game.end(); } catch { /* ignore */ }
+            await new Promise<void>((r) => setTimeout(r, 300));
         }
     }
 
@@ -1793,7 +1816,6 @@ export class MenuController extends Component {
         }
     }
 
->>>>>>> 7a9f403 (feat(ban): client detects server 403 banned + shows blocking modal)
     /** Bind the avatar-picker panel's close button + each per-avatar
      *  button. Idempotent via `_avatarPickerWired`. Called from
      *  `wireAuthoredSettingsPanel` after the settings avatar button
