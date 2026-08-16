@@ -567,7 +567,11 @@ export class HudController extends Component {
         // node directly.
         if (this.authoredHudStrip) this.authoredHudStrip.active = on;
         if (this.authoredPauseButton) this.authoredPauseButton.node.active = on;
-        if (this.authoredDebugWinButton) this.authoredDebugWinButton.node.active = on;
+        // Debug win button follows HUD visibility, but only if this is
+        // a dev build. Release builds keep it forever-hidden.
+        if (this.authoredDebugWinButton) {
+            this.authoredDebugWinButton.node.active = on && IS_DEV_BUILD;
+        }
         // Score container / label — respect the endless-only rule.
         // When on=true, only show if we're in endless mode; otherwise
         // keep hidden so it doesn't flash visible for one frame before
