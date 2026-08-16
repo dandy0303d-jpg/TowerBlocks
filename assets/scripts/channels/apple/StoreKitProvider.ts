@@ -25,6 +25,7 @@ import {
     PurchaseErrorKind,
 } from '../../core/channels/IPurchaseProvider';
 import { WalletSku, topupWallet } from '../../core/WalletApi';
+import { PlayerProfile } from '../../core/PlayerProfile';
 
 // ---------------------------------------------------------------------------
 // Native event names — mirror the schema doc at the top of
@@ -208,7 +209,19 @@ export class StoreKitProvider implements IPurchaseProvider {
 
     async buy(skuId: string): Promise<PurchaseReceipt> {
         const wait = this.buySlot.wait();
-        native.bridge.sendToNative(EV.buy, skuId);
+        // Anti-fraud: tag the purchase with the player's uuid via
+        // StoreKit's appAccountToken. Apple stamps this into the JWS
+        // and the server verifies JWS.appAccountToken == request.uuid,
+        // blocking cross-account receipt replay. Only tagged if the
+        // uuid is a valid UUID string — the fallback random-hex uuids
+        // used before /player/register succeeds are UUID format too
+        // (crypto.randomUUID / server v4), so this is nearly always
+        // populated. On the rare "no uuid yet" case we send empty and
+        // let the server anti-fraud path decide (in prod it should
+        // reject; in dev it warns and passes).
+        const uuid = PlayerProfile.uuid ?? '';
+        const payload = JSON.stringify({ sku: skuId, appAccountToken: uuid });
+        native.bridge.sendToNative(EV.buy, payload);
         const result = await wait;
         if (!result.success) {
             // Wrap error kind into the message prefix per IPurchaseProvider

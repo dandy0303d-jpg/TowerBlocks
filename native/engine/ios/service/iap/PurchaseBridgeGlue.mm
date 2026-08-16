@@ -5,7 +5,10 @@
 //
 //  JS  → Native events (via native.bridge.sendToNative):
 //    "iap.fetchProducts"  arg = JSON array of SKU strings, e.g. '["gems_60","gems_300"]'
-//    "iap.buy"            arg = single SKU id string, e.g. 'gems_60'
+//    "iap.buy"            arg = JSON {sku, appAccountToken?}, e.g.
+//                                '{"sku":"gems_60","appAccountToken":"01234567-89ab-cdef-0123-456789abcdef"}'
+//                              Legacy shape (bare SKU string) is still accepted for
+//                              backwards compat but bypasses appAccountToken tagging.
 //    "iap.consume"        arg = transactionId string
 //    "iap.restore"        arg = ignored (pass empty string)
 //
@@ -79,13 +82,40 @@ static inline void DispatchToJS(NSString *event, NSString *arg) {
         [bridge addScriptEventListener:@"iap.fetchProducts" listener:fetchListener];
 
         // -- iap.buy ------------------------------------------------------
-        OnScriptEventListener buyListener = [^(NSString *sku) {
-            if (![sku isKindOfClass:[NSString class]] || sku.length == 0) {
+        // Accepts EITHER a JSON payload `{sku, appAccountToken}` (new,
+        // preferred — carries the appAccountToken for server-side
+        // uuid binding) OR a bare SKU string (legacy shape, kept for
+        // back-compat but skips appAccountToken and will be rejected
+        // by the hardened server verifier in production).
+        OnScriptEventListener buyListener = [^(NSString *arg) {
+            if (![arg isKindOfClass:[NSString class]] || arg.length == 0) {
+                DispatchToJS(@"iap.buyResult",
+                             @"{\"success\":false,\"kind\":\"unknown\",\"error\":\"empty arg\"}");
+                return;
+            }
+            NSString *sku = nil;
+            NSString *appAccountToken = @"";
+            // Try JSON parse first — if it looks like an object with a
+            // 'sku' field we use that path. Otherwise treat as legacy
+            // bare SKU string.
+            if ([arg hasPrefix:@"{"]) {
+                NSData *d = [arg dataUsingEncoding:NSUTF8StringEncoding];
+                id parsed = [NSJSONSerialization JSONObjectWithData:d options:0 error:nil];
+                if ([parsed isKindOfClass:[NSDictionary class]]) {
+                    NSDictionary *obj = (NSDictionary *)parsed;
+                    id s = obj[@"sku"];
+                    id a = obj[@"appAccountToken"];
+                    if ([s isKindOfClass:[NSString class]]) sku = (NSString *)s;
+                    if ([a isKindOfClass:[NSString class]]) appAccountToken = (NSString *)a;
+                }
+            }
+            if (sku == nil) sku = arg;   // legacy bare-string path
+            if (sku.length == 0) {
                 DispatchToJS(@"iap.buyResult",
                              @"{\"success\":false,\"kind\":\"unknown\",\"error\":\"empty sku\"}");
                 return;
             }
-            [impl buyWithSkuId:sku completion:^(NSString *result) {
+            [impl buyWithSkuId:sku appAccountTokenUuid:appAccountToken completion:^(NSString *result) {
                 DispatchToJS(@"iap.buyResult", result);
             }];
         } copy];

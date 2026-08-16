@@ -96,7 +96,15 @@ import StoreKit
     /// PurchaseErrorKind. The success path caches the unfinished
     /// Transaction; the caller MUST call consume() with the returned
     /// transactionId once the server has credited the purchase.
-    @objc public func buy(skuId: String, completion: @escaping (String) -> Void) {
+    ///
+    /// `appAccountTokenUuid` — REQUIRED for anti-fraud. When non-empty
+    /// and a valid UUID string, StoreKit stamps the transaction JWS
+    /// with `appAccountToken = <uuid>`. The server verifies this
+    /// matches the requesting player's uuid, blocking replay attacks
+    /// where one player's receipt is submitted to another player's
+    /// account. Pass empty string to skip (dev only — production
+    /// server should reject transactions without appAccountToken).
+    @objc public func buy(skuId: String, appAccountTokenUuid: String, completion: @escaping (String) -> Void) {
         Task {
             // Auto-fetch fallback: if the TS layer never called
             // fetchLocalizedPrices for this SKU (e.g. TopUpController
@@ -124,7 +132,22 @@ import StoreKit
                 return
             }
             do {
-                let result = try await product.purchase()
+                // Build purchase options — if we got a valid UUID from
+                // the TS layer, tag the transaction so the server can
+                // bind receipt → uuid. UUID(uuidString:) returns nil
+                // for anything non-UUID; we silently drop the tag in
+                // that case (server anti-fraud will reject the topup).
+                var options: Set<Product.PurchaseOption> = []
+                if !appAccountTokenUuid.isEmpty,
+                   let token = UUID(uuidString: appAccountTokenUuid) {
+                    options.insert(.appAccountToken(token))
+                    NSLog("[IAP] buy \(skuId) with appAccountToken=\(appAccountTokenUuid)")
+                } else if !appAccountTokenUuid.isEmpty {
+                    NSLog("[IAP] buy \(skuId) — appAccountToken value '\(appAccountTokenUuid)' is not a valid UUID, dropping")
+                } else {
+                    NSLog("[IAP] buy \(skuId) — no appAccountToken (dev / unregistered player?)")
+                }
+                let result = try await product.purchase(options: options)
                 switch result {
                 case .success(let verification):
                     switch verification {

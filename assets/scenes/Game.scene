@@ -3025,7 +3025,7 @@
       "a": 255
     },
     "_string": "关卡模式",
-    "_horizontalAlign": 0,
+    "_horizontalAlign": 1,
     "_verticalAlign": 1,
     "_actualFontSize": 30,
     "_fontSize": 30,
