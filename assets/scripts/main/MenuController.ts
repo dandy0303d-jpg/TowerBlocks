@@ -47,6 +47,7 @@ import { LevelProgress } from '../core/LevelProgress';
 import { AppleAuth } from '../channels/apple/AppleAuth';
 import { linkAppleAccount, fetchLinkedAccounts, loginWithApple } from '../channels/apple/AppleAuthApi';
 import { deletePlayerSelf } from '../core/PlayerApi';
+import { IS_DEV_BUILD } from '../core/BuildConfig';
 
 const { ccclass, property } = _decorator;
 
@@ -954,8 +955,16 @@ export class MenuController extends Component {
         bindBtn(this.modeBtnBlind,         'menu.blind',       () => this.enterBlindMode());
         bindBtn(this.modeBtnLeaderboard,   'menu.leaderboard', () => this.onLeaderboardClicked());
         bindBtn(this.modeBtnTopup,         'menu.topup',       () => this.onTopupClicked());
-        bindBtn(this.modeBtnResetProgress, 'menu.reset',       () => this.onResetProgressClicked());
         bindBtn(this.modeBtnSettings,      'settings.button',  () => this.openSettingsPanel());
+        // Reset progress button: DEV-only. Hidden in release builds so
+        // players can't nuke their own save by accident (and to keep
+        // the main menu clean). IS_DEV_BUILD is set per branch — see
+        // assets/scripts/core/BuildConfig.ts.
+        if (IS_DEV_BUILD) {
+            bindBtn(this.modeBtnResetProgress, 'menu.reset',   () => this.onResetProgressClicked());
+        } else if (this.modeBtnResetProgress) {
+            this.modeBtnResetProgress.node.active = false;
+        }
     }
 
     private setGameplayVisible(on: boolean): void {
