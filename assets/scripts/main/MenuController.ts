@@ -1556,62 +1556,33 @@ export class MenuController extends Component {
                 log(`[Settings] SIWA aborted: ${msg}`);
                 return;
             }
-            // "This Apple ID is bound to another player" — offer recovery.
+            // "This Apple ID is bound to another player" — offer recovery
+            // via the generic confirm modal (same UX as delete-account).
             // The server returns 409 with body {"error":"apple already linked"}
             // which Http.ts serializes as `HTTP 409: {"error":"..."}`.
             if (msg.includes('apple already linked') && cachedIdentityToken) {
-                this.armAppleRecovery(cachedIdentityToken);
+                // finally{} will re-enable the button before we await; that's
+                // fine — showConfirm's modal blocks further Apple clicks.
+                const token = cachedIdentityToken;
+                void (async () => {
+                    const ok = await this.showConfirm(
+                        t('settings.appleRecovery.title'),
+                        t('settings.appleRecovery.desc'),
+                        t('common.confirm'),
+                        t('common.cancel'),
+                    );
+                    if (!ok) {
+                        log('[Settings] Apple recovery cancelled by user');
+                        return;
+                    }
+                    await this.commitAppleRecovery(token);
+                })();
                 return;
             }
             console.warn(`[Settings] SIWA / link failed: ${msg}`);
         } finally {
             if (btnNode) btnNode.getComponent(Button)!.interactable = true;
         }
-    }
-
-    /** Double-tap-confirm arm state for account recovery. When null,
-     *  the button is idle; when non-null, a second tap within
-     *  RECOVERY_ARM_WINDOW_MS commits the recovery. */
-    private appleRecoveryArm: {
-        identityToken: string;
-        timer: number;
-    } | null = null;
-
-    private static readonly RECOVERY_ARM_WINDOW_MS = 10_000;
-
-    /** First failed link with "apple already linked" — arm a recovery
-     *  window. Second tap within 10s calls /player/login/apple, swaps
-     *  the local uuid/bearer to the recovered account, and refreshes
-     *  the UI. Times out silently after the window. */
-    private armAppleRecovery(identityToken: string): void {
-        const btn = this.authoredSettingsAppleLoginButton;
-        const lab = btn?.getComponentInChildren(Label);
-
-        // If already armed, this IS the second tap — commit.
-        if (this.appleRecoveryArm) {
-            clearTimeout(this.appleRecoveryArm.timer);
-            const token = this.appleRecoveryArm.identityToken;
-            this.appleRecoveryArm = null;
-            void this.commitAppleRecovery(token);
-            return;
-        }
-
-        // First tap — arm.
-        log('[Settings] Apple already linked to another player — recovery armed (10s)');
-        if (lab) lab.string = t('settings.appleRecovery.confirm');
-        // Highlight button to signal "action pending".
-        const bgSprite = btn?.node.getComponent(Sprite);
-        const originalColor = bgSprite ? bgSprite.color.clone() : null;
-        if (bgSprite) bgSprite.color = new Color(255, 149, 0, 255);   // orange-ish
-
-        const timer = setTimeout(() => {
-            this.appleRecoveryArm = null;
-            log('[Settings] Apple recovery window timed out — reset');
-            if (lab) lab.string = t('settings.account.apple');   // reuse the "Apple 登录" i18n key
-            if (bgSprite && originalColor) bgSprite.color = originalColor;
-        }, MenuController.RECOVERY_ARM_WINDOW_MS) as unknown as number;
-
-        this.appleRecoveryArm = { identityToken, timer };
     }
 
     /** Actually recover the linked account.
@@ -2101,10 +2072,12 @@ export class MenuController extends Component {
                 if (this.authoredSettingsAppleToggle) {
                     this.authoredSettingsAppleToggle.isChecked = hasApple;
                 }
-                // Repaint the account-type label as well.
+                // Repaint the account-type label as well. Use
+                // formatAccountRow (not accountTypeText) so the UUID +
+                // 📋 copy affordance stay visible after server reconcile.
                 if (this.authoredSettingsAccountTypeLabel) {
                     this.authoredSettingsAccountTypeLabel.string
-                        = this.accountTypeText(PlayerProfile.accountType);
+                        = this.formatAccountRow(PlayerProfile.accountType, PlayerProfile.uuid);
                 }
             })
             .catch((err) => {

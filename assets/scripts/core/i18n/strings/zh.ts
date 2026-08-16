@@ -232,6 +232,8 @@ export const ZH: Record<string, string> = {
     'settings.deleteAccount.pending':  '删除中...',
     'settings.deleteAccount.failed':   '删除失败，请重试',
     'settings.appleRecovery.confirm':  '此 Apple 已绑其他账号，再点确认恢复',
+    'settings.appleRecovery.title':    '恢复账号？',
+    'settings.appleRecovery.desc':     '此 Apple ID 已绑定另一个游戏账号。确认后当前游客账号将切换到该已绑定账号，原游客数据（钻石、进度）不会带过去。',
     'settings.appleRecovery.pending':  '恢复中...',
     'settings.appleRecovery.failed':   '恢复失败，请重试',
     // 钻石不足弹窗

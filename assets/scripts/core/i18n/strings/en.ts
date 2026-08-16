@@ -226,6 +226,8 @@ export const EN: Record<string, string> = {
     'settings.deleteAccount.pending':  'Deleting...',
     'settings.deleteAccount.failed':   'Delete failed, try again',
     'settings.appleRecovery.confirm':  'This Apple ID is linked elsewhere. Tap again to restore',
+    'settings.appleRecovery.title':    'Restore account?',
+    'settings.appleRecovery.desc':     'This Apple ID is already linked to another game account. Confirming will switch to that account. Your current guest data (gems, progress) will NOT be carried over.',
     'settings.appleRecovery.pending':  'Restoring...',
     'settings.appleRecovery.failed':   'Restore failed, try again',
     // Not-enough-gems popup
