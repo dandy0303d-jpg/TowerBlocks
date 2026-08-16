@@ -41,6 +41,10 @@ export interface MyRankResult {
 export interface RegisterResult {
     uuid:        string;
     nickname:    string;
+    /** Server-assigned initial avatar index (0..pool-1). Random on
+     *  register so different guests start with different-looking
+     *  avatars; player can change it later via the picker. */
+    avatarIdx:   number;
     token:       string;
     expEpochSec: number;
 }
