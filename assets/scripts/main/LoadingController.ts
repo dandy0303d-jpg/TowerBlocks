@@ -333,6 +333,42 @@ export class LoadingController extends Component {
         if (this.progressLabel) this.progressLabel.string = `${Math.round(pct * 100)}%`;
     }
 
+    /** Show the loading panel as a mid-session overlay — used by the
+     *  account-swap flows (delete, bind, recover) so the player sees a
+     *  clear "reloading with new data" screen instead of a stale UI
+     *  flashing to the new one. This is NOT a full boot: no warmup
+     *  pipeline, no scene reload. It just:
+     *    1. Shows the loading panel + forces ancestors active
+     *    2. Repaints the loading text via i18n (in case the player
+     *       switched language between boot and now)
+     *    3. Ticks the progress bar to a small non-zero value so the
+     *       player sees motion rather than a stuck 0%
+     *
+     *  Pair with `hideAccountSwapOverlay()`. Safe to call while the
+     *  panel is already visible (idempotent).
+     */
+    public showAccountSwapOverlay(): void {
+        console.log('[Loading] showAccountSwapOverlay — panel up for account swap');
+        if (!this.loadingPanel) {
+            console.warn('[Loading] loadingPanel not wired — account-swap overlay skipped');
+            return;
+        }
+        this.forceAncestorsActive(this.loadingPanel);
+        this.loadingPanel.active = true;
+        this.loadingPanel.setSiblingIndex(999);
+        if (this.loadingTextLabel) this.loadingTextLabel.string = t('loading.text');
+        this.setProgress(0.15);
+    }
+
+    /** Hide the account-swap loading overlay. Bumps the progress bar to
+     *  100% first so the player sees the fill complete before the panel
+     *  disappears. */
+    public hideAccountSwapOverlay(): void {
+        console.log('[Loading] hideAccountSwapOverlay — dismissing overlay');
+        this.setProgress(1);
+        if (this.loadingPanel) this.loadingPanel.active = false;
+    }
+
     /** Walk from `node` up to the scene root and mark every ancestor
      *  `active = true`. Guards against the common editor wiring
      *  mistake of leaving a container node unchecked — a hidden

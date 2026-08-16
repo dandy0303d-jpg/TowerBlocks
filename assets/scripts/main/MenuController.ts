@@ -42,6 +42,7 @@ import {
 import { SoundManager } from '../audio/SoundManager';
 import { BgmManager } from '../audio/BgmManager';
 import { LevelProgress } from '../core/LevelProgress';
+import { LoadingController } from './LoadingController';
 // SIWA on channel/app-store. Imports resolve to no-op / iOS-only paths;
 // on non-iOS platforms AppleAuth.signIn() rejects with 'platform-unsupported'
 // so the button click handler surfaces a benign toast rather than crashing.
@@ -1564,7 +1565,21 @@ export class MenuController extends Component {
             const result = await linkAppleAccount(cred.identityToken, cred.appleSub, cred.authorizationCode);
             log(`[Settings] link result — linked=${result.linked}, alreadyLinked=${result.alreadyLinked}`);
             PlayerProfile.setAccountType('apple');
-            this.refreshAuthoredSettingsValues();
+            // Show the loading overlay while we sync the newly-bound
+            // account state (server-authoritative profile + level
+            // progress) so the transition looks intentional. Settings
+            // panel closes first so the overlay sits over the main
+            // menu the player returns to.
+            this.closeSettingsPanel();
+            await this.runWithReloadOverlay(async () => {
+                try {
+                    const p = await PlayerProfile.fetchProfile();
+                    LevelProgress.restoreFrom((p.bestScores?.level ?? 0) - 1);
+                } catch (e) {
+                    console.warn(`[Settings] fetchProfile after bind failed: ${(e as Error).message}`);
+                }
+                this.refreshAuthoredSettingsValues();
+            });
             this.showSettingsToast(t('settings.bind.success'));
         } catch (err) {
             const msg = (err as Error).message ?? String(err);
@@ -1633,34 +1648,34 @@ export class MenuController extends Component {
             const r = await loginWithApple(identityToken);
             log(`[Settings] Apple recovery success — recovered uuid=${r.uuid}`);
             PlayerProfile.swapToRecoveredAccount(r.uuid, r.bearer);
-            // swap wipes the local name (it belongs to the OLD guest uuid).
-            // Pull the recovered account's real name + avatar + best
-            // scores from the server so the Settings panel doesn't
-            // briefly show a 'user-<hex>' placeholder AND so the
-            // recovered account's level-mode progress replaces the
-            // abandoned guest's local LevelProgress. Non-fatal if the
-            // fetch fails — the placeholder will be replaced on next
-            // open, but level progress will only re-sync after the
-            // next successful fetchProfile / server round-trip.
-            try {
-                const p = await PlayerProfile.fetchProfile();
-                log(`[Settings] recovered profile — name="${p.name}", avatarIdx=${p.avatarIdx}, bestScores=${JSON.stringify(p.bestScores)}`);
-                // Server stores level-mode best score = count of levels
-                // cleared. Convert to idx (0-based) before restoring.
-                // Guard against undefined/negative just in case the
-                // server hasn't tracked any yet.
-                const clearedCount = p.bestScores?.level ?? 0;
-                LevelProgress.restoreFrom(clearedCount - 1);
-                log(`[Settings] LevelProgress restored to maxClearedIdx=${clearedCount - 1}`);
-            } catch (e) {
-                console.warn(`[Settings] fetchProfile after recovery failed: ${(e as Error).message}`);
-            }
-            // Reset button label / color; refreshAuthoredSettingsValues
-            // will then repaint everything (wallet, toggles, account label,
-            // nickname) using the freshly-loaded profile.
+            // Close Settings and switch to the loading overlay while we
+            // pull the recovered account's profile + level progress
+            // from the server. Overlay avoids the flash of the old
+            // guest's UI briefly showing under the new identity.
             if (lab) lab.string = t('settings.account.apple');
             if (bgSprite) bgSprite.color = new Color(255, 255, 255, 255);
-            this.refreshAuthoredSettingsValues();
+            this.closeSettingsPanel();
+            await this.runWithReloadOverlay(async () => {
+                // swap wipes the local name (it belongs to the OLD guest
+                // uuid). Pull the recovered account's real name + avatar
+                // + best scores so refreshAuthoredSettingsValues() paints
+                // from authoritative data. Non-fatal if fetch fails — the
+                // placeholder will be replaced on next Settings open.
+                try {
+                    const p = await PlayerProfile.fetchProfile();
+                    log(`[Settings] recovered profile — name="${p.name}", avatarIdx=${p.avatarIdx}, bestScores=${JSON.stringify(p.bestScores)}`);
+                    // Server stores level-mode best score = count of
+                    // levels cleared. Convert to idx (0-based) before
+                    // restoring. Guard against undefined/negative just
+                    // in case the server hasn't tracked any yet.
+                    const clearedCount = p.bestScores?.level ?? 0;
+                    LevelProgress.restoreFrom(clearedCount - 1);
+                    log(`[Settings] LevelProgress restored to maxClearedIdx=${clearedCount - 1}`);
+                } catch (e) {
+                    console.warn(`[Settings] fetchProfile after recovery failed: ${(e as Error).message}`);
+                }
+                this.refreshAuthoredSettingsValues();
+            });
             this.showSettingsToast(t('settings.appleRecovery.success'));
         } catch (err) {
             const msg = (err as Error).message ?? String(err);
@@ -1896,28 +1911,80 @@ export class MenuController extends Component {
             log('[Settings] delete account — calling DELETE /player/self');
             await deletePlayerSelf();
             log('[Settings] server-side delete OK — wiping local state');
-            // Wipe player-scoped localStorage keys (keep audio/language
-            // etc — those are per-device preferences, not per-account).
-            sys.localStorage.removeItem('tt.player.uuid');
-            sys.localStorage.removeItem('tt.player.name');
-            sys.localStorage.removeItem('tt.player.accountType');
-            sys.localStorage.removeItem('tt.player.token');
-            sys.localStorage.removeItem('tt.player.tokenExpEpochSec');
-            sys.localStorage.removeItem('tt.player.avatarIdx');
-            // Clear PlayerProfile's in-memory cache — without this, the
-            // module-level singleton would keep serving the deleted
-            // uuid, which no longer exists server-side.
-            PlayerProfile.resetInMemoryState();
-            log('[Settings] re-registering as fresh guest…');
-            await PlayerProfile.ensureRegistered();
-            log('[Settings] fresh guest ready — refreshing Settings UI');
-            this.refreshAuthoredSettingsValues();
+            // From here on, the operation cannot be aborted — go through
+            // the loading overlay to give the player a clear "reloading
+            // with new data" transition instead of a jarring stale-UI
+            // flash. closeSettingsPanel + hide top-up so the overlay
+            // covers only the main menu underneath.
+            this.closeSettingsPanel();
+            await this.runWithReloadOverlay(async () => {
+                // Wipe player-scoped localStorage keys (keep audio/language
+                // etc — those are per-device preferences, not per-account).
+                sys.localStorage.removeItem('tt.player.uuid');
+                sys.localStorage.removeItem('tt.player.name');
+                sys.localStorage.removeItem('tt.player.accountType');
+                sys.localStorage.removeItem('tt.player.token');
+                sys.localStorage.removeItem('tt.player.tokenExpEpochSec');
+                sys.localStorage.removeItem('tt.player.avatarIdx');
+                // Also wipe level progress — the deleted account's
+                // cleared levels don't belong to the fresh guest.
+                LevelProgress.reset();
+                // Clear PlayerProfile's in-memory cache — without this, the
+                // module-level singleton would keep serving the deleted
+                // uuid, which no longer exists server-side.
+                PlayerProfile.resetInMemoryState();
+                log('[Settings] re-registering as fresh guest…');
+                await PlayerProfile.ensureRegistered();
+                log('[Settings] fresh guest ready — refreshing Settings UI');
+                this.refreshAuthoredSettingsValues();
+            });
         } catch (err) {
             const msg = (err as Error).message ?? String(err);
             console.warn(`[Settings] delete account failed: ${msg}`);
             this.showSettingsToast(t('settings.deleteAccount.failed'));
         } finally {
             if (btnComp) btnComp.interactable = true;
+        }
+    }
+
+    /** Lazily resolve the scene's LoadingController. Cached on first
+     *  hit. `null` if no LoadingController is present in the scene
+     *  (unlikely — every scene wires one — but callers should treat as
+     *  optional). */
+    private _cachedLoadingController: LoadingController | null | undefined = undefined;
+    private getLoadingController(): LoadingController | null {
+        if (this._cachedLoadingController !== undefined) return this._cachedLoadingController;
+        const scene = director.getScene();
+        this._cachedLoadingController = scene?.getComponentInChildren(LoadingController) ?? null;
+        if (!this._cachedLoadingController) {
+            console.warn('[MenuController] LoadingController not found in scene — reload overlay disabled');
+        }
+        return this._cachedLoadingController;
+    }
+
+    /** Show the loading panel, run `body`, then hide it — regardless of
+     *  whether `body` throws. Used by the account-swap flows (delete,
+     *  bind, recover) so the player sees a clean "reloading with new
+     *  data" transition. If the LoadingController isn't wired the
+     *  overlay is skipped but `body` still runs.
+     *
+     *  A guaranteed minimum overlay-visible time keeps the transition
+     *  from flashing by too fast when the network work finishes in
+     *  <100ms. */
+    private async runWithReloadOverlay(body: () => Promise<void>): Promise<void> {
+        const lc = this.getLoadingController();
+        const startTs = performance.now();
+        const minOverlayMs = 600;
+        if (lc) lc.showAccountSwapOverlay();
+        try {
+            await body();
+        } finally {
+            const elapsed = performance.now() - startTs;
+            const remaining = Math.max(0, minOverlayMs - elapsed);
+            if (remaining > 0) {
+                await new Promise<void>((r) => setTimeout(r, remaining));
+            }
+            if (lc) lc.hideAccountSwapOverlay();
         }
     }
 
