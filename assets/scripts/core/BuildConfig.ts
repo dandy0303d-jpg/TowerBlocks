@@ -20,7 +20,7 @@
  *   git checkout main
  *   git merge --no-ff develop
  *   # Merge conflict on this file. Fix:
- *   sed -i 's|IS_DEV_BUILD: boolean = false|IS_DEV_BUILD: boolean = false|' \
+ *   sed -i 's|IS_DEV_BUILD: boolean = true|IS_DEV_BUILD: boolean = false|' \
  *       assets/scripts/core/BuildConfig.ts
  *   git add assets/scripts/core/BuildConfig.ts
  *   git commit
