@@ -77,6 +77,23 @@ class LevelProgressStore {
         this._persist();
     }
 
+    /** Overwrite the local `maxClearedIdx` from an authoritative source
+     *  (currently the server-side bestScores.level - 1). Used when the
+     *  account identity changes without a full reload — e.g. Apple
+     *  recovery swaps the guest uuid for a previously-linked one and
+     *  the local progress belongs to the abandoned uuid.
+     *
+     *  Unlike markCleared this is NOT monotone — it will lower the
+     *  count if the recovered account has less progress than what's
+     *  currently persisted locally. Callers who want a max-merge should
+     *  do it themselves before calling. */
+    public restoreFrom(maxClearedIdx: number): void {
+        if (!Number.isFinite(maxClearedIdx)) return;
+        const n = Math.max(-1, Math.floor(maxClearedIdx));
+        this._maxClearedIdx = n;
+        this._persist();
+    }
+
     private _persist(): void {
         const str = String(this._maxClearedIdx);
         if (this._useMemory) {

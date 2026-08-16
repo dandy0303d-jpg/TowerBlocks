@@ -1634,13 +1634,24 @@ export class MenuController extends Component {
             log(`[Settings] Apple recovery success — recovered uuid=${r.uuid}`);
             PlayerProfile.swapToRecoveredAccount(r.uuid, r.bearer);
             // swap wipes the local name (it belongs to the OLD guest uuid).
-            // Pull the recovered account's real name + avatar from the
-            // server so the Settings panel doesn't briefly show a
-            // 'user-<hex>' placeholder. Non-fatal if the fetch fails —
-            // the placeholder will be replaced on next open.
+            // Pull the recovered account's real name + avatar + best
+            // scores from the server so the Settings panel doesn't
+            // briefly show a 'user-<hex>' placeholder AND so the
+            // recovered account's level-mode progress replaces the
+            // abandoned guest's local LevelProgress. Non-fatal if the
+            // fetch fails — the placeholder will be replaced on next
+            // open, but level progress will only re-sync after the
+            // next successful fetchProfile / server round-trip.
             try {
                 const p = await PlayerProfile.fetchProfile();
-                log(`[Settings] recovered profile — name="${p.name}", avatarIdx=${p.avatarIdx}`);
+                log(`[Settings] recovered profile — name="${p.name}", avatarIdx=${p.avatarIdx}, bestScores=${JSON.stringify(p.bestScores)}`);
+                // Server stores level-mode best score = count of levels
+                // cleared. Convert to idx (0-based) before restoring.
+                // Guard against undefined/negative just in case the
+                // server hasn't tracked any yet.
+                const clearedCount = p.bestScores?.level ?? 0;
+                LevelProgress.restoreFrom(clearedCount - 1);
+                log(`[Settings] LevelProgress restored to maxClearedIdx=${clearedCount - 1}`);
             } catch (e) {
                 console.warn(`[Settings] fetchProfile after recovery failed: ${(e as Error).message}`);
             }
