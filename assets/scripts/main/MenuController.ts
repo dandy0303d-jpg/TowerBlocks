@@ -1565,10 +1565,16 @@ export class MenuController extends Component {
             log(`[Settings] link result — linked=${result.linked}, alreadyLinked=${result.alreadyLinked}`);
             PlayerProfile.setAccountType('apple');
             this.refreshAuthoredSettingsValues();
+            this.showSettingsToast(t('settings.bind.success'));
         } catch (err) {
             const msg = (err as Error).message ?? String(err);
             if (msg.startsWith('user-cancelled') || msg.startsWith('platform-unsupported')) {
                 log(`[Settings] SIWA aborted: ${msg}`);
+                // Only toast user-initiated cancel; a platform-unsupported
+                // path shouldn't reach real users (button is iOS-only).
+                if (msg.startsWith('user-cancelled')) {
+                    this.showSettingsToast(t('settings.bind.cancelled'));
+                }
                 return;
             }
             // "This Apple ID is bound to another player" — offer recovery
@@ -1595,6 +1601,7 @@ export class MenuController extends Component {
                 return;
             }
             console.warn(`[Settings] SIWA / link failed: ${msg}`);
+            this.showSettingsToast(t('settings.bind.failed'));
         } finally {
             if (btnNode) btnNode.getComponent(Button)!.interactable = true;
         }
@@ -1634,10 +1641,12 @@ export class MenuController extends Component {
             if (lab) lab.string = t('settings.account.apple');
             if (bgSprite) bgSprite.color = new Color(255, 255, 255, 255);
             this.refreshAuthoredSettingsValues();
+            this.showSettingsToast(t('settings.appleRecovery.success'));
         } catch (err) {
             const msg = (err as Error).message ?? String(err);
             console.warn(`[Settings] Apple recovery failed: ${msg}`);
             if (lab) lab.string = t('settings.appleRecovery.failed');
+            this.showSettingsToast(t('settings.appleRecovery.failed'));
             setTimeout(() => {
                 if (btn) btn.getComponent(Button)!.interactable = true;
                 if (lab) lab.string = t('settings.account.apple');

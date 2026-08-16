@@ -230,6 +230,11 @@ export const EN: Record<string, string> = {
     'settings.appleRecovery.desc':     'This Apple ID is already linked to another game account. Confirming will switch to that account. Your current guest data (gems, progress) will NOT be carried over.',
     'settings.appleRecovery.pending':  'Restoring...',
     'settings.appleRecovery.failed':   'Restore failed, try again',
+    'settings.appleRecovery.success':  'Account restored',
+    // Bind toasts
+    'settings.bind.success':           'Apple account linked',
+    'settings.bind.failed':            'Link failed, try again',
+    'settings.bind.cancelled':         'Sign-in cancelled',
     // Not-enough-gems popup
     'gems.insufficient': 'Not enough gems\nNeed {need}, have {have}',
     'gems.goTopUp':      'Top Up',
