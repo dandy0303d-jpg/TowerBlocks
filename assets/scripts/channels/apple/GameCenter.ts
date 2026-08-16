@@ -26,9 +26,23 @@
 import { native, sys } from 'cc';
 
 const EV = {
-    authenticate: 'gc.authenticate',
-    getState:     'gc.getState',
-    authResult:   'gc.authResult',
+    authenticate:            'gc.authenticate',
+    getState:                'gc.getState',
+    authResult:              'gc.authResult',
+    submitScore:             'gc.submitScore',
+    submitScoreResult:       'gc.submitScoreResult',
+    reportAchievement:       'gc.reportAchievement',
+    reportAchievementResult: 'gc.reportAchievementResult',
+    showUI:                  'gc.showUI',
+    showUIResult:            'gc.showUIResult',
+} as const;
+
+/** ID constants — must match ASC → Game Center configuration. */
+export const GC_LEADERBOARD = {
+    endless: 'WuJinMoShi',
+} as const;
+export const GC_ACHIEVEMENT = {
+    levelMode: 'GuanQiaMoShi',
 } as const;
 
 export interface GameCenterPlayer {
@@ -66,6 +80,17 @@ type Listener = (result: GameCenterResult) => void;
 const listeners: Set<Listener> = new Set();
 let lastResult: GameCenterResult | null = null;
 
+// Pending one-shot resolvers for submitScore / reportAchievement /
+// showUI. Keyed by event name — only one in flight per kind at a
+// time (calls are serialised by the caller; overlap replaces the
+// prior slot which is fine for fire-and-forget game telemetry).
+type OneShot = (payload: { success: boolean; kind?: string; error?: string }) => void;
+const oneShotSlots: Record<string, OneShot | null> = {
+    [EV.submitScoreResult]:       null,
+    [EV.reportAchievementResult]: null,
+    [EV.showUIResult]:            null,
+};
+
 // Install the router only when running on native iOS. On other
 // platforms `native.bridge` is undefined and the fan-out is skipped.
 if (sys.isNative && sys.os === sys.OS.IOS && (native as any).bridge) {
@@ -83,10 +108,43 @@ if (sys.isNative && sys.os === sys.OS.IOS && (native as any).bridge) {
             }
             return;
         }
+        // One-shot response events — dispatch to whoever's waiting.
+        if (event in oneShotSlots) {
+            const slot = oneShotSlots[event];
+            oneShotSlots[event] = null;
+            if (slot) {
+                try {
+                    const parsed = JSON.parse(arg ?? '{}');
+                    slot(parsed);
+                } catch (e) {
+                    slot({ success: false, kind: 'parse-error', error: String(e) });
+                }
+            }
+            return;
+        }
         // Not our event — forward to the previous handler (AppleAuth,
         // StoreKit, etc.).
         if (typeof prev === 'function') prev(event, arg);
     };
+}
+
+function oneShotCall(
+    sendEvent: string,
+    replyEvent: string,
+    argPayload: string,
+    timeoutMs = 8_000,
+): Promise<{ success: boolean; kind?: string; error?: string }> {
+    if (!sys.isNative || sys.os !== sys.OS.IOS) {
+        return Promise.resolve({ success: false, kind: 'platform-unsupported', error: 'iOS-only' });
+    }
+    return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+            if (oneShotSlots[replyEvent]) oneShotSlots[replyEvent] = null;
+            resolve({ success: false, kind: 'timeout', error: `no reply after ${timeoutMs}ms` });
+        }, timeoutMs);
+        oneShotSlots[replyEvent] = (r) => { clearTimeout(timer); resolve(r); };
+        (native as any).bridge.sendToNative(sendEvent, argPayload);
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -142,5 +200,31 @@ export const GameCenter = {
             try { fn(lastResult); } catch (e) { console.warn('[GC] subscribe fire threw:', e); }
         }
         return () => { listeners.delete(fn); };
+    },
+
+    /** Submit a score to a Game Center leaderboard. `score` is an
+     *  integer (whatever units the ASC leaderboard was configured
+     *  for). Non-blocking — callers should NOT await this on the
+     *  hot path; treat it as fire-and-forget. */
+    submitScore(leaderboardID: string, score: number): Promise<{ success: boolean; error?: string }> {
+        return oneShotCall(EV.submitScore, EV.submitScoreResult,
+            JSON.stringify({ leaderboardID, score: Math.floor(score) }));
+    },
+
+    /** Report progress on a Game Center achievement. `percentComplete`
+     *  is 0-100; 100 unlocks the achievement + shows the native banner. */
+    reportAchievement(achievementID: string, percentComplete: number): Promise<{ success: boolean; error?: string }> {
+        const pct = Math.max(0, Math.min(100, percentComplete));
+        return oneShotCall(EV.reportAchievement, EV.reportAchievementResult,
+            JSON.stringify({ achievementID, percentComplete: pct }));
+    },
+
+    /** Present the native Game Center UI. `stateKind`:
+     *    ''             — dashboard (default landing)
+     *    'leaderboards' — leaderboards list
+     *    'achievements' — achievements list
+     *    'leaderboard:<id>' — specific leaderboard */
+    showUI(stateKind: string = ''): Promise<{ success: boolean; error?: string }> {
+        return oneShotCall(EV.showUI, EV.showUIResult, stateKind);
     },
 };

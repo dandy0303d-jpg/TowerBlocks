@@ -4,23 +4,26 @@
 //  Event schema (JsbBridgeWrapper):
 //
 //  JS  → Native:
-//    "gc.authenticate"  arg = ignored (pass empty string)
-//                       — installs authenticateHandler if not yet installed;
-//                       replays cached state to JS if already resolved.
-//    "gc.getState"      arg = ignored — asks Swift to emit last-known
-//                       auth state (useful if JS registered its listener
-//                       after the initial event already fired).
+//    "gc.authenticate"       arg = ignored — installs authenticateHandler
+//                            if not yet installed; replays cached state.
+//    "gc.getState"           arg = ignored — asks Swift to emit last-known
+//                            auth state.
+//    "gc.submitScore"        arg = JSON {"leaderboardID":"...", "score":123}
+//    "gc.reportAchievement"  arg = JSON {"achievementID":"...", "percentComplete":50.0}
+//    "gc.showUI"             arg = stateKind string ("", "leaderboards",
+//                            "achievements", "dashboard", or
+//                            "leaderboard:<id>" for a specific board)
 //
 //  Native → JS:
-//    "gc.authResult"    arg = JSON
-//                       success: {"success":true,"gamePlayerID":"...",
-//                                 "teamPlayerID":"...","displayName":"...",
-//                                 "alias":"...","isUnderage":false}
-//                       failure: {"success":false,"kind":"...","error":"..."}
-//                       Possible kinds: "auth-failed" (user declined / no
-//                       account / net error), "no-present-vc", "pending"
-//                       (getState called before handler fired),
-//                       "encode-failed", "unknown".
+//    "gc.authResult"              arg = JSON auth result (see below).
+//    "gc.submitScoreResult"       arg = JSON {"success":bool, "kind"?, "error"?}
+//    "gc.reportAchievementResult" arg = JSON {"success":bool, "kind"?, "error"?}
+//    "gc.showUIResult"            arg = JSON {"success":bool, "kind"?, "error"?}
+//
+//  authResult payload:
+//    success: {"success":true,"gamePlayerID":"...","teamPlayerID":"...",
+//              "displayName":"...","alias":"...","isUnderage":false}
+//    failure: {"success":false,"kind":"...","error":"..."}
 //
 //  MRC + threading notes match AppleAuthBridgeGlue: JsbBridgeWrapper
 //  is MRC, so listener blocks must be [copy]'d, and dispatchEventToScript
@@ -70,6 +73,70 @@ static inline void DispatchToJS(NSString *event, NSString *arg) {
         } copy];
         [bridge addScriptEventListener:@"gc.getState" listener:stateListener];
 
+        // -- gc.submitScore ----------------------------------------------
+        // arg = JSON {"leaderboardID":"...", "score":<int>}
+        OnScriptEventListener submitListener = [^(NSString *arg) {
+            NSString *leaderboardID = nil;
+            long long score = 0;
+            if ([arg isKindOfClass:[NSString class]] && [arg hasPrefix:@"{"]) {
+                NSData *d = [arg dataUsingEncoding:NSUTF8StringEncoding];
+                id parsed = [NSJSONSerialization JSONObjectWithData:d options:0 error:nil];
+                if ([parsed isKindOfClass:[NSDictionary class]]) {
+                    NSDictionary *obj = (NSDictionary *)parsed;
+                    id lb = obj[@"leaderboardID"];
+                    id sc = obj[@"score"];
+                    if ([lb isKindOfClass:[NSString class]]) leaderboardID = (NSString *)lb;
+                    if ([sc isKindOfClass:[NSNumber class]]) score = [(NSNumber *)sc longLongValue];
+                }
+            }
+            if (leaderboardID.length == 0) {
+                DispatchToJS(@"gc.submitScoreResult",
+                             @"{\"success\":false,\"kind\":\"bad-arg\",\"error\":\"leaderboardID required\"}");
+                return;
+            }
+            [impl submitScoreWithLeaderboardID:leaderboardID score:score completion:^(NSString *result) {
+                DispatchToJS(@"gc.submitScoreResult", result);
+            }];
+        } copy];
+        [bridge addScriptEventListener:@"gc.submitScore" listener:submitListener];
+
+        // -- gc.reportAchievement ----------------------------------------
+        // arg = JSON {"achievementID":"...", "percentComplete":<0..100>}
+        OnScriptEventListener achListener = [^(NSString *arg) {
+            NSString *achID = nil;
+            double pct = 0;
+            if ([arg isKindOfClass:[NSString class]] && [arg hasPrefix:@"{"]) {
+                NSData *d = [arg dataUsingEncoding:NSUTF8StringEncoding];
+                id parsed = [NSJSONSerialization JSONObjectWithData:d options:0 error:nil];
+                if ([parsed isKindOfClass:[NSDictionary class]]) {
+                    NSDictionary *obj = (NSDictionary *)parsed;
+                    id a = obj[@"achievementID"];
+                    id p = obj[@"percentComplete"];
+                    if ([a isKindOfClass:[NSString class]]) achID = (NSString *)a;
+                    if ([p isKindOfClass:[NSNumber class]]) pct = [(NSNumber *)p doubleValue];
+                }
+            }
+            if (achID.length == 0) {
+                DispatchToJS(@"gc.reportAchievementResult",
+                             @"{\"success\":false,\"kind\":\"bad-arg\",\"error\":\"achievementID required\"}");
+                return;
+            }
+            [impl reportAchievementWithAchievementID:achID percentComplete:pct completion:^(NSString *result) {
+                DispatchToJS(@"gc.reportAchievementResult", result);
+            }];
+        } copy];
+        [bridge addScriptEventListener:@"gc.reportAchievement" listener:achListener];
+
+        // -- gc.showUI ---------------------------------------------------
+        // arg = stateKind string (see header for options).
+        OnScriptEventListener showListener = [^(NSString *stateKind) {
+            NSString *sk = [stateKind isKindOfClass:[NSString class]] ? stateKind : @"";
+            [impl showUIWithStateKind:sk completion:^(NSString *result) {
+                DispatchToJS(@"gc.showUIResult", result);
+            }];
+        } copy];
+        [bridge addScriptEventListener:@"gc.showUI" listener:showListener];
+
         // Kick off auto-login immediately — no need for JS to trigger.
         // On subsequent launches with a live Game Center session this
         // is silent (no UI); on first launch iOS shows the login sheet
@@ -78,7 +145,7 @@ static inline void DispatchToJS(NSString *event, NSString *arg) {
             [impl startAutoLogin];
         });
 
-        NSLog(@"[GameCenter] GameCenterBridgeGlue registered — 2 event listeners active, auto-login kicked off");
+        NSLog(@"[GameCenter] GameCenterBridgeGlue registered — 5 event listeners active, auto-login kicked off");
     });
 }
 

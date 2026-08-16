@@ -29,6 +29,11 @@ import { COLS, COLORS, CellValue, ENDLESS_HEIGHT_LIMIT, ENDLESS_GRAY_CAP } from 
 import { SoundManager } from '../audio/SoundManager';
 import { LevelProgress } from '../core/LevelProgress';
 import { submitScore } from '../core/LeaderboardApi';
+// Game Center — channel-specific. On non-iOS these calls resolve
+// with { success:false, kind:'platform-unsupported' } so guarding
+// isn't required; leaving the calls unconditional keeps the two
+// branches (Apple / Android future) merge-friendly.
+import { GameCenter, GC_LEADERBOARD, GC_ACHIEVEMENT } from '../channels/apple/GameCenter';
 import { buildTutorialLevel } from '../core/TutorialLevelData';
 // Settings.gestureMode currently unused — the gesture system was simplified
 // to "left-half tap/hold/drag" (no flick branch). Import kept commented for
@@ -591,6 +596,15 @@ export class GameController extends Component {
                         submitScore(mode, score).catch(err => {
                             console.warn('[TowerBlocks] leaderboard submit failed:', err.message);
                         });
+                        // Also submit to Game Center. Only endless has a
+                        // GC leaderboard configured (WuJinMoShi); blind
+                        // mode is server-only for now. Fire-and-forget.
+                        if (mode === 'endless') {
+                            GameCenter.submitScore(GC_LEADERBOARD.endless, score).then((r) => {
+                                if (!r.success) console.warn('[TowerBlocks][GC] endless submitScore failed:', r.error);
+                                else            log('[TowerBlocks][GC] endless score submitted');
+                            });
+                        }
                     }
                 },
                 onLevelWin:     ()  => {
@@ -611,6 +625,17 @@ export class GameController extends Component {
                         log(`[TowerBlocks] submitting level score ${clearedCount} to leaderboard`);
                         submitScore('level', clearedCount).catch(err => {
                             console.warn('[TowerBlocks] leaderboard submit failed:', err.message);
+                        });
+                        // Report Game Center achievement progress.
+                        // percentComplete = cleared / total * 100.
+                        // GC handles idempotency + monotonic progress
+                        // server-side; reporting 100% shows the native
+                        // "Achievement Unlocked" banner.
+                        const totalLevels = this.flatLevels.length || 1;
+                        const pct = Math.min(100, (clearedCount / totalLevels) * 100);
+                        GameCenter.reportAchievement(GC_ACHIEVEMENT.levelMode, pct).then((r) => {
+                            if (!r.success) console.warn('[TowerBlocks][GC] achievement report failed:', r.error);
+                            else            log(`[TowerBlocks][GC] achievement progress = ${pct.toFixed(1)}%`);
                         });
                     }
                     // `level_win` SFX intentionally NOT played here —

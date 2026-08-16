@@ -29,6 +29,17 @@ import Foundation
 import GameKit
 import UIKit
 
+/// Delegate for GKGameCenterViewController — only job is to dismiss
+/// the panel when the player taps "Done". Singleton because there's
+/// never more than one panel up at a time, and the delegate needs a
+/// strong retainer (GKGameCenterViewController holds it weakly).
+@objc public class GameCenterUIDelegate: NSObject, GKGameCenterControllerDelegate {
+    @objc public static let shared = GameCenterUIDelegate()
+    public func gameCenterViewControllerDidFinish(_ gameCenterViewController: GKGameCenterViewController) {
+        gameCenterViewController.dismiss(animated: true, completion: nil)
+    }
+}
+
 @objc public class GameCenterBridge: NSObject {
 
     // MARK: - Singleton
@@ -119,6 +130,103 @@ import UIKit
         } else {
             // Handler hasn't fired yet — reply with a pending sentinel.
             self.emit(#"{"success":false,"kind":"pending","error":"authenticateHandler has not yet fired"}"#)
+        }
+    }
+
+    /// Submit a score to a Game Center leaderboard.
+    /// - leaderboardID must match an ID created in ASC → Game Center.
+    /// - score is an Int64 — GC preserves whatever units the leaderboard
+    ///   was configured for (integer / decimal points).
+    /// Completion JSON: {"success":true} or {"success":false,"kind":"...","error":"..."}
+    @objc public func submitScore(leaderboardID: String, score: Int64, completion: @escaping (String) -> Void) {
+        guard GKLocalPlayer.local.isAuthenticated else {
+            completion(Self.errorJSON(kind: "not-authenticated", detail: "not signed into Game Center"))
+            return
+        }
+        // GKLeaderboard.submitScore (iOS 14+) is the modern API — the
+        // GKScore + report(_:withCompletionHandler:) pair is deprecated.
+        if #available(iOS 14.0, *) {
+            GKLeaderboard.submitScore(
+                Int(score),
+                context: 0,
+                player: GKLocalPlayer.local,
+                leaderboardIDs: [leaderboardID]
+            ) { error in
+                if let error = error {
+                    NSLog("[GameCenter] submitScore(\(leaderboardID), \(score)) failed: \(error.localizedDescription)")
+                    completion(Self.errorJSON(kind: "submit-failed", detail: error.localizedDescription))
+                } else {
+                    NSLog("[GameCenter] submitScore(\(leaderboardID), \(score)) ok")
+                    completion(#"{"success":true}"#)
+                }
+            }
+        } else {
+            completion(Self.errorJSON(kind: "ios-too-old", detail: "requires iOS 14+"))
+        }
+    }
+
+    /// Report progress on a Game Center achievement.
+    /// - achievementID must match an ID created in ASC → Game Center.
+    /// - percentComplete is 0-100 (double). 100 = fully unlocked.
+    /// Uses showsCompletionBanner=true so player sees the "Achievement
+    /// Unlocked" HUD when reaching 100%.
+    /// Completion JSON: {"success":true} or {"success":false,"kind":"...","error":"..."}
+    @objc public func reportAchievement(achievementID: String, percentComplete: Double, completion: @escaping (String) -> Void) {
+        guard GKLocalPlayer.local.isAuthenticated else {
+            completion(Self.errorJSON(kind: "not-authenticated", detail: "not signed into Game Center"))
+            return
+        }
+        let ach = GKAchievement(identifier: achievementID)
+        ach.percentComplete = max(0, min(100, percentComplete))
+        ach.showsCompletionBanner = true
+        GKAchievement.report([ach]) { error in
+            if let error = error {
+                NSLog("[GameCenter] reportAchievement(\(achievementID), \(percentComplete)%) failed: \(error.localizedDescription)")
+                completion(Self.errorJSON(kind: "report-failed", detail: error.localizedDescription))
+            } else {
+                NSLog("[GameCenter] reportAchievement(\(achievementID), \(percentComplete)%) ok")
+                completion(#"{"success":true}"#)
+            }
+        }
+    }
+
+    /// Present the native Game Center UI. `stateKind` selects which
+    /// tab opens:
+    ///   ""             — default (leaderboards list)
+    ///   "leaderboards" — leaderboards, all
+    ///   "leaderboard:<id>" — a specific leaderboard by ID
+    ///   "achievements" — achievements
+    ///   "dashboard"    — the top-level dashboard
+    /// Silently returns on non-iOS-14+ (rare — we're on iOS 15+).
+    @objc public func showUI(stateKind: String, completion: @escaping (String) -> Void) {
+        guard GKLocalPlayer.local.isAuthenticated else {
+            completion(Self.errorJSON(kind: "not-authenticated", detail: "not signed into Game Center"))
+            return
+        }
+        DispatchQueue.main.async {
+            guard let top = Self.topViewController() else {
+                completion(Self.errorJSON(kind: "no-present-vc", detail: "no top view controller"))
+                return
+            }
+            if #available(iOS 14.0, *) {
+                let vc: GKGameCenterViewController
+                if stateKind.hasPrefix("leaderboard:") {
+                    let id = String(stateKind.dropFirst("leaderboard:".count))
+                    vc = GKGameCenterViewController(leaderboardID: id, playerScope: .global, timeScope: .allTime)
+                } else if stateKind == "achievements" {
+                    vc = GKGameCenterViewController(state: .achievements)
+                } else if stateKind == "leaderboards" {
+                    vc = GKGameCenterViewController(state: .leaderboards)
+                } else {
+                    vc = GKGameCenterViewController(state: .dashboard)
+                }
+                vc.gameCenterDelegate = GameCenterUIDelegate.shared
+                top.present(vc, animated: true, completion: {
+                    completion(#"{"success":true}"#)
+                })
+            } else {
+                completion(Self.errorJSON(kind: "ios-too-old", detail: "requires iOS 14+"))
+            }
         }
     }
 
