@@ -29,6 +29,7 @@ import { LevelSelectStage3D } from './LevelSelectStage3D';
 import { LeaderboardController } from './LeaderboardController';
 import { TopUpController } from './TopUpController';
 import { PlayerProfile } from '../core/PlayerProfile';
+import { setBannedHandler, getBannedState, type BannedState } from '../core/Http';
 import { fetchWallet } from '../core/WalletApi';
 import { BACKEND_BASE_URL } from '../core/BackendConfig';
 import { TutorialProgress } from '../core/TutorialProgress';
@@ -453,11 +454,22 @@ export class MenuController extends Component {
      *  the boot proceed; the tutorial (step 2) doesn't depend on the
      *  network. */
     public beginBootAfterLoading(): void {
+        // Register the ban handler BEFORE any Http calls fire —
+        // ensureRegistered / fetchWallet may 403 immediately for
+        // banned uuids, and we want the modal to appear right away
+        // instead of the main menu.
+        setBannedHandler((s) => this.showBannedModal(s));
         void (async () => {
             // Step 1: register / recover the player identity
             await PlayerProfile.ensureRegistered().catch((e) => {
                 console.warn('[MenuController] ensureRegistered failed:', e);
             });
+            // Ban check — if any auth'd request 403'd above, the
+            // handler has fired + modal is up; skip further boot work.
+            if (getBannedState()) {
+                log('[MenuController] boot short-circuited — player banned');
+                return;
+            }
             log(`[MenuController] beginBootAfterLoading — uuid=${PlayerProfile.uuid} name=${PlayerProfile.name}`);
 
             // Step 2: consent gate (韩国 PIPA / 게임산업진흥법 요구). Blocks
@@ -1686,6 +1698,102 @@ export class MenuController extends Component {
         }
     }
 
+<<<<<<< HEAD
+=======
+    /** Ban-detected handler — registered on Http via setBannedHandler
+     *  from beginBootAfterLoading. Hides all panels, then loops the
+     *  confirm modal indefinitely so the player has no way to
+     *  proceed: tapping "OK" reopens the same modal. Http itself is
+     *  already latched (all further requests short-circuit), so even
+     *  in the tiny window between modal reopens no gameplay works.
+     *
+     *  Recovery path: player uninstalls, or admin unbans them and
+     *  they relaunch the app. The client has no unban check other
+     *  than "next request no longer returns 403" — which the fresh
+     *  boot naturally exercises. */
+    private _bannedModalActive = false;
+    private async showBannedModal(state: BannedState): Promise<void> {
+        if (this._bannedModalActive) return;   // idempotent — one loop is enough
+        this._bannedModalActive = true;
+        console.warn(`[MenuController] SHOWING BAN MODAL — reason: ${state.reason}`);
+        // Hide the main menu / any panel that might be visible under
+        // the modal — we don't want the player to see a working menu
+        // behind an "account banned" popup.
+        if (this.modeSelectPanel) this.modeSelectPanel.active = false;
+        this.setGameplayVisible(false);
+        // Close settings / topup if open.
+        if (this.authoredSettingsPanel) this.authoredSettingsPanel.active = false;
+        // Loop the modal forever. showConfirm resolves on either
+        // button — we ignore the result and reopen.
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+            await this.showConfirm(
+                t('banned.title'),
+                t('banned.desc', { reason: state.reason }),
+                t('banned.ok'),
+                t('banned.ok'),
+            );
+            // Tiny delay so the panel actually paints between opens
+            // (otherwise showConfirm's Promise chains microtask-fast
+            // and Cocos never gets a render frame).
+            await new Promise<void>((r) => setTimeout(r, 50));
+        }
+    }
+
+    /** Lazily resolve the scene's LoadingController. Cached on first
+     *  hit. `null` if no LoadingController is present in the scene
+     *  (unlikely — every scene wires one — but callers should treat as
+     *  optional). */
+    private _cachedLoadingController: LoadingController | null | undefined = undefined;
+    private getLoadingController(): LoadingController | null {
+        if (this._cachedLoadingController !== undefined) return this._cachedLoadingController;
+        const scene = director.getScene();
+        this._cachedLoadingController = scene?.getComponentInChildren(LoadingController) ?? null;
+        if (!this._cachedLoadingController) {
+            console.warn('[MenuController] LoadingController not found in scene — reload overlay disabled');
+        }
+        return this._cachedLoadingController;
+    }
+
+    /** Show the loading panel, run `body`, then hide it — regardless of
+     *  whether `body` throws. Used by the account-swap flows (delete,
+     *  bind, recover) so the player sees a clean "reloading with new
+     *  data" transition. If the LoadingController isn't wired the
+     *  overlay is skipped but `body` still runs.
+     *
+     *  A guaranteed minimum overlay-visible time keeps the transition
+     *  from flashing by too fast when the network work finishes in
+     *  <100ms. */
+    private async runWithReloadOverlay(body: () => Promise<void>): Promise<void> {
+        const lc = this.getLoadingController();
+        const startTs = performance.now();
+        const minOverlayMs = 600;
+        if (lc) lc.showAccountSwapOverlay();
+        try {
+            await body();
+            // Rebuild the level-select tower for the (possibly changed)
+            // LevelProgress.currentIdx. Body has already restored the
+            // progress state, so this now points at the correct level.
+            // Runs inside the overlay so the player doesn't see the
+            // rebuild hitch on their first level-select tap after the
+            // swap. Also give Cocos one paint frame after activating
+            // the stage so the shader compile actually happens under
+            // the overlay rather than on that first tap.
+            if (lc) {
+                lc.rebuildLevelTowerForCurrentAccount();
+                await new Promise<void>((r) => setTimeout(r, 32));
+            }
+        } finally {
+            const elapsed = performance.now() - startTs;
+            const remaining = Math.max(0, minOverlayMs - elapsed);
+            if (remaining > 0) {
+                await new Promise<void>((r) => setTimeout(r, remaining));
+            }
+            if (lc) lc.hideAccountSwapOverlay();
+        }
+    }
+
+>>>>>>> 7a9f403 (feat(ban): client detects server 403 banned + shows blocking modal)
     /** Bind the avatar-picker panel's close button + each per-avatar
      *  button. Idempotent via `_avatarPickerWired`. Called from
      *  `wireAuthoredSettingsPanel` after the settings avatar button

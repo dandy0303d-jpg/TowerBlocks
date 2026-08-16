@@ -27,6 +27,50 @@ let bearerToken: string | null = null;
 export function setBearerToken(t: string | null): void { bearerToken = t; }
 export function getBearerToken(): string | null { return bearerToken; }
 
+// ============================================================
+//  Ban gate — server 403 {error:"banned",reason} handling
+// ============================================================
+// When the server returns 403 with body `{"error":"banned", "reason":"..."}`
+// (see server-side auth.ts requireAuth), we latch a module-level flag
+// so:
+//   1. All subsequent Http requests short-circuit (no retry loop that
+//      would just get more 403s + spam the server / drain battery).
+//   2. UI code can call `getBannedState()` at boot / after any request
+//      to render the "your account has been banned" screen.
+//   3. A registered handler (set by MenuController) fires immediately
+//      on the FIRST detection so the ban screen can appear even
+//      mid-request-chain, not only after the boot sequence completes.
+export interface BannedState { banned: true; reason: string; detectedAt: number; }
+let _bannedState: BannedState | null = null;
+let _onBannedHandler: ((s: BannedState) => void) | null = null;
+
+/** Poll from anywhere (Menu, Loading, ensureRegistered's caller). */
+export function getBannedState(): BannedState | null { return _bannedState; }
+
+/** Register the singleton handler. Fired ONCE on first detection.
+ *  Later 403s don't re-fire (state already latched). */
+export function setBannedHandler(fn: ((s: BannedState) => void) | null): void {
+    _onBannedHandler = fn;
+    // If a ban was detected BEFORE the handler was registered (rare
+    // but possible during boot ordering) fire immediately.
+    if (fn && _bannedState) fn(_bannedState);
+}
+
+/** Reset — used by admin unban flow or by delete-account (which
+ *  wipes the local uuid, so the ban no longer applies). Safe no-op
+ *  when nothing was latched. */
+export function clearBannedState(): void { _bannedState = null; }
+
+function latchBanned(reason: string): void {
+    if (_bannedState) return;   // already latched — don't reset detectedAt
+    _bannedState = { banned: true, reason, detectedAt: Date.now() };
+    console.warn(`[Http] BAN LATCHED — server rejected with "banned", reason: ${reason}`);
+    if (_onBannedHandler) {
+        try { _onBannedHandler(_bannedState); }
+        catch (e) { console.warn('[Http] banned handler threw:', e); }
+    }
+}
+
 // ---- Client HMAC key ----
 // KEEP IN SYNC with the server's `CLIENT_SECRET` env var. This is
 // intentionally embedded in the client — rotating it means shipping
@@ -198,6 +242,14 @@ function xhrJson<T>(
     const startedAt = Date.now();
     const tag = `[Http] ${method} ${pathOf(url)}`;
     const hasAuth = !!bearerToken;
+    // Ban gate — once latched, refuse to make any more calls. Prevents
+    // a retry loop from spamming the server with the same doomed
+    // request and burning battery. UI code should be showing the ban
+    // screen; further requests are pointless.
+    if (_bannedState) {
+        console.warn(`${tag} → short-circuit (banned)`);
+        return Promise.reject(new Error(`banned: ${_bannedState.reason}`));
+    }
     console.log(`${tag} → sending (auth=${hasAuth ? 'yes' : 'NO'}, sign=${sign ? 'yes' : 'no'}, body=${body ? body.length + 'B' : '0B'})`);
     return new Promise((resolve, reject) => {
         const xhr = new XMLHttpRequest();
@@ -235,6 +287,18 @@ function xhrJson<T>(
                 return;
             }
             console.warn(`${tag} ← ${status} FAIL (${ms}ms) ${text.slice(0, 200)}`);
+            // Detect the server's ban response — 403 with body
+            // `{"error":"banned", "reason":"..."}`. Latch on first
+            // hit so subsequent requests short-circuit and the UI
+            // handler fires.
+            if (status === 403 && text) {
+                try {
+                    const obj = JSON.parse(text);
+                    if (obj && obj.error === 'banned') {
+                        latchBanned(typeof obj.reason === 'string' ? obj.reason : '(no reason)');
+                    }
+                } catch { /* not JSON — ignore */ }
+            }
             reject(new Error(`HTTP ${status}: ${text}`));
         };
         xhr.onerror = () => {
