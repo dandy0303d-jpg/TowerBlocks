@@ -22,6 +22,7 @@ import { sys } from 'cc';
 import { Providers } from '../../core/channels/Providers';
 import { StoreKitProvider } from './StoreKitProvider';
 import { AppleAuth } from './AppleAuth';
+import { GameCenter } from './GameCenter';
 
 (function initAppStore(): void {
     if (sys.os !== sys.OS.IOS) {
@@ -33,6 +34,24 @@ import { AppleAuth } from './AppleAuth';
     const provider = new StoreKitProvider();
     Providers.setPurchase(provider);
     console.log('[AppStoreBoot] registered StoreKitProvider — init runs at first Providers.purchase.init() call');
+
+    // Kick off Game Center login. The native side already auto-fires
+    // authenticateHandler from AppDelegate, so this call is really
+    // just to observe the outcome (or to trigger it in the event
+    // the auto-fire raced with something and we missed it). Silent
+    // when the user is already signed in; shows the login sheet /
+    // banner on first launch.
+    GameCenter.authenticate()
+        .then((r) => {
+            if (r.success) {
+                console.log(`[AppStoreBoot][GC] signed in as "${r.displayName}" (gamePlayerID=${r.gamePlayerID})`);
+            } else {
+                console.log(`[AppStoreBoot][GC] not signed in — kind=${r.kind}, error=${r.error}`);
+            }
+        })
+        .catch((e) => {
+            console.warn('[AppStoreBoot][GC] authenticate threw:', e);
+        });
 
     // ---- DEBUG: expose SIWA to globalThis so we can trigger it from
     // Safari Web Inspector while the Settings-screen UI is still WIP.

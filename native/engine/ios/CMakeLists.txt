@@ -49,6 +49,9 @@ list(APPEND CC_ALL_SOURCES
     ${CC_PROJECT_DIR}/service/auth/AppleAuthBridge.swift
     ${CC_PROJECT_DIR}/service/auth/AppleAuthBridgeGlue.h
     ${CC_PROJECT_DIR}/service/auth/AppleAuthBridgeGlue.mm
+    ${CC_PROJECT_DIR}/service/gc/GameCenterBridge.swift
+    ${CC_PROJECT_DIR}/service/gc/GameCenterBridgeGlue.h
+    ${CC_PROJECT_DIR}/service/gc/GameCenterBridgeGlue.mm
     ${CC_PROJECT_DIR}/service/ClipboardBridgeGlue.h
     ${CC_PROJECT_DIR}/service/ClipboardBridgeGlue.mm
 )
@@ -70,6 +73,7 @@ cc_ios_after_target(${EXECUTABLE_NAME})
 target_link_libraries(${EXECUTABLE_NAME}
     "-framework StoreKit"
     "-framework AuthenticationServices"
+    "-framework GameKit"
 )
 
 # The Swift-to-ObjC generated header is #import'ed from

@@ -34,6 +34,7 @@
 #import "service/SDKWrapper.h"
 #import "service/iap/PurchaseBridgeGlue.h"
 #import "service/auth/AppleAuthBridgeGlue.h"
+#import "service/gc/GameCenterBridgeGlue.h"
 #import "service/ClipboardBridgeGlue.h"
 
 @implementation AppDelegate
@@ -76,6 +77,11 @@
     // Register the clipboard bridge — 'clipboard.copy' event. UIPasteboard
     // has been available since iOS 3; no version guard needed.
     [ClipboardBridgeGlue registerWithCocos];
+
+    // Register the Game Center bridge — installs GKLocalPlayer.local
+    // authenticateHandler and kicks off silent login. GameKit is
+    // available on all iOS versions we support.
+    [GameCenterBridgeGlue registerWithCocos];
 
     return YES;
 }
