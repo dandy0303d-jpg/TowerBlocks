@@ -1575,6 +1575,10 @@ export class MenuController extends Component {
                 if (msg.startsWith('user-cancelled')) {
                     this.showSettingsToast(t('settings.bind.cancelled'));
                 }
+                // Snap the Apple toggle back off — user may have flipped
+                // it ON to trigger this flow; the bind didn't happen so
+                // the UI shouldn't claim it did.
+                this.refreshAuthoredSettingsValues();
                 return;
             }
             // "This Apple ID is bound to another player" — offer recovery
@@ -1594,6 +1598,9 @@ export class MenuController extends Component {
                     );
                     if (!ok) {
                         log('[Settings] Apple recovery cancelled by user');
+                        // Recovery not confirmed → bind still didn't happen,
+                        // snap toggle back off.
+                        this.refreshAuthoredSettingsValues();
                         return;
                     }
                     await this.commitAppleRecovery(token);
@@ -1602,6 +1609,8 @@ export class MenuController extends Component {
             }
             console.warn(`[Settings] SIWA / link failed: ${msg}`);
             this.showSettingsToast(t('settings.bind.failed'));
+            // Bind failed for some other reason → snap toggle back off.
+            this.refreshAuthoredSettingsValues();
         } finally {
             if (btnNode) btnNode.getComponent(Button)!.interactable = true;
         }
@@ -1647,6 +1656,9 @@ export class MenuController extends Component {
             console.warn(`[Settings] Apple recovery failed: ${msg}`);
             if (lab) lab.string = t('settings.appleRecovery.failed');
             this.showSettingsToast(t('settings.appleRecovery.failed'));
+            // Recovery failed → user is still on the original guest uuid;
+            // snap toggle back off so it doesn't misrepresent bind state.
+            this.refreshAuthoredSettingsValues();
             setTimeout(() => {
                 if (btn) btn.getComponent(Button)!.interactable = true;
                 if (lab) lab.string = t('settings.account.apple');
