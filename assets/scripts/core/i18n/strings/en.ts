@@ -213,6 +213,11 @@ export const EN: Record<string, string> = {
     'common.confirm':    'Confirm',
     'common.cancel':     'Cancel',
 
+    // ---------- Account banned ----------
+    'banned.title':      'Account Banned',
+    'banned.desc':       'This account has been banned. Reason: {reason}\n\nContact support if you believe this is a mistake.',
+    'banned.ok':         'OK',
+
     // ---------- Account deletion (App Store 5.1.1(v) required) ----------
     'settings.deleteAccount':         'Delete Account',
     'settings.deleteAccount.title':   'Delete account?',

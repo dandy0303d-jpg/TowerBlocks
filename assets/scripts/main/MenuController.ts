@@ -30,6 +30,7 @@ import { LevelSelectStage3D } from './LevelSelectStage3D';
 import { LeaderboardController } from './LeaderboardController';
 import { TopUpController } from './TopUpController';
 import { PlayerProfile } from '../core/PlayerProfile';
+import { setBannedHandler, getBannedState, type BannedState } from '../core/Http';
 import { fetchWallet } from '../core/WalletApi';
 import { BACKEND_BASE_URL } from '../core/BackendConfig';
 import { TutorialProgress } from '../core/TutorialProgress';
@@ -464,7 +465,19 @@ export class MenuController extends Component {
      *  the boot proceed; the tutorial (step 2) doesn't depend on the
      *  network. */
     public beginBootAfterLoading(): void {
+        // Register the ban handler BEFORE any Http calls fire —
+        // ensureRegistered / fetchWallet may 403 immediately for
+        // banned uuids, and we want the modal to appear right away
+        // instead of the main menu.
+        setBannedHandler((s) => this.showBannedModal(s));
         void PlayerProfile.ensureRegistered().finally(() => {
+            // Ban check — if ensureRegistered's very first request
+            // came back 403 banned, the handler has already fired
+            // and shown the modal. Skip further boot work.
+            if (getBannedState()) {
+                log('[MenuController] boot short-circuited — player banned');
+                return;
+            }
             log(`[MenuController] beginBootAfterLoading — uuid=${PlayerProfile.uuid} name=${PlayerProfile.name}`);
             const needTutorial = !TutorialProgress.hasSeen('operations')
                               && !!this.tutorialController;
@@ -1944,6 +1957,46 @@ export class MenuController extends Component {
             this.showSettingsToast(t('settings.deleteAccount.failed'));
         } finally {
             if (btnComp) btnComp.interactable = true;
+        }
+    }
+
+    /** Ban-detected handler — registered on Http via setBannedHandler
+     *  from beginBootAfterLoading. Hides all panels, then loops the
+     *  confirm modal indefinitely so the player has no way to
+     *  proceed: tapping "OK" reopens the same modal. Http itself is
+     *  already latched (all further requests short-circuit), so even
+     *  in the tiny window between modal reopens no gameplay works.
+     *
+     *  Recovery path: player uninstalls, or admin unbans them and
+     *  they relaunch the app. The client has no unban check other
+     *  than "next request no longer returns 403" — which the fresh
+     *  boot naturally exercises. */
+    private _bannedModalActive = false;
+    private async showBannedModal(state: BannedState): Promise<void> {
+        if (this._bannedModalActive) return;   // idempotent — one loop is enough
+        this._bannedModalActive = true;
+        console.warn(`[MenuController] SHOWING BAN MODAL — reason: ${state.reason}`);
+        // Hide the main menu / any panel that might be visible under
+        // the modal — we don't want the player to see a working menu
+        // behind an "account banned" popup.
+        if (this.modeSelectPanel) this.modeSelectPanel.active = false;
+        this.setGameplayVisible(false);
+        // Close settings / topup if open.
+        if (this.authoredSettingsPanel) this.authoredSettingsPanel.active = false;
+        // Loop the modal forever. showConfirm resolves on either
+        // button — we ignore the result and reopen.
+        // eslint-disable-next-line no-constant-condition
+        while (true) {
+            await this.showConfirm(
+                t('banned.title'),
+                t('banned.desc', { reason: state.reason }),
+                t('banned.ok'),
+                t('banned.ok'),
+            );
+            // Tiny delay so the panel actually paints between opens
+            // (otherwise showConfirm's Promise chains microtask-fast
+            // and Cocos never gets a render frame).
+            await new Promise<void>((r) => setTimeout(r, 50));
         }
     }
 

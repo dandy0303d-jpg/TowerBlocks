@@ -218,6 +218,11 @@ export const ZH: Record<string, string> = {
     'common.confirm':    '确认',
     'common.cancel':     '取消',
 
+    // ---------- 账号封禁 ----------
+    'banned.title':      '账号已封禁',
+    'banned.desc':       '此账号已被封禁。原因：{reason}\n\n如有疑问请联系客服。',
+    'banned.ok':         '我知道了',
+
     // ---------- 删除账号 (App Store 5.1.1(v) 硬性要求) ----------
     'settings.deleteAccount':         '删除账号',
     'settings.deleteAccount.title':   '删除账号？',
