@@ -117,7 +117,7 @@ class Profile {
     }
 
     /** Persist a change to the player's linked-account kind. Called
-     *  by the channel-specific link handlers after a successful bind
+     *  by channel-specific link handlers after a successful bind
      *  (e.g. Sign in with Apple returns → set to 'apple'). Also used
      *  on unbind flows to demote back to 'anonymous'. */
     setAccountType(next: AccountType): void {
@@ -306,12 +306,20 @@ class Profile {
             return;
         }
         try {
-            const { uuid, nickname, token, expEpochSec } = await registerPlayer();
+            const { uuid, nickname, avatarIdx, token, expEpochSec } = await registerPlayer();
             sys.localStorage.setItem(UUID_KEY, uuid);
             sys.localStorage.setItem(NAME_KEY, nickname);
             sys.localStorage.setItem(ACCOUNT_KEY, 'anonymous');
             sys.localStorage.setItem(TOKEN_KEY, token);
             sys.localStorage.setItem(TOKEN_EXP_KEY, String(expEpochSec));
+            // Server-assigned initial avatar — random per registration
+            // so guests visually distinct without the player picking.
+            // Only stored if the server actually provided it (older
+            // server versions may not).
+            if (typeof avatarIdx === 'number' && Number.isFinite(avatarIdx)) {
+                sys.localStorage.setItem(AVATAR_KEY, String(avatarIdx));
+                this._avatarIdx = avatarIdx;
+            }
             setBearerToken(token);
             this._uuid = uuid;
             this._name = nickname;

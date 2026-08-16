@@ -16,18 +16,44 @@
  */
 
 import { ZH } from './strings/zh';
+import { ZH_HANT } from './strings/zh-Hant';
 import { EN } from './strings/en';
+import { JA } from './strings/ja';
 import { KO } from './strings/ko';
+import { ES } from './strings/es';
+import { PT_BR } from './strings/pt-BR';
+import { FR } from './strings/fr';
+import { DE } from './strings/de';
+import { RU } from './strings/ru';
 
-export type Lang = 'zh' | 'en' | 'ko';
+/** All 10 supported languages — global coverage of top mobile-gaming
+ *  markets. Any missing key falls back to Chinese (source of truth). */
+export type Lang =
+    | 'zh' | 'zh-Hant'         // Chinese: Mainland + Traditional
+    | 'en'                      // English (global)
+    | 'ja' | 'ko'               // East Asia
+    | 'es' | 'pt-BR'            // LATAM + Spain + Brazil
+    | 'fr' | 'de'               // Western Europe
+    | 'ru';                     // Russia + CIS
 
-/** All language packs keyed by lang code. Order here also drives the
- *  rotation used by `cycleLang()`. */
-const LANG_ORDER: Lang[] = ['zh', 'en', 'ko'];
+/** Rotation order for cycleLang() — grouped by writing system so the
+ *  toggle feels intentional: Chinese → English → East Asian → Latin →
+ *  Cyrillic. */
+const LANG_ORDER: Lang[] = [
+    'zh', 'zh-Hant', 'en', 'ja', 'ko',
+    'es', 'pt-BR', 'fr', 'de', 'ru',
+];
 const PACKS: Record<Lang, Record<string, string>> = {
     zh: ZH,
+    'zh-Hant': ZH_HANT,
     en: EN,
+    ja: JA,
     ko: KO,
+    es: ES,
+    'pt-BR': PT_BR,
+    fr: FR,
+    de: DE,
+    ru: RU,
 };
 
 const STORAGE_KEY = 'tetritower.lang';
@@ -83,6 +109,63 @@ export function cycleLang(): Lang {
 
 /** All registered language codes — handy for building dropdowns etc. */
 export const SUPPORTED_LANGS: ReadonlyArray<Lang> = LANG_ORDER;
+
+/**
+ * Map an OS-level language code (e.g. from `sys.languageCode`) to one
+ * of our supported Lang codes. Fallback for unsupported languages is
+ * 'en' (universal reach — most players understand basic English UI
+ * better than random Chinese fallback).
+ *
+ * Case-insensitive. Handles both short codes ('zh') and full locales
+ * ('zh-CN', 'pt-BR', 'en-US'). If the input has a region tag that
+ * matters (like zh-TW → zh-Hant, pt-BR/pt-PT differences), we route
+ * accordingly; otherwise the language prefix is enough.
+ */
+export function mapSystemLangToLang(sysLangCode: string): Lang {
+    if (!sysLangCode) return 'en';
+    const s = sysLangCode.toLowerCase().replace(/_/g, '-');
+    // Chinese variants — key on region (TW / HK use Traditional).
+    if (s === 'zh-tw' || s === 'zh-hk' || s === 'zh-mo' || s.startsWith('zh-hant')) return 'zh-Hant';
+    if (s === 'zh' || s.startsWith('zh-')) return 'zh';   // Mainland Simplified default
+    // Portuguese: we only ship pt-BR; pt-PT users get pt-BR too (closer than English).
+    if (s.startsWith('pt')) return 'pt-BR';
+    // Simple prefix maps for the rest.
+    if (s.startsWith('en')) return 'en';
+    if (s.startsWith('ja')) return 'ja';
+    if (s.startsWith('ko')) return 'ko';
+    if (s.startsWith('es')) return 'es';
+    if (s.startsWith('fr')) return 'fr';
+    if (s.startsWith('de')) return 'de';
+    if (s.startsWith('ru')) return 'ru';
+    // Unsupported (hi, vi, id, ar, tr, ...) — default to English.
+    return 'en';
+}
+
+/**
+ * First-launch auto-detect: if the player has never picked a language
+ * (localStorage empty), pick one based on the OS language. If they
+ * HAVE picked, respect their choice — don't override.
+ *
+ * Call this ONCE at boot (from LoadingController) BEFORE any UI
+ * renders. Passing in `sysLangCode` keeps this module free of Cocos
+ * imports — caller supplies `sys.languageCode` (or the web equivalent).
+ *
+ * Returns the language that ended up active (either the saved one or
+ * the newly-detected one) so the caller can log for debugging.
+ */
+export function initFromSystemLang(sysLangCode: string): Lang {
+    // Respect prior explicit choice — never override.
+    try {
+        if (typeof localStorage !== 'undefined' && localStorage.getItem(STORAGE_KEY)) {
+            return currentLang;
+        }
+    } catch (_) { /* ignore */ }
+    const detected = mapSystemLangToLang(sysLangCode);
+    if (detected !== currentLang) {
+        setLang(detected);
+    }
+    return currentLang;
+}
 
 /** Translate a key. `params` substitutes `{name}` placeholders in the
  *  string. Falls back to Chinese, then to the raw key, when missing. */

@@ -202,7 +202,22 @@ export const KO: Record<string, string> = {
     'settings.account.google': '구글',
     'settings.account.apple':  '애플',
     'settings.account.email':  '이메일',
-    'settings.nickname.tooLong': '닉네임은 최대 {n}자입니다',
+    'settings.account.copied':      '클립보드에 복사됨',
+    'settings.account.copyFailed':  '복사 실패',
+    'settings.nickname.tooLong':     '닉네임은 최대 {n}자입니다',
+    'settings.nickname.title':       '닉네임 변경',
+    'settings.nickname.placeholder': '새 닉네임 입력',
+
+    // ---------- Common modal buttons ----------
+    'common.confirm':    '확인',
+    'common.cancel':     '취소',
+
+    // ---------- 계정 삭제 (App Store 5.1.1(v) 필수) ----------
+    'settings.deleteAccount':         '계정 삭제',
+    'settings.deleteAccount.title':   '계정을 삭제하시겠습니까?',
+    'settings.deleteAccount.desc':    '이 작업은 취소할 수 없습니다. 모든 데이터(보석, 진행 상황, 연결 계정)가 영구 삭제됩니다.',
+    'settings.deleteAccount.pending': '삭제 중...',
+    'settings.deleteAccount.failed':  '삭제 실패, 다시 시도',
     'settings.tos':     '이용약관',
     'settings.privacy': '개인정보 처리방침',
     'settings.deleteAccount':          '계정 삭제',

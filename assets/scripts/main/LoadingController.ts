@@ -24,14 +24,14 @@
  *      immediately in start().
  */
 
-import { _decorator, Component, Node, Sprite, Label } from 'cc';
+import { _decorator, Component, Node, Sprite, Label, sys } from 'cc';
 import { GameController } from './GameController';
 import { MenuController } from './MenuController';
 import { LevelSelectStage3D } from './LevelSelectStage3D';
 import { LeaderboardController } from './LeaderboardController';
 import { TopUpController } from './TopUpController';
 import { LevelProgress } from '../core/LevelProgress';
-import { t } from '../core/i18n/I18n';
+import { t, initFromSystemLang } from '../core/i18n/I18n';
 // Channel boot side-effect — registers StoreKitProvider on iOS.
 // Module load runs before LoadingController.start(), so Providers.purchase
 // is already wired by the time any UI can trigger a buy(). Kept as an
@@ -85,6 +85,14 @@ export class LoadingController extends Component {
 
     onLoad(): void {
         console.log('[Loading] onLoad — showing panel');
+        // First-launch auto-detect the game language from the device's
+        // system language. Skipped if the player has previously picked
+        // one manually (setLang() persists to localStorage, and
+        // initFromSystemLang bails out when it sees a prior save).
+        // MUST run BEFORE the first `t()` call below.
+        const sysCode = sys.languageCode ?? sys.language ?? 'en';
+        const picked = initFromSystemLang(sysCode);
+        console.log(`[Loading] system lang = "${sysCode}" → game lang = "${picked}"`);
         // Show the loading panel immediately so the frame after Cocos
         // splash doesn't flash the (unwarmed) main menu. Also walk the
         // ancestor chain to force each parent active — guards against

@@ -231,11 +231,20 @@ export class MenuController extends Component {
     @property({ type: Button, tooltip: '头像按钮（视觉占位；点击后暂时空跑，日后可拉起换头像流程）— 可空' })
     authoredSettingsAvatarButton: Button | null = null;
 
-    @property({ type: EditBox, tooltip: '昵称输入框（EditBox；玩家输入后按键盘 Done → PlayerProfile.setName 保存 + 排行榜提交新分数会带上新昵称）— 可空' })
+    @property({ type: EditBox, tooltip: '【已废弃，被 Button + Label 组合替代】旧的昵称输入框（EditBox 就地编辑）。留着字段是为了老场景兼容——新场景应该拖 authoredSettingsNicknameButton + authoredSettingsNicknameLabel，不用拖这个。' })
     authoredSettingsNicknameEditBox: EditBox | null = null;
 
-    @property({ type: Label, tooltip: '当前登录账号类型 Label（脚本会写"游客" / "谷歌" / "苹果"，依据 PlayerProfile.accountType）— 可空' })
+    @property({ type: Label, tooltip: '昵称显示 Label（只读，展示 PlayerProfile.name；点旁边的"改昵称"按钮 → 弹输入弹窗）— 可空' })
+    authoredSettingsNicknameLabel: Label | null = null;
+
+    @property({ type: Button, tooltip: '"改昵称"按钮（点击 → 弹通用输入弹窗；确认 → PlayerProfile.setName + 刷新 Label）— 可空' })
+    authoredSettingsNicknameButton: Button | null = null;
+
+    @property({ type: Label, tooltip: '当前登录账号信息 Label（脚本写"游客 · <uuid> 📋"格式，包含账号类型 + 玩家 UUID + 复制图标）— 可空' })
     authoredSettingsAccountTypeLabel: Label | null = null;
+
+    @property({ type: Button, tooltip: '账号信息 Button（点击复制昵称 + UUID 到剪贴板；用于客服/申诉时快速提供账号 ID）— 可空。拖你截图里那个 account 行的 Button' })
+    authoredSettingsAccountButton: Button | null = null;
 
     // ---- 第三方账号绑定按钮（登录）— 功能未接，先留 UI ----
     @property({ type: Button, tooltip: '谷歌登录按钮（点击后暂时只 log，等接 Google Sign-In SDK 再补功能）— 可空' })
@@ -264,6 +273,38 @@ export class MenuController extends Component {
     @property({ type: Button, tooltip: '"钻石不足"弹窗内的"取消"按钮（点击 → 关闭弹窗）— 可空' })
     authoredInsufficientGemsCancelButton: Button | null = null;
 
+    // ---- 通用确认弹窗（供 SIWA 恢复、删除账号、其他需要"你确定吗"确认的场景复用）----
+    @property({ type: Node, tooltip: '通用确认弹窗根节点（含 dim + 卡片 + 标题 + 消息 + 确认/取消 两个按钮）— 默认 active=false' })
+    authoredConfirmModal: Node | null = null;
+
+    @property({ type: Label, tooltip: '通用确认弹窗标题 Label（脚本填 i18n 文本）— 可空' })
+    authoredConfirmModalTitle: Label | null = null;
+
+    @property({ type: Label, tooltip: '通用确认弹窗消息 Label（脚本填 i18n 文本，可含 \\n 换行）— 可空' })
+    authoredConfirmModalMessage: Label | null = null;
+
+    @property({ type: Button, tooltip: '通用确认弹窗"确认"按钮（主按钮，蓝/主题色）— 脚本 wire 点击关弹窗+resolve true' })
+    authoredConfirmModalConfirmButton: Button | null = null;
+
+    @property({ type: Button, tooltip: '通用确认弹窗"取消"按钮（次按钮，灰色）— 脚本 wire 点击关弹窗+resolve false' })
+    authoredConfirmModalCancelButton: Button | null = null;
+
+    // ---- 通用输入弹窗（改昵称、输兑换码、任何需要"标题 + 输入框 + 确认/取消"的场景）----
+    @property({ type: Node, tooltip: '通用输入弹窗根节点（含 dim + 卡片 + 标题 + EditBox + 确认/取消 两个按钮）— 默认 active=false' })
+    authoredPromptModal: Node | null = null;
+
+    @property({ type: Label, tooltip: '通用输入弹窗标题 Label（脚本填 i18n 文本）— 可空' })
+    authoredPromptModalTitle: Label | null = null;
+
+    @property({ type: EditBox, tooltip: '通用输入弹窗内的 EditBox（脚本会 setString + 设 maxLength + 主动 focus 弹键盘）' })
+    authoredPromptModalInput: EditBox | null = null;
+
+    @property({ type: Button, tooltip: '通用输入弹窗"确认"按钮（主按钮）— 脚本 wire 点击关弹窗+resolve 输入内容' })
+    authoredPromptModalConfirmButton: Button | null = null;
+
+    @property({ type: Button, tooltip: '通用输入弹窗"取消"按钮（次按钮）— 脚本 wire 点击关弹窗+resolve null' })
+    authoredPromptModalCancelButton: Button | null = null;
+
     // ---- 通用 Toast（设置面板内错误提示，例如昵称超长）----
     @property({ type: Node, tooltip: '设置面板通用 Toast 根节点（含背景 + 内部 Label；默认 active=false；脚本会 tween 淡入淡出）— 可空' })
     authoredSettingsToastNode: Node | null = null;
@@ -277,7 +318,7 @@ export class MenuController extends Component {
     @property({ type: Button, tooltip: '"隐私政策 / Privacy Policy" 按钮 — 点击 → 用系统浏览器打开服务器 /legal/privacy 页面。可空' })
     authoredSettingsPrivacyButton: Button | null = null;
 
-    @property({ type: Button, tooltip: '"删除账号" 按钮（Apple 审核 5.1.1(v) 要求）— 双击确认：第一次点变红色 "再次点击确认删除"，5 秒内再点才真删。可空但会导致过审失败。' })
+    @property({ type: Button, tooltip: '"删除账号" 按钮（App Store 5.1.1(v) 强制要求）— 点击 → 弹通用确认弹窗 → 确认后 DELETE /player/self + 清本地状态 + 重置为游客。可空但会导致过审失败。' })
     authoredSettingsDeleteAccountButton: Button | null = null;
 
     // ---- 头像选择弹窗 ----
@@ -1366,6 +1407,20 @@ export class MenuController extends Component {
                 () => this.saveNicknameFromEditBox(), this);
         }
 
+        // ---- Nickname edit button — opens prompt modal ----
+        if (this.authoredSettingsNicknameButton) {
+            this.authoredSettingsNicknameButton.node.off('click');
+            this.authoredSettingsNicknameButton.node.on('click',
+                () => this.editNicknameViaPrompt(), this);
+        }
+
+        // ---- Account info button — copy nickname + uuid to clipboard ----
+        if (this.authoredSettingsAccountButton) {
+            this.authoredSettingsAccountButton.node.off('click');
+            this.authoredSettingsAccountButton.node.on('click',
+                () => this.copyPlayerIdentity(), this);
+        }
+
         // ---- Avatar button — opens the picker ----
         if (this.authoredSettingsAvatarButton) {
             this.authoredSettingsAvatarButton.node.off('click');
@@ -1433,8 +1488,6 @@ export class MenuController extends Component {
             this.authoredSettingsDeleteAccountButton.node.on('click',
                 () => this.handleDeleteAccountClick(), this);
             const lab = this.authoredSettingsDeleteAccountButton.getComponentInChildren(Label);
-            // Store the "normal" label text so we can restore it after
-            // the arm-then-cancel timeout resets. Uses i18n key.
             if (lab) this.trackI18nLabel(lab, 'settings.deleteAccount');
         }
     }
@@ -1724,6 +1777,111 @@ export class MenuController extends Component {
         log(`[Settings] nickname saved: ${PlayerProfile.name}`);
     }
 
+    /** Open the generic input prompt to edit the nickname.
+     *  Confirm → validate → PlayerProfile.setName → repaint the display
+     *  Label (and the legacy EditBox if it's still wired for backward
+     *  compat with old scenes). Cancel → no-op. */
+    private async editNicknameViaPrompt(): Promise<void> {
+        const currentName = PlayerProfile.name;
+        const next = await this.showPrompt(
+            t('settings.nickname.title'),
+            currentName,
+            t('settings.nickname.placeholder'),
+            t('common.confirm'),
+            t('common.cancel'),
+            MenuController.NICKNAME_MAX_CHARS,
+        );
+        if (next === null) {
+            log('[Settings] nickname edit cancelled');
+            return;
+        }
+        const trimmed = next.trim();
+        if (trimmed.length > MenuController.NICKNAME_MAX_CHARS) {
+            this.showSettingsToast(
+                t('settings.nickname.tooLong', { n: MenuController.NICKNAME_MAX_CHARS }),
+            );
+            return;
+        }
+        if (!trimmed) {
+            // Blank submit → no-op (silently ignore, matches the EditBox
+            // behavior above).
+            return;
+        }
+        if (trimmed === currentName) {
+            return;   // unchanged, skip the setName round-trip
+        }
+        PlayerProfile.setName(trimmed);
+        // Repaint the Settings screen so the new name shows immediately.
+        this.refreshAuthoredSettingsValues();
+        log(`[Settings] nickname saved via prompt: ${PlayerProfile.name}`);
+    }
+
+    // ============================================================
+    //  Delete account (App Store Review Guideline 5.1.1(v))
+    // ============================================================
+    /** Click handler on the "Delete Account" button. Shows the generic
+     *  confirm modal with a scary-enough message + Confirm/Cancel.
+     *  Confirmed → commitDeleteAccount fires the server DELETE +
+     *  wipes local state + drops back into fresh guest. */
+    private async handleDeleteAccountClick(): Promise<void> {
+        const ok = await this.showConfirm(
+            t('settings.deleteAccount.title'),
+            t('settings.deleteAccount.desc'),
+            t('common.confirm'),
+            t('common.cancel'),
+        );
+        if (!ok) {
+            log('[Settings] delete account cancelled');
+            return;
+        }
+        await this.commitDeleteAccount();
+    }
+
+    /** Actually delete the account.
+     *  1. Show pending toast so player knows something is happening
+     *     (server call may take 1-2s including Apple revoke on iOS)
+     *  2. DELETE /player/self — server nukes DB rows + calls Apple
+     *     /auth/revoke if SIWA was linked
+     *  3. Wipe every player-scoped localStorage key
+     *  4. PlayerProfile.resetInMemoryState() — clears cached uuid,
+     *     name, accountType, avatarIdx, AND the Http bearer token
+     *  5. ensureRegistered() → mint fresh anonymous account
+     *  6. Refresh Settings UI — wallet=0, toggles OFF, guest label
+     */
+    private async commitDeleteAccount(): Promise<void> {
+        const btn = this.authoredSettingsDeleteAccountButton;
+        const btnComp = btn ? btn.getComponent(Button) : null;
+        if (btnComp) btnComp.interactable = false;
+        this.showSettingsToast(t('settings.deleteAccount.pending'));
+        try {
+            log('[Settings] delete account — calling DELETE /player/self');
+            await deletePlayerSelf();
+            log('[Settings] server-side delete OK — wiping local state');
+            // Wipe player-scoped localStorage keys (keep audio/language
+            // etc — those are per-device preferences, not per-account).
+            sys.localStorage.removeItem('tt.player.uuid');
+            sys.localStorage.removeItem('tt.player.name');
+            sys.localStorage.removeItem('tt.player.accountType');
+            sys.localStorage.removeItem('tt.player.token');
+            sys.localStorage.removeItem('tt.player.tokenExpEpochSec');
+            sys.localStorage.removeItem('tt.player.avatarIdx');
+            // Clear PlayerProfile's in-memory cache — without this, the
+            // module-level singleton would keep serving the deleted
+            // uuid, which no longer exists server-side.
+            PlayerProfile.resetInMemoryState();
+            log('[Settings] re-registering as fresh guest…');
+            await PlayerProfile.ensureRegistered();
+            log('[Settings] fresh guest ready — refreshing Settings UI');
+            this.refreshAuthoredSettingsValues();
+        } catch (err) {
+            const msg = (err as Error).message ?? String(err);
+            console.warn(`[Settings] delete account failed: ${msg}`);
+            this.showSettingsToast(t('settings.deleteAccount.failed'));
+        } finally {
+            if (btnComp) btnComp.interactable = true;
+        }
+    }
+
     /** Bind the avatar-picker panel's close button + each per-avatar
      *  button. Idempotent via `_avatarPickerWired`. Called from
      *  `wireAuthoredSettingsPanel` after the settings avatar button
@@ -1869,11 +2027,15 @@ export class MenuController extends Component {
         if (this.authoredSettingsNicknameEditBox) {
             this.authoredSettingsNicknameEditBox.string = PlayerProfile.name;
         }
-        // Account type Label — "游客" / "谷歌" / "苹果" (or "游客" fallback
-        // when accountType hasn't been resolved yet).
+        if (this.authoredSettingsNicknameLabel) {
+            this.authoredSettingsNicknameLabel.string = PlayerProfile.name;
+        }
+        // Account row Label — "<账号类型> · <uuid> 📋" so player can
+        // copy their UUID for customer support / disputes. Full uuid
+        // (not truncated) so the copied string is directly usable.
         if (this.authoredSettingsAccountTypeLabel) {
             this.authoredSettingsAccountTypeLabel.string
-                = this.accountTypeText(PlayerProfile.accountType);
+                = this.formatAccountRow(PlayerProfile.accountType, PlayerProfile.uuid);
         }
         // Google / Apple toggles — reflect the real bind state. Until
         // real OAuth is wired every player is `anonymous`, so both
@@ -1953,6 +2115,108 @@ export class MenuController extends Component {
         }
     }
 
+    /** Build the account-row display string: "<account type> · <uuid> 📋".
+     *  Full uuid so what's shown = what gets copied. Emoji 📋 acts as
+     *  the copy affordance — no image asset needed, renders on every
+     *  device that has OS emoji support (iOS/Android/desktop). */
+    private formatAccountRow(
+        acct: import('../core/PlayerProfile').AccountType | null,
+        uuid: string,
+    ): string {
+        return `${this.accountTypeText(acct)} · ${uuid}  📋`;
+    }
+
+    /** Copy the player's identity (nickname + uuid) to the clipboard.
+     *  Called when the player taps the account-info row button —
+     *  useful for support / disputes / account transfer requests.
+     *
+     *  Clipboard APIs differ across Cocos runtime versions and target
+     *  platforms — try each in order until one works. Log the method
+     *  that succeeded so future debugging is quick.
+     *
+     *  Method cascade:
+     *    1. sys.setClipboardText(text)  — Cocos 3.x legacy name
+     *    2. sys.setClipboard(text)      — Cocos 3.8+ new name (may return Promise)
+     *    3. navigator.clipboard.writeText(text)  — Web / Cocos preview (Promise)
+     *    4. document.execCommand('copy') — old-browser fallback via <textarea>
+     */
+    private async copyPlayerIdentity(): Promise<void> {
+        const text =
+            `${t('settings.nickname.title')}: ${PlayerProfile.name}\n` +
+            `UserID: ${PlayerProfile.uuid}`;
+        let copied = false;
+        let method = 'none';
+        const anySys = sys as any;
+
+        // (1) Cocos 3.x legacy: sys.setClipboardText
+        if (!copied && typeof anySys.setClipboardText === 'function') {
+            try {
+                const r = anySys.setClipboardText(text);
+                copied = r !== false;
+                method = 'sys.setClipboardText';
+            } catch (e) {
+                console.warn('[Settings] sys.setClipboardText threw:', e);
+            }
+        }
+
+        // (2) Cocos 3.8+ new name: sys.setClipboard (may be async)
+        if (!copied && typeof anySys.setClipboard === 'function') {
+            try {
+                const r = anySys.setClipboard(text);
+                if (r && typeof r.then === 'function') {
+                    await r;
+                    copied = true;
+                } else {
+                    copied = r !== false;
+                }
+                method = 'sys.setClipboard';
+            } catch (e) {
+                console.warn('[Settings] sys.setClipboard threw:', e);
+            }
+        }
+
+        // (3) Web Clipboard API — modern browsers + Cocos web preview.
+        // MUST await — writeText returns a Promise that rejects on
+        // permission denial, not-focused-doc, etc.
+        if (!copied && typeof navigator !== 'undefined' && (navigator as any).clipboard?.writeText) {
+            try {
+                await (navigator as any).clipboard.writeText(text);
+                copied = true;
+                method = 'navigator.clipboard';
+            } catch (e) {
+                console.warn('[Settings] navigator.clipboard.writeText rejected:', e);
+            }
+        }
+
+        // (4) Legacy execCommand — works in older browsers + some
+        // WebView contexts where navigator.clipboard is blocked.
+        if (!copied && typeof document !== 'undefined' && typeof document.execCommand === 'function') {
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed';
+                ta.style.left = '-9999px';
+                ta.style.top = '-9999px';
+                document.body.appendChild(ta);
+                ta.focus();
+                ta.select();
+                copied = document.execCommand('copy');
+                document.body.removeChild(ta);
+                if (copied) method = 'document.execCommand';
+            } catch (e) {
+                console.warn('[Settings] execCommand copy threw:', e);
+            }
+        }
+
+        console.log(`[Settings] copy — method=${method}, success=${copied}, text=${text.replace(/\n/g, ' | ')}`);
+
+        if (copied) {
+            this.showSettingsToast(t('settings.account.copied'));
+        } else {
+            this.showSettingsToast(t('settings.account.copyFailed'));
+        }
+    }
+
     /** Write the current balance into the button's inner label. Uses
      *  `topup.balance` i18n key ("宝石: {n}") for consistency with the
      *  top-up panel's own balance strip. */
@@ -2027,6 +2291,202 @@ export class MenuController extends Component {
             const lab = btn.getComponentInChildren(Label);
             if (lab) this.trackI18nLabel(lab, 'gems.cancel');
         }
+    }
+
+    // ============================================================
+    //  Generic confirm modal (reusable across callers)
+    // ============================================================
+    /** Only one pending confirm at a time. If a caller opens a second
+     *  confirm before the first resolves, we auto-resolve the first
+     *  as false (cancelled) and take over the modal. */
+    private _confirmPendingResolve: ((confirmed: boolean) => void) | null = null;
+    private _confirmModalWired: boolean = false;
+
+    /** Show the generic confirmation modal. Returns a Promise that
+     *  resolves to `true` if the user tapped Confirm, `false` if they
+     *  tapped Cancel (or the modal was auto-cancelled by a second
+     *  showConfirm call).
+     *
+     *  Title / message are shown as-is (caller passes t('...')). If
+     *  the modal isn't authored in the scene, resolves to `false` and
+     *  logs — caller MUST tolerate the missing-panel case (usually by
+     *  falling back to a safer no-op default).
+     *
+     *  Example usage:
+     *
+     *     const ok = await this.showConfirm(
+     *         t('settings.deleteAccount.title'),
+     *         t('settings.deleteAccount.desc'),
+     *         t('settings.deleteAccount.confirm'),
+     *         t('common.cancel'),
+     *     );
+     *     if (!ok) return;
+     *     await this.doDelete();
+     */
+    public showConfirm(
+        title: string,
+        message: string,
+        confirmLabelText: string,
+        cancelLabelText: string,
+    ): Promise<boolean> {
+        const panel = this.authoredConfirmModal;
+        if (!panel) {
+            console.warn('[Confirm] modal panel not wired in scene — auto-cancelling');
+            return Promise.resolve(false);
+        }
+        return new Promise<boolean>((resolve) => {
+            // Any previous pending confirm becomes a "cancel" — take over.
+            const prev = this._confirmPendingResolve;
+            this._confirmPendingResolve = resolve;
+            if (prev) prev(false);
+
+            this.wireConfirmModalOnce();
+
+            if (this.authoredConfirmModalTitle) {
+                this.authoredConfirmModalTitle.string = title;
+            }
+            if (this.authoredConfirmModalMessage) {
+                this.authoredConfirmModalMessage.string = message;
+            }
+            if (this.authoredConfirmModalConfirmButton) {
+                const lab = this.authoredConfirmModalConfirmButton.getComponentInChildren(Label);
+                if (lab) lab.string = confirmLabelText;
+            }
+            if (this.authoredConfirmModalCancelButton) {
+                const lab = this.authoredConfirmModalCancelButton.getComponentInChildren(Label);
+                if (lab) lab.string = cancelLabelText;
+            }
+            ensureDimBackdrop(panel);
+            panel.setSiblingIndex(999);
+            panel.active = true;
+        });
+    }
+
+    private wireConfirmModalOnce(): void {
+        if (this._confirmModalWired) return;
+        this._confirmModalWired = true;
+        if (this.authoredConfirmModalConfirmButton) {
+            const btn = this.authoredConfirmModalConfirmButton;
+            btn.node.off('click');
+            btn.node.on('click', () => this.closeConfirmModal(true), this);
+        }
+        if (this.authoredConfirmModalCancelButton) {
+            const btn = this.authoredConfirmModalCancelButton;
+            btn.node.off('click');
+            btn.node.on('click', () => this.closeConfirmModal(false), this);
+        }
+    }
+
+    private closeConfirmModal(confirmed: boolean): void {
+        if (this.authoredConfirmModal) this.authoredConfirmModal.active = false;
+        const cb = this._confirmPendingResolve;
+        this._confirmPendingResolve = null;
+        if (cb) cb(confirmed);
+    }
+
+    // ============================================================
+    //  Generic input prompt modal (reusable across callers)
+    // ============================================================
+    /** Same single-instance rule as showConfirm — a second showPrompt
+     *  cancels the first. */
+    private _promptPendingResolve: ((value: string | null) => void) | null = null;
+    private _promptModalWired: boolean = false;
+
+    /** Show a modal input prompt with a title + EditBox + confirm/cancel
+     *  buttons. Returns a Promise that resolves to:
+     *    - the TRIMMED input string on confirm (empty string OK if the
+     *      caller wants to allow that; empty callers should check for
+     *      it themselves before writing state)
+     *    - null on cancel, or if the modal panel isn't authored
+     *
+     *  `maxLength`: forwarded to the EditBox (caller must trust the
+     *   OSK enforces; JS-side validation is caller's job).
+     *
+     *  Example usage — nickname edit:
+     *
+     *     const next = await this.showPrompt(
+     *         t('settings.nickname.title'),
+     *         PlayerProfile.name,
+     *         t('settings.nickname.placeholder'),
+     *         t('common.confirm'),
+     *         t('common.cancel'),
+     *         MenuController.NICKNAME_MAX_CHARS,
+     *     );
+     *     if (next === null) return;         // cancelled
+     *     if (!next.trim()) return;          // caller policy: reject blank
+     *     PlayerProfile.setName(next);
+     */
+    public showPrompt(
+        title: string,
+        initialValue: string,
+        placeholder: string,
+        confirmLabelText: string,
+        cancelLabelText: string,
+        maxLength?: number,
+    ): Promise<string | null> {
+        const panel = this.authoredPromptModal;
+        if (!panel) {
+            console.warn('[Prompt] modal panel not wired in scene — auto-cancelling');
+            return Promise.resolve(null);
+        }
+        return new Promise<string | null>((resolve) => {
+            // Take over from any pending prompt (previous one becomes
+            // "cancelled").
+            const prev = this._promptPendingResolve;
+            this._promptPendingResolve = resolve;
+            if (prev) prev(null);
+
+            this.wirePromptModalOnce();
+
+            if (this.authoredPromptModalTitle) {
+                this.authoredPromptModalTitle.string = title;
+            }
+            if (this.authoredPromptModalConfirmButton) {
+                const lab = this.authoredPromptModalConfirmButton.getComponentInChildren(Label);
+                if (lab) lab.string = confirmLabelText;
+            }
+            if (this.authoredPromptModalCancelButton) {
+                const lab = this.authoredPromptModalCancelButton.getComponentInChildren(Label);
+                if (lab) lab.string = cancelLabelText;
+            }
+            if (this.authoredPromptModalInput) {
+                const eb = this.authoredPromptModalInput;
+                if (typeof maxLength === 'number' && maxLength > 0) eb.maxLength = maxLength;
+                eb.placeholder = placeholder;
+                eb.string = initialValue ?? '';
+                // Focus in the next frame so the OSK actually shows —
+                // focus before the panel is visible + laid out is a
+                // no-op on some Cocos versions.
+                this.scheduleOnce(() => {
+                    try { eb.focus(); } catch (_) { /* ignore */ }
+                }, 0);
+            }
+            ensureDimBackdrop(panel);
+            panel.setSiblingIndex(999);
+            panel.active = true;
+        });
+    }
+
+    private wirePromptModalOnce(): void {
+        if (this._promptModalWired) return;
+        this._promptModalWired = true;
+        if (this.authoredPromptModalConfirmButton) {
+            const btn = this.authoredPromptModalConfirmButton;
+            btn.node.off('click');
+            btn.node.on('click', () => this.closePromptModal(this.authoredPromptModalInput?.string ?? ''), this);
+        }
+        if (this.authoredPromptModalCancelButton) {
+            const btn = this.authoredPromptModalCancelButton;
+            btn.node.off('click');
+            btn.node.on('click', () => this.closePromptModal(null), this);
+        }
+    }
+
+    private closePromptModal(value: string | null): void {
+        if (this.authoredPromptModal) this.authoredPromptModal.active = false;
+        const cb = this._promptPendingResolve;
+        this._promptPendingResolve = null;
+        if (cb) cb(value);
     }
 
     private makeLabel(

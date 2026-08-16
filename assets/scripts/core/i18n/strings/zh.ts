@@ -208,7 +208,23 @@ export const ZH: Record<string, string> = {
     'settings.account.google': '谷歌',
     'settings.account.apple':  '苹果',
     'settings.account.email':  '邮箱',
-    'settings.nickname.tooLong': '昵称最多 {n} 个字符',
+    'settings.account.copied':      '已复制到剪贴板',
+    'settings.account.copyFailed':  '复制失败',
+    'settings.nickname.tooLong':     '昵称最多 {n} 个字符',
+    'settings.nickname.title':       '修改昵称',
+    'settings.nickname.placeholder': '输入新昵称',
+
+    // ---------- Common modal buttons ----------
+    'common.confirm':    '确认',
+    'common.cancel':     '取消',
+
+    // ---------- 删除账号 (App Store 5.1.1(v) 硬性要求) ----------
+    'settings.deleteAccount':         '删除账号',
+    'settings.deleteAccount.title':   '删除账号？',
+    'settings.deleteAccount.desc':    '此操作不可撤销。所有数据（钻石、进度、绑定）将永久删除。',
+    'settings.deleteAccount.pending': '删除中...',
+    'settings.deleteAccount.failed':  '删除失败，请重试',
+
     'settings.tos':     '服务条款',
     'settings.privacy': '隐私政策',
     'settings.deleteAccount':          '删除账号',

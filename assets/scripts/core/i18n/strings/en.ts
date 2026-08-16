@@ -203,7 +203,22 @@ export const EN: Record<string, string> = {
     'settings.account.google': 'Google',
     'settings.account.apple':  'Apple',
     'settings.account.email':  'Email',
-    'settings.nickname.tooLong': 'Nickname must be at most {n} characters',
+    'settings.account.copied':      'Copied to clipboard',
+    'settings.account.copyFailed':  'Copy failed',
+    'settings.nickname.tooLong':     'Nickname must be at most {n} characters',
+    'settings.nickname.title':       'Edit Nickname',
+    'settings.nickname.placeholder': 'Enter a new nickname',
+
+    // ---------- Common modal buttons ----------
+    'common.confirm':    'Confirm',
+    'common.cancel':     'Cancel',
+
+    // ---------- Account deletion (App Store 5.1.1(v) required) ----------
+    'settings.deleteAccount':         'Delete Account',
+    'settings.deleteAccount.title':   'Delete account?',
+    'settings.deleteAccount.desc':    'This cannot be undone. All data (gems, progress, linked accounts) will be permanently erased.',
+    'settings.deleteAccount.pending': 'Deleting...',
+    'settings.deleteAccount.failed':  'Delete failed, please retry',
     'settings.tos':     'Terms of Service',
     'settings.privacy': 'Privacy Policy',
     'settings.deleteAccount':          'Delete Account',

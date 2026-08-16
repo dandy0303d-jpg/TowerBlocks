@@ -1,0 +1,232 @@
+/**
+ * 日本語言語パック。キー集合は `zh.ts` を鏡像。欠けているキーは
+ * i18n モジュールが自動的に簡体中文にフォールバック。
+ *
+ * ゲーム用語の選択は日本のカジュアルゲーム慣習に合わせています。
+ * 「宝石」→「ジェム」（英語カタカナ、DQ・パズドラ系標準）、
+ * 「玩家」→「プレイヤー」、モード名は日本の落ちものパズル
+ * 用語（エンドレス、チャレンジ 等）。
+ */
+export const JA: Record<string, string> = {
+    // ---------- メインメニュー ----------
+    'menu.title':        'Tetri Tower',
+    'menu.subtitle':     'To the Heavens',
+    'menu.endless':      'エンドレス',
+    'menu.levels':       'ステージ',
+    'menu.blind':        'ブラインド',
+    'menu.leaderboard':  'ランキング',
+    'menu.reset':        'リセット',
+    'menu.levelSelect':  'ステージ選択',
+    'menu.back':         '← 戻る',
+
+    // ---------- ロード画面 ----------
+    'loading.text':      '読み込み中',
+
+    // ---------- HUD ----------
+    'hud.back':          '← ホーム',
+    'hud.height':        '高さ',
+    'hud.heightValue':   '高さ  {n}',
+    'hud.next':          'NEXT',
+
+    // ---------- アイテムピッカー ----------
+    'picker.title':      '⚡ 魔法アイテムを 1 つ選択',
+    'picker.hint':       'タップして確定 · 色 = レア度',
+    'picker.refresh':    '🔄 無料リロール',
+    'picker.adRefresh':  '🎬 広告視聴でもう一度',
+    'rarity.common':     'ノーマル',
+    'rarity.uncommon':   'アンコモン',
+    'rarity.rare':       'レア',
+    'rarity.epic':       'エピック',
+
+    // ---------- アイテム名 ----------
+    'item.hourglass1':    '砂時計 1分',
+    'item.hourglass2':    '砂時計 2分',
+    'item.hourglass3':    '砂時計 3分',
+    'item.excavator1':    '底面掘削 ×1',
+    'item.excavator2':    '底面掘削 ×2',
+    'item.excavator3':    '底面掘削 ×3',
+    'item.excavatorTop1': '天面掘削 ×1',
+    'item.excavatorTop2': '天面掘削 ×2',
+    'item.excavatorTop3': '天面掘削 ×3',
+    'item.shapeshifter':  '形状変化',
+    'item.rewind':        '巻き戻し',
+    'item.meteor1':       'メテオ ×5',
+    'item.meteor2':       'メテオ ×10',
+    'item.meteor3':       'メテオ ×15',
+    'item.rocket1':       'ロケット ×8',
+    'item.rocket2':       'ロケット ×16',
+    'item.rocket3':       'ロケット ×24',
+    'item.gatling1':      'ガトリング ×4',
+    'item.gatling2':      'ガトリング ×8',
+    'item.gatling3':      'ガトリング ×12',
+    'item.mortar5':       'モルタル ×5',
+    'item.mortar10':      'モルタル ×10',
+    'item.mortar15':      'モルタル ×15',
+
+    // ---------- アイテム説明 ----------
+    'desc.hourglass1':    '1 分間ブロック落下速度が半減',
+    'desc.hourglass2':    '2 分間ブロック落下速度が半減',
+    'desc.hourglass3':    '3 分間ブロック落下速度が半減',
+    'desc.excavator1':    'タワー底の色付き 1 段を消去',
+    'desc.excavator2':    'タワー底の色付き 2 段を消去',
+    'desc.excavator3':    'タワー底の色付き 3 段を消去',
+    'desc.excavatorTop1': 'タワー頂の色付き 1 段を消去',
+    'desc.excavatorTop2': 'タワー頂の色付き 2 段を消去',
+    'desc.excavatorTop3': 'タワー頂の色付き 3 段を消去',
+    'desc.shapeshifter':  '次のブロック形状を選ぶ',
+    'desc.rewind':        '盤面を 3 手前に戻す',
+    'desc.meteor1':       '5 個の 1×1 ブロックが急速落下',
+    'desc.meteor2':       '10 個の 1×1 ブロックが急速落下',
+    'desc.meteor3':       '15 個の 1×1 ブロックが急速落下',
+    'desc.rocket1':       'ロケット 8 発がタワー頂を貫通',
+    'desc.rocket2':       'ロケット 16 発がタワー頂を貫通',
+    'desc.rocket3':       'ロケット 24 発がタワー頂を貫通',
+    'desc.gatling1':      '弾丸 4 発が中央から掃射',
+    'desc.gatling2':      '弾丸 8 発が中央から掃射',
+    'desc.gatling3':      '弾丸 12 発が中央から掃射',
+    'desc.mortar5':       'モルタル 5 滴が空隙を埋める',
+    'desc.mortar10':      'モルタル 10 滴が空隙を埋める',
+    'desc.mortar15':      'モルタル 15 滴が空隙を埋める',
+
+    // ---------- 形状変化ダイアログ ----------
+    'shapeshifter.title':    '🎲 形状変化',
+    'shapeshifter.subtitle': '現在のブロックの形状を選択',
+    'shapeshifter.cancel':   'キャンセル',
+
+    // ---------- 運命ブロックダイアログ ----------
+    'fate.modalTitle':   '運命のブロック',
+    'fate.reroll':       '運命を変える',
+    'fate.start':        'スタート',
+    'fate.cellCount':    '{n} マス',
+    'fate.endlessSub':   'エンドレス',
+    'fate.levelSub':     'ステージ {n}',
+    'fate.endlessMid':   'エンドレス · {layer} 層',
+    'fate.subtitle':     '{tag} · {n} マス',
+    'fate.hint':         '運命を変える：広告視聴で新しい運命ブロックに交換',
+
+    // ---------- コレクトモード ----------
+    'collect.header':    'コレクト目標',
+
+    // ---------- ステージ選択 ----------
+    'level.name':        'ステージ {n}',
+    'level.enter':       'ステージ開始',
+
+    // ---------- ブラインドモード ----------
+    'blind.fail.prompt': 'チャレンジ失敗。タップで続行',
+    'blind.showTower':   '🙉 タワー表示',
+    'blind.hideTower':   '🙈 タワー非表示',
+
+    // ---------- エンドレスマイルストーン（12 段ごと）----------
+    'endless.milestone': '{n} 層達成！',
+
+    // ---------- 一時停止 ----------
+    'pause.title':       '⏸ 一時停止',
+    'pause.hint':        'タップで再開',
+    'pause.continue':    '▶ 続ける',
+    'pause.home':        '< ホーム',
+
+    // ---------- DEV ボタン ----------
+    'debug.forceWin':    '強制クリア',
+
+    // ---------- チュートリアル ----------
+    'tutorial.hint.tap':          'タップでブロック変形',
+    'tutorial.hint.swipeRelease': '横スワイプ後放すと 1 段回転',
+    'tutorial.hint.swipeHold':    '横スワイプ長押しで連続回転',
+    'tutorial.hint.swipeDown':    '下スワイプで即落下',
+    'tutorial.skip':              'スキップ',
+
+    // ---------- ログイン画面 ----------
+    'login.title':          'Tetri Tower へようこそ',
+    'login.subtitle':       '開始方法を選択',
+    'login.namePlaceholder':'ニックネーム入力（任意）',
+    'login.guestButton':    'ゲストで続ける',
+    'login.emailButton':    'メールでログイン',
+    'login.googleButton':   'Google でログイン',
+    'login.appleButton':    'Apple でログイン',
+    'login.comingSoon':     '（近日公開）',
+    'login.orDivider':      'または',
+
+    // ---------- チャージ ----------
+    'menu.topup':           'チャージ',
+    'topup.title':          'ジェム購入',
+    'topup.balance':        'ジェム: {n}',
+    'topup.gems':           '{n} ジェム',
+    'topup.price':          '{price}',
+    'topup.buyButton':      '購入',
+    'topup.close':          '閉じる',
+    'topup.successTitle':   '購入完了',
+    'topup.successBody':    '{n} ジェムを取得',
+    'topup.failTitle':      '購入失敗',
+    'topup.failBody':       '{reason}',
+    'topup.processing':     '処理中...',
+    'topup.mockNotice':     '（テストモード - 実際の課金はありません）',
+
+    // ---------- ランキング ----------
+    'leaderboard.title':       'ランキング',
+    'leaderboard.back':        '↩ 戻る',
+    'leaderboard.tab.level':   'ステージ',
+    'leaderboard.tab.endless': 'エンドレス',
+    'leaderboard.tab.blind':   'ブラインド',
+    'leaderboard.you':         'あなた',
+    'leaderboard.empty':       'データなし',
+    'leaderboard.mockName':    'プレイヤー{n}',
+
+    // ---------- 結果ダイアログ ----------
+    'result.gameOver':   'ゲームオーバー',
+    'result.levelFail':  'ステージ失敗',
+    'result.fail.hole':  '穴が塞がれました',
+    'result.fail.tall':  'タワーが高すぎます',
+    'result.win':        'クリア ✓',
+    'result.retry':      'リトライ',
+    'result.endlessRetry': 'もう一度',
+    'result.nextLevel':  '次のステージ',
+    'result.replay':     'リプレイ',
+    'result.levelSelect':'ステージ',
+    'result.home':       'ホーム',
+
+    // ---------- 言語切替 ----------
+    'lang.toggle':       '日本語',
+
+    // ---------- 設定パネル ----------
+    'settings.button':       '⚙ 設定',
+    'settings.title':        '設定',
+    'settings.lang':         '言語',
+    'settings.gesture':      'ジェスチャー',
+    'settings.gesture.both': 'フリック + ドラッグ',
+    'settings.gesture.drag': 'ドラッグのみ',
+    'settings.keys':         'バーチャルボタン',
+    'settings.keys.on':      'オン',
+    'settings.keys.off':     'オフ',
+    'settings.bgm':          'BGM',
+    'settings.sfx':          '効果音',
+    'settings.close':        '閉じる',
+    'audio.off':             'オフ',
+    'audio.percent':         '{n}%',
+    'settings.account.guest':  'ゲスト',
+    'settings.account.google': 'Google',
+    'settings.account.apple':  'Apple',
+    'settings.account.email':  'メール',
+    'settings.account.copied':      'クリップボードにコピー',
+    'settings.account.copyFailed':  'コピー失敗',
+    'settings.nickname.tooLong':     'ニックネームは最大 {n} 文字',
+    'settings.nickname.title':       'ニックネーム変更',
+    'settings.nickname.placeholder': '新しいニックネームを入力',
+
+    // ---------- Common modal buttons ----------
+    'common.confirm':    '確認',
+    'common.cancel':     'キャンセル',
+
+    // ---------- アカウント削除 (App Store 5.1.1(v) 必須) ----------
+    'settings.deleteAccount':         'アカウント削除',
+    'settings.deleteAccount.title':   'アカウントを削除？',
+    'settings.deleteAccount.desc':    'この操作は取り消せません。全データ（ジェム、進捗、連携）が永久に削除されます。',
+    'settings.deleteAccount.pending': '削除中...',
+    'settings.deleteAccount.failed':  '削除失敗、再試行してください',
+
+    'settings.tos':     '利用規約',
+    'settings.privacy': 'プライバシーポリシー',
+    // ジェム不足
+    'gems.insufficient': 'ジェム不足\n必要 {need}、所持 {have}',
+    'gems.goTopUp':      'チャージへ',
+    'gems.cancel':       'キャンセル',
+};

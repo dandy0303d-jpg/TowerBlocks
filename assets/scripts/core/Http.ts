@@ -220,9 +220,9 @@ function xhrJson<T>(
             const ms = Date.now() - startedAt;
             if (status >= 200 && status < 300) {
                 console.log(`${tag} ← ${status} OK (${ms}ms) ${text.slice(0, 200)}`);
-                // 204 No Content (and any other empty body) — resolve with
-                // null cast to T so DELETE-style endpoints don't crash on
-                // JSON.parse('').
+                // 204 No Content (or any other empty body) — resolve
+                // with null cast to T so DELETE-style endpoints don't
+                // crash on JSON.parse('').
                 if (!text || text.length === 0) {
                     resolve(null as unknown as T);
                     return;
