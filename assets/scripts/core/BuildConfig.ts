@@ -20,7 +20,7 @@
  *   git checkout main
  *   git merge --no-ff develop
  *   # Merge conflict on this file. Fix:
- *   sed -i 's|IS_DEV_BUILD: boolean = true|IS_DEV_BUILD: boolean = false|' \
+ *   sed -i 's|IS_DEV_BUILD: boolean = false|IS_DEV_BUILD: boolean = false|' \
  *       assets/scripts/core/BuildConfig.ts
  *   git add assets/scripts/core/BuildConfig.ts
  *   git commit
@@ -29,4 +29,4 @@
 /** True on `develop`, false on `main` + `channel/*`. Gates any UI
  *  or entry point that must not ship to players (level reset, one-key
  *  win, admin backdoors, mock data, etc). */
-export const IS_DEV_BUILD: boolean = true;
+export const IS_DEV_BUILD: boolean = false;
