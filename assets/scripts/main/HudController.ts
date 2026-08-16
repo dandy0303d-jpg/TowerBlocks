@@ -33,6 +33,7 @@ import { getKeysMode, subscribe as subscribeSettings } from '../core/Settings';
 import { BgmManager } from '../audio/BgmManager';
 import { t, subscribe as subscribeI18n } from '../core/i18n/I18n';
 import { fetchRefreshCost, purchaseRefresh, RefreshType } from '../core/RefreshApi';
+import { IS_DEV_BUILD } from '../core/BuildConfig';
 
 /** 5-row × 3-col pixel-font bitmap patterns for digits 0-9. Each row is
  *  a 3-char bitmask ('1' = lit pixel, '0' = empty). Rows are top → bottom.
@@ -767,12 +768,19 @@ export class HudController extends Component {
 
         // Debug win — hidden in endless mode by hideDebugWinInEndless(),
         // which reads debugWinButtonNode.
+        // Also DEV-only overall: hidden in release builds so players
+        // can't skip levels with a tap. IS_DEV_BUILD is set per branch
+        // (assets/scripts/core/BuildConfig.ts).
         if (this.authoredDebugWinButton) {
-            this.authoredDebugWinButton.node.off('click');
-            this.authoredDebugWinButton.node.on('click', () => this.onDebugWinClicked(), this);
-            this.debugWinButtonNode = this.authoredDebugWinButton.node;
-            const lab = this.authoredDebugWinButton.getComponentInChildren(Label);
-            if (lab) this.trackI18nLabel(lab, 'debug.forceWin');
+            if (!IS_DEV_BUILD) {
+                this.authoredDebugWinButton.node.active = false;
+            } else {
+                this.authoredDebugWinButton.node.off('click');
+                this.authoredDebugWinButton.node.on('click', () => this.onDebugWinClicked(), this);
+                this.debugWinButtonNode = this.authoredDebugWinButton.node;
+                const lab = this.authoredDebugWinButton.getComponentInChildren(Label);
+                if (lab) this.trackI18nLabel(lab, 'debug.forceWin');
+            }
         } else {
             log('[HudController] authoredDebugWinButton not wired');
         }
