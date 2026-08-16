@@ -116,6 +116,35 @@ class Profile {
         return this._accountType;
     }
 
+    /** Persist a change to the player's linked-account kind. Called
+     *  by channel-specific link handlers after a successful bind
+     *  (e.g. Sign in with Apple returns → set to 'apple'). Also used
+     *  on unbind flows to demote back to 'anonymous'. */
+    setAccountType(next: AccountType): void {
+        this._accountType = next;
+        sys.localStorage.setItem(ACCOUNT_KEY, next);
+        console.log(`[PlayerProfile] setAccountType → ${next}`);
+    }
+
+    /** Wipe ALL in-memory state — used by the delete-account flow.
+     *  After this, PlayerProfile behaves as if the app just started
+     *  fresh with no prior state. Caller MUST also clear localStorage
+     *  keys BEFORE calling this (otherwise the getters will re-read
+     *  from storage on next access), AND MUST then re-run
+     *  ensureRegistered() to get a new server-issued anonymous account.
+     *
+     *  Also clears the Http module's bearer-token cache so subsequent
+     *  requests don't send a stale token that no longer matches any
+     *  server-side player row. */
+    resetInMemoryState(): void {
+        this._uuid = null;
+        this._name = null;
+        this._accountType = undefined;
+        this._avatarIdx = null;
+        setBearerToken(null);
+        console.log('[PlayerProfile] in-memory state wiped');
+    }
+
     /** Persist a new display name. Server-side truncates to MAX_NAME_LEN.
      *  Ignored for empty / whitespace-only strings so accidental clears
      *  don't wipe the current name. Also fires a fire-and-forget PUT
@@ -222,12 +251,20 @@ class Profile {
             return;
         }
         try {
-            const { uuid, nickname, token, expEpochSec } = await registerPlayer();
+            const { uuid, nickname, avatarIdx, token, expEpochSec } = await registerPlayer();
             sys.localStorage.setItem(UUID_KEY, uuid);
             sys.localStorage.setItem(NAME_KEY, nickname);
             sys.localStorage.setItem(ACCOUNT_KEY, 'anonymous');
             sys.localStorage.setItem(TOKEN_KEY, token);
             sys.localStorage.setItem(TOKEN_EXP_KEY, String(expEpochSec));
+            // Server-assigned initial avatar — random per registration
+            // so guests visually distinct without the player picking.
+            // Only stored if the server actually provided it (older
+            // server versions may not).
+            if (typeof avatarIdx === 'number' && Number.isFinite(avatarIdx)) {
+                sys.localStorage.setItem(AVATAR_KEY, String(avatarIdx));
+                this._avatarIdx = avatarIdx;
+            }
             setBearerToken(token);
             this._uuid = uuid;
             this._name = nickname;
