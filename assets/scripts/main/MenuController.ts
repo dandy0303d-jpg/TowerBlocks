@@ -2483,7 +2483,14 @@ export class MenuController extends Component {
      */
     private async copyPlayerIdentity(): Promise<void> {
         const text =
-            `${t('settings.nickname.title')}: ${PlayerProfile.name}\n` +
+            // Hard-coded English label — kept in English (matches
+            // 'UserID:') so support / disputes can read it regardless
+            // of the player's game language. The previous code reused
+            // the panel button's i18n key ('修改昵称' / 'Edit Nickname')
+            // which read awkwardly out of context (support ticket:
+            // "修改昵称: Albert" makes it look like an action, not a
+            // field label).
+            `Nickname: ${PlayerProfile.name}\n` +
             `UserID: ${PlayerProfile.uuid}`;
         let copied = false;
         let method = 'none';
