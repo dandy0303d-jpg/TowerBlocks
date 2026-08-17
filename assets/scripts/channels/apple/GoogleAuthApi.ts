@@ -18,19 +18,14 @@ export interface LinkGoogleResult {
 }
 
 /** Bind the current player's uuid to the given Google identity.
- *  Requires bearer token. `idToken` is the JWT the ASWebAuthenticationSession
- *  flow returned; the server verifies its signature against Google's
- *  JWKS and extracts the Google `sub` from the payload.
- *
- *  `nonce` is echoed back in the id_token; server checks it matches
- *  what the client sent to guard against replay.
- */
-export async function linkGoogleAccount(
-    idToken: string,
-    nonce:   string,
-): Promise<LinkGoogleResult> {
+ *  Requires bearer token. `idToken` is the JWT the client obtained via
+ *  authorization_code + PKCE + Google token exchange; the server
+ *  verifies its signature against Google's JWKS. Replay-safe by
+ *  construction — Google's token endpoint enforces one-time use of
+ *  the code+verifier pair, so a captured id_token can't be re-minted. */
+export async function linkGoogleAccount(idToken: string): Promise<LinkGoogleResult> {
     const url = `${BACKEND_BASE_URL}/player/link/google`;
-    return httpPostJson<LinkGoogleResult>(url, { idToken, nonce });
+    return httpPostJson<LinkGoogleResult>(url, { idToken });
 }
 
 export interface LoginGoogleResult {
@@ -42,10 +37,7 @@ export interface LoginGoogleResult {
  *  No bearer required — "reinstalled, want my progress back" flow.
  *  Server verifies id_token, looks up google_sub → uuid, mints a
  *  fresh bearer. */
-export async function loginWithGoogle(
-    idToken: string,
-    nonce:   string,
-): Promise<LoginGoogleResult> {
+export async function loginWithGoogle(idToken: string): Promise<LoginGoogleResult> {
     const url = `${BACKEND_BASE_URL}/player/login/google`;
-    return httpPostJson<LoginGoogleResult>(url, { idToken, nonce });
+    return httpPostJson<LoginGoogleResult>(url, { idToken });
 }

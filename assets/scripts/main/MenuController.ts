@@ -1771,14 +1771,12 @@ export class MenuController extends Component {
         const btnNode = this.authoredSettingsGoogleLoginButton?.node;
         if (btnNode) btnNode.getComponent(Button)!.interactable = false;
         let cachedIdToken: string | null = null;
-        let cachedNonce:   string | null = null;
         try {
             log('[Settings] Google login tapped — starting OAuth flow');
             const cred = await GoogleAuth.signIn();
             cachedIdToken = cred.idToken;
-            cachedNonce   = cred.nonce;
             log(`[Settings] Google sign-in success — googleSub=${cred.googleSub.substring(0, 12)}..., calling /player/link/google`);
-            const result = await linkGoogleAccount(cred.idToken, cred.nonce);
+            const result = await linkGoogleAccount(cred.idToken);
             log(`[Settings] link result — linked=${result.linked}, alreadyLinked=${result.alreadyLinked}`);
             PlayerProfile.setAccountType('google');
             this.closeSettingsPanel();
@@ -1804,9 +1802,8 @@ export class MenuController extends Component {
             }
             // 409 = 'google already linked to another uuid' — same
             // recovery UX as Apple.
-            if (msg.includes('google already linked') && cachedIdToken && cachedNonce) {
+            if (msg.includes('google already linked') && cachedIdToken) {
                 const token = cachedIdToken;
-                const nonce = cachedNonce;
                 void (async () => {
                     const ok = await this.showConfirm(
                         t('settings.googleRecovery.title'),
@@ -1819,7 +1816,7 @@ export class MenuController extends Component {
                         this.refreshAuthoredSettingsValues();
                         return;
                     }
-                    await this.commitGoogleRecovery(token, nonce);
+                    await this.commitGoogleRecovery(token);
                 })();
                 return;
             }
@@ -1834,12 +1831,12 @@ export class MenuController extends Component {
     /** Recover a previously-linked Google account — mirrors
      *  commitAppleRecovery: POST /player/login/google → swap identity
      *  → pull fresh profile + LevelProgress under loading overlay. */
-    private async commitGoogleRecovery(idToken: string, nonce: string): Promise<void> {
+    private async commitGoogleRecovery(idToken: string): Promise<void> {
         const btn = this.authoredSettingsGoogleLoginButton;
         if (btn) btn.getComponent(Button)!.interactable = false;
         try {
             log('[Settings] Google recovery — calling /player/login/google');
-            const r = await loginWithGoogle(idToken, nonce);
+            const r = await loginWithGoogle(idToken);
             log(`[Settings] Google recovery success — recovered uuid=${r.uuid}`);
             PlayerProfile.swapToRecoveredAccount(r.uuid, r.bearer);
             // swap defaults accountType='apple' inside PlayerProfile

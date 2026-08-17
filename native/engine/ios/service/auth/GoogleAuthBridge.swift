@@ -34,6 +34,7 @@
 
 import Foundation
 import AuthenticationServices
+import CommonCrypto
 
 /// Presentation delegate for ASWebAuthenticationSession. Deliberately
 /// NOT `@objc public` — that would leak the class (and its protocol
@@ -69,6 +70,7 @@ class GoogleAuthPresentationDelegate: NSObject, ASWebAuthenticationPresentationC
     private static let REDIRECT_URI    = "\(REDIRECT_SCHEME):/oauth"
 
     private static let AUTH_ENDPOINT   = "https://accounts.google.com/o/oauth2/v2/auth"
+    private static let TOKEN_ENDPOINT  = "https://oauth2.googleapis.com/token"
 
     // Session must be strongly retained while the flow is in flight —
     // ASWebAuthenticationSession is dismissed if it goes out of scope.
@@ -78,46 +80,40 @@ class GoogleAuthPresentationDelegate: NSObject, ASWebAuthenticationPresentationC
         super.init()
     }
 
-    /// Trigger the Google Sign-In flow. Presents the ASWebAuthenticationSession
-    /// modal; on completion returns JSON:
-    ///   Success: {"success":true,
-    ///             "idToken":"<jwt>",
-    ///             "nonce":"<random>",
-    ///             "googleSub":"..." }  // sub extracted client-side
-    ///                                    // for logging only; server
-    ///                                    // re-extracts after signature verify.
+    /// Trigger the Google Sign-In flow. Uses OAuth 2.0
+    /// authorization_code + PKCE (the only flow Google's iOS OAuth
+    /// clients allow). The client-side code exchange then hits
+    /// https://oauth2.googleapis.com/token to swap the code for an
+    /// id_token. Returns:
+    ///   Success: {"success":true, "idToken":"<jwt>", "googleSub":"..."}
     ///   Cancel:  {"success":false, "kind":"user-cancelled", "error":"..."}
     ///   Failure: {"success":false, "kind":"...", "error":"..."}
     @objc(signInWithCompletion:)
     public func signIn(completion: @escaping (String) -> Void) {
-        // Random 32-byte nonce (base64url, no padding) — echoed in the
-        // id_token; server compares to guard against replay.
-        var nonceBytes = [UInt8](repeating: 0, count: 32)
-        let status = SecRandomCopyBytes(kSecRandomDefault, nonceBytes.count, &nonceBytes)
-        guard status == errSecSuccess else {
-            completion(Self.errorJSON(kind: "unknown", detail: "failed to generate nonce"))
+        // ---- PKCE: generate code_verifier + code_challenge ------------
+        // code_verifier: high-entropy random 43-128 char string
+        //   (spec: RFC 7636). Sent to Google's token endpoint later
+        //   to prove the caller who exchanges the code is the same
+        //   one who initiated the auth request.
+        // code_challenge: base64url(SHA256(code_verifier))
+        var verifierBytes = [UInt8](repeating: 0, count: 32)
+        guard SecRandomCopyBytes(kSecRandomDefault, verifierBytes.count, &verifierBytes) == errSecSuccess else {
+            completion(Self.errorJSON(kind: "unknown", detail: "failed to generate PKCE verifier"))
             return
         }
-        let nonce = Data(nonceBytes).base64EncodedString()
-            .replacingOccurrences(of: "+", with: "-")
-            .replacingOccurrences(of: "/", with: "_")
-            .replacingOccurrences(of: "=", with: "")
+        let verifier = Self.base64urlNoPad(Data(verifierBytes))
+        let challenge = Self.base64urlNoPad(Self.sha256(Data(verifier.utf8)))
 
-        // Build the OAuth URL. Implicit-flow with response_type=id_token
-        // returns the id_token in the URL fragment (#id_token=...) —
-        // no back-channel token exchange needed.
+        // ---- Build OAuth URL (authorization_code flow) ----------------
         var comps = URLComponents(string: Self.AUTH_ENDPOINT)!
         comps.queryItems = [
-            URLQueryItem(name: "client_id",     value: Self.CLIENT_ID),
-            URLQueryItem(name: "redirect_uri",  value: Self.REDIRECT_URI),
-            URLQueryItem(name: "response_type", value: "id_token"),
-            URLQueryItem(name: "scope",         value: "openid email profile"),
-            URLQueryItem(name: "nonce",         value: nonce),
-            // prompt=select_account so the user always picks an
-            // account rather than silently reusing a cached session.
-            // Trade-off: an extra tap when they only have one Google
-            // account, but avoids surprise re-links on iPad-with-family.
-            URLQueryItem(name: "prompt",        value: "select_account"),
+            URLQueryItem(name: "client_id",             value: Self.CLIENT_ID),
+            URLQueryItem(name: "redirect_uri",          value: Self.REDIRECT_URI),
+            URLQueryItem(name: "response_type",         value: "code"),
+            URLQueryItem(name: "scope",                 value: "openid email profile"),
+            URLQueryItem(name: "code_challenge",        value: challenge),
+            URLQueryItem(name: "code_challenge_method", value: "S256"),
+            URLQueryItem(name: "prompt",                value: "select_account"),
         ]
         guard let authURL = comps.url else {
             completion(Self.errorJSON(kind: "unknown", detail: "failed to build auth URL"))
@@ -146,31 +142,32 @@ class GoogleAuthPresentationDelegate: NSObject, ASWebAuthenticationPresentationC
                     completion(Self.errorJSON(kind: "unknown", detail: "no callback URL"))
                     return
                 }
-
-                // Google puts id_token in the FRAGMENT of the callback
-                // URL: com.googleusercontent.apps.XXX:/oauth#id_token=JWT&...
-                // Parse it out.
-                guard let idToken = Self.extractIdToken(from: url) else {
-                    completion(Self.errorJSON(kind: "failed", detail: "no id_token in callback: \(url.absoluteString)"))
+                // Code flow puts `code` in the QUERY string (not
+                // fragment): com.googleusercontent.apps.XXX:/oauth?code=Y&...
+                guard let code = Self.extractQueryParam(from: url, name: "code") else {
+                    let errParam = Self.extractQueryParam(from: url, name: "error") ?? "no code"
+                    completion(Self.errorJSON(kind: "failed", detail: "auth callback: \(errParam)"))
                     return
                 }
-                // Extract sub client-side just for logging — server
-                // re-decodes after signature verification, that's what
-                // matters for auth.
-                let sub = Self.extractSubFromJws(idToken) ?? "?"
-                let payload: [String: Any] = [
-                    "success":   true,
-                    "idToken":   idToken,
-                    "nonce":     nonce,
-                    "googleSub": sub,
-                ]
-                completion(Self.encodeJSON(payload) ?? Self.errorJSON(kind: "unknown", detail: "json encode failed"))
+                // Exchange the code for an id_token via Google's token
+                // endpoint. iOS clients have no client_secret (public
+                // client); PKCE code_verifier serves the same role.
+                Self.exchangeCodeForIdToken(code: code, codeVerifier: verifier) { result in
+                    switch result {
+                    case .success(let idToken):
+                        let sub = Self.extractSubFromJws(idToken) ?? "?"
+                        let payload: [String: Any] = [
+                            "success":   true,
+                            "idToken":   idToken,
+                            "googleSub": sub,
+                        ]
+                        completion(Self.encodeJSON(payload) ?? Self.errorJSON(kind: "unknown", detail: "json encode failed"))
+                    case .failure(let err):
+                        completion(Self.errorJSON(kind: "failed", detail: "token exchange: \(err.localizedDescription)"))
+                    }
+                }
             }
             session.presentationContextProvider = GoogleAuthPresentationDelegate.shared
-            // prefersEphemeralWebBrowserSession=false so the user's
-            // existing Google session (from Safari) is reused if
-            // available — one tap sign-in when possible. Set to true
-            // if we ever want strictly isolated sessions.
             session.prefersEphemeralWebBrowserSession = false
             self.currentSession = session
             let started = session.start()
@@ -181,20 +178,91 @@ class GoogleAuthPresentationDelegate: NSObject, ASWebAuthenticationPresentationC
         }
     }
 
+    // MARK: - Token exchange
+
+    /// POST to Google's token endpoint to swap the authorization code
+    /// for an id_token. iOS OAuth clients are public (no secret) —
+    /// PKCE code_verifier proves ownership of the original request.
+    private static func exchangeCodeForIdToken(
+        code: String,
+        codeVerifier: String,
+        completion: @escaping (Result<String, Error>) -> Void
+    ) {
+        guard let url = URL(string: TOKEN_ENDPOINT) else {
+            completion(.failure(NSError(domain: "GoogleAuth", code: -1, userInfo: [NSLocalizedDescriptionKey: "bad token URL"])))
+            return
+        }
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/x-www-form-urlencoded", forHTTPHeaderField: "Content-Type")
+
+        // Body params — application/x-www-form-urlencoded requires
+        // URL-encoded values. All our values are already URL-safe
+        // (client_id / code / verifier are base64url / OAuth-safe)
+        // except redirect_uri which contains a ':' — percent-encode.
+        let params: [(String, String)] = [
+            ("client_id",     CLIENT_ID),
+            ("code",          code),
+            ("code_verifier", codeVerifier),
+            ("grant_type",    "authorization_code"),
+            ("redirect_uri",  REDIRECT_URI),
+        ]
+        let body = params.map { (k, v) in
+            let ev = v.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? v
+            return "\(k)=\(ev)"
+        }.joined(separator: "&")
+        req.httpBody = body.data(using: .utf8)
+
+        URLSession.shared.dataTask(with: req) { data, resp, err in
+            if let err = err {
+                completion(.failure(err))
+                return
+            }
+            guard let http = resp as? HTTPURLResponse, let data = data else {
+                completion(.failure(NSError(domain: "GoogleAuth", code: -2, userInfo: [NSLocalizedDescriptionKey: "no response"])))
+                return
+            }
+            if http.statusCode < 200 || http.statusCode >= 300 {
+                let body = String(data: data, encoding: .utf8) ?? "<binary>"
+                completion(.failure(NSError(domain: "GoogleAuth", code: http.statusCode, userInfo: [NSLocalizedDescriptionKey: "HTTP \(http.statusCode): \(body)"])))
+                return
+            }
+            guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let idToken = obj["id_token"] as? String, !idToken.isEmpty else {
+                let body = String(data: data, encoding: .utf8) ?? "<binary>"
+                completion(.failure(NSError(domain: "GoogleAuth", code: -3, userInfo: [NSLocalizedDescriptionKey: "no id_token in response: \(body)"])))
+                return
+            }
+            completion(.success(idToken))
+        }.resume()
+    }
+
     // MARK: - Helpers
 
-    /// Google's implicit-flow callback puts params in the URL fragment,
-    /// not the query. Parse `#id_token=JWT&...` manually.
-    private static func extractIdToken(from url: URL) -> String? {
-        // fragment is the part after `#`.
-        guard let fragment = url.fragment, !fragment.isEmpty else { return nil }
-        for pair in fragment.split(separator: "&") {
-            let kv = pair.split(separator: "=", maxSplits: 1)
-            if kv.count == 2 && kv[0] == "id_token" {
-                return String(kv[1]).removingPercentEncoding
-            }
+    /// Extract a query-string param from the OAuth callback URL.
+    /// (Authorization-code flow returns `?code=X&state=Y`; unlike the
+    /// implicit flow, values live in the query, not the fragment.)
+    private static func extractQueryParam(from url: URL, name: String) -> String? {
+        guard let comps = URLComponents(url: url, resolvingAgainstBaseURL: false),
+              let items = comps.queryItems else { return nil }
+        return items.first(where: { $0.name == name })?.value
+    }
+
+    /// SHA256(data) — used for PKCE code_challenge derivation.
+    private static func sha256(_ data: Data) -> Data {
+        var hash = [UInt8](repeating: 0, count: Int(CC_SHA256_DIGEST_LENGTH))
+        data.withUnsafeBytes {
+            _ = CC_SHA256($0.baseAddress, CC_LONG(data.count), &hash)
         }
-        return nil
+        return Data(hash)
+    }
+
+    /// Base64url encoding without padding — required by PKCE + JWS.
+    private static func base64urlNoPad(_ data: Data) -> String {
+        return data.base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
     }
 
     /// Best-effort client-side JWT payload decode (NOT verification).

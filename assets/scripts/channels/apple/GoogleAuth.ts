@@ -23,10 +23,12 @@ const EV = {
 } as const;
 
 export interface GoogleCredential {
-    /** JWT signed by Google — send to server for verification + link. */
+    /** JWT signed by Google — send to server for verification + link.
+     *  Obtained via authorization_code + PKCE + token exchange (see
+     *  GoogleAuthBridge.swift). Replay-safe by construction: Google's
+     *  token endpoint enforces one-time use of the (code, code_verifier)
+     *  pair, so a captured id_token can't be re-minted. */
     idToken:   string;
-    /** Random per-signIn nonce echoed in the id_token — server verifies. */
-    nonce:     string;
     /** Google's stable per-user identifier (extracted client-side for
      *  logging; server re-extracts after signature verify). */
     googleSub: string;
