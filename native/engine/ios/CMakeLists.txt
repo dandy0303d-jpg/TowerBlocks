@@ -104,5 +104,5 @@ set_target_properties(${EXECUTABLE_NAME} PROPERTIES
     # at and auto-registers the required capabilities on the App ID
     # in the developer portal on next build, so we don't need to
     # click "+ Capability" ever again.
-    XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS   "${CC_PROJECT_DIR}/CocosGame.entitlements"
+    XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS   "${CC_PROJECT_DIR}/Tetri Tower: To the Heavens.entitlements"
 )
