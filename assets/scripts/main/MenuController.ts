@@ -2663,7 +2663,6 @@ export class MenuController extends Component {
      *  confirm before the first resolves, we auto-resolve the first
      *  as false (cancelled) and take over the modal. */
     private _confirmPendingResolve: ((confirmed: boolean) => void) | null = null;
-    private _confirmModalWired: boolean = false;
 
     /** Set to true around any programmatic assignment to
      *  authored*Toggle.isChecked so the fired 'toggle' event handlers
@@ -2718,7 +2717,13 @@ export class MenuController extends Component {
             this._confirmPendingResolve = resolve;
             if (prev) prev(false);
 
-            this.wireConfirmModalOnce();
+            // Rewire buttons EVERY show — the panel node is shared
+            // with the pause overlay in some scenes; whichever showX
+            // (confirm / pause) most recently activated the panel
+            // needs its handlers to own the buttons, else the OTHER
+            // module's handler fires and the modal appears un-
+            // dismissable to the user.
+            this.wireConfirmModal();
 
             if (this.authoredConfirmModalTitle) {
                 this.authoredConfirmModalTitle.string = title;
@@ -2740,9 +2745,7 @@ export class MenuController extends Component {
         });
     }
 
-    private wireConfirmModalOnce(): void {
-        if (this._confirmModalWired) return;
-        this._confirmModalWired = true;
+    private wireConfirmModal(): void {
         if (this.authoredConfirmModalConfirmButton) {
             const btn = this.authoredConfirmModalConfirmButton;
             btn.node.off('click');

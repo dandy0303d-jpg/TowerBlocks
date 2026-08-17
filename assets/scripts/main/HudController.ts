@@ -2586,15 +2586,15 @@ export class HudController extends Component {
             log('[HudController] authoredPauseOverlay not wired — pause UI will not show');
             return;
         }
-        // Lazy-wire on first open (idempotent via _pauseAuthoredWired).
-        if (!this._pauseAuthoredWired) {
-            this.wireAuthoredPauseOverlay();
-            this._pauseAuthoredWired = true;
-        }
+        // Rewire buttons + repaint labels EVERY open. Some scenes share
+        // this panel node with MenuController.authoredConfirmModal
+        // (delete-account / apple-recovery confirms); the last showX
+        // to activate the panel needs to own the buttons + labels or
+        // the panel appears stuck showing the OTHER caller's text
+        // ("删除账号？" here, "已暂停" there) and firing the OTHER
+        // caller's handlers.
+        this.wireAuthoredPauseOverlay();
         this.pauseOverlay = this.authoredPauseOverlay;
-        // Same reason as showFateModal: bump to last sibling so the
-        // energy bar / HUD strip / any other later-added child doesn't
-        // render over the dim.
         this.pauseOverlay.setSiblingIndex(999);
         this.pauseOverlay.active = true;
     }
@@ -2605,21 +2605,24 @@ export class HudController extends Component {
         }
     }
 
-    /** Wire authored pause-overlay button clicks. Called once on the
-     *  first showPauseOverlay when authoredPauseOverlay is set. Idempotent
-     *  via _pauseAuthoredWired guard so repeat opens don't stack. */
-    private _pauseAuthoredWired: boolean = false;
+    /** Wire authored pause-overlay button clicks + repaint labels.
+     *  Called EVERY showPauseOverlay — safe because each callback is
+     *  registered via off('click')+on('click'). Rewire (rather than
+     *  wire-once) so we can reclaim the shared panel from
+     *  MenuController.authoredConfirmModal when the two are the same
+     *  scene node. */
     private wireAuthoredPauseOverlay(): void {
-        // Auto-add a Dim backdrop so the pause overlay actually blocks
-        // the game underneath (visually + touch). No-op if the user
-        // authored their own Dim.
         ensureDimBackdrop(this.authoredPauseOverlay);
-        // ---- i18n on the static labels ----
+        // Direct label writes (NOT trackI18nLabel) so repeat opens
+        // don't push duplicate entries into i18nLabels[]. Pause
+        // overlay is only visible during gameplay, so a mid-pause
+        // language switch is unrealistic — refreshI18nLabels for it
+        // isn't worth the leak.
         if (this.authoredPauseTitleLabel) {
-            this.trackI18nLabel(this.authoredPauseTitleLabel, 'pause.title');
+            this.authoredPauseTitleLabel.string = t('pause.title');
         }
         if (this.authoredPauseHintLabel) {
-            this.trackI18nLabel(this.authoredPauseHintLabel, 'pause.hint');
+            this.authoredPauseHintLabel.string = t('pause.hint');
         }
         if (this.authoredPauseContinueButton) {
             this.authoredPauseContinueButton.node.off('click');
@@ -2629,7 +2632,7 @@ export class HudController extends Component {
                 this.refreshPauseUi();
             }, this);
             const lab = this.authoredPauseContinueButton.getComponentInChildren(Label);
-            if (lab) this.trackI18nLabel(lab, 'pause.continue');
+            if (lab) lab.string = t('pause.continue');
         } else {
             log('[HudController] authoredPauseContinueButton not wired');
         }
@@ -2642,7 +2645,7 @@ export class HudController extends Component {
                 this.menuController?.showModeSelect();
             }, this);
             const lab = this.authoredPauseHomeButton.getComponentInChildren(Label);
-            if (lab) this.trackI18nLabel(lab, 'pause.home');
+            if (lab) lab.string = t('pause.home');
         } else {
             log('[HudController] authoredPauseHomeButton not wired');
         }
