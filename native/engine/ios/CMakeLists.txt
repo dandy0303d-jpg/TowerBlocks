@@ -94,4 +94,15 @@ set_target_properties(${EXECUTABLE_NAME} PROPERTIES
     XCODE_ATTRIBUTE_DEFINES_MODULE           "YES"
     XCODE_ATTRIBUTE_SWIFT_OBJC_INTERFACE_HEADER_NAME "tower_blocks_mobile-Swift.h"
     XCODE_ATTRIBUTE_ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES "YES"
+    # Persist the entitlements file across every Cocos regen. Without
+    # this, Xcode's "Signing & Capabilities" panel resets on rebuild
+    # and any manually-added capability (SIWA / Game Center / iCloud)
+    # disappears from the generated project.pbxproj — even though the
+    # .entitlements file itself is on disk.
+    #
+    # Xcode's automatic signing scans the entitlements file we point
+    # at and auto-registers the required capabilities on the App ID
+    # in the developer portal on next build, so we don't need to
+    # click "+ Capability" ever again.
+    XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS   "${CC_PROJECT_DIR}/CocosGame.entitlements"
 )
