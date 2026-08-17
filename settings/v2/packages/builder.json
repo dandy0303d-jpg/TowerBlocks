@@ -9,10 +9,11 @@
         "z": 1,
         "w": 1
       },
-      "type": "custom"
+      "type": "default"
     },
     "logo": {
       "type": "none"
-    }
+    },
+    "totalTime": 500
   }
 }

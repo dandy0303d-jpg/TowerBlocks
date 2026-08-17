@@ -91,6 +91,13 @@ set_target_properties(${EXECUTABLE_NAME} PROPERTIES
     XCODE_ATTRIBUTE_DEFINES_MODULE           "YES"
     XCODE_ATTRIBUTE_SWIFT_OBJC_INTERFACE_HEADER_NAME "tower_blocks_mobile-Swift.h"
     XCODE_ATTRIBUTE_ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES "YES"
+    # dSYM generation for Release/Archive — otherwise App Store
+    # Connect complains "Upload Symbols Failed" and crash reports
+    # from TestFlight/App Store users come back un-symbolicated.
+    # Debug builds stay on plain DWARF for faster link times.
+    XCODE_ATTRIBUTE_DEBUG_INFORMATION_FORMAT[variant=Release]           "dwarf-with-dsym"
+    XCODE_ATTRIBUTE_DEBUG_INFORMATION_FORMAT[variant=RelWithDebInfo]    "dwarf-with-dsym"
+    XCODE_ATTRIBUTE_DEBUG_INFORMATION_FORMAT[variant=MinSizeRel]        "dwarf-with-dsym"
     # Persist the entitlements file across every Cocos regen. Without
     # this, Xcode's "Signing & Capabilities" panel resets on rebuild
     # and any manually-added capability (SIWA / Game Center / iCloud)

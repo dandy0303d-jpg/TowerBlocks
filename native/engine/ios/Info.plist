@@ -45,13 +45,13 @@
 	</dict>
 	<key>UIPrerenderedIcon</key>
 	<true/>
-	<key>UIRequiredDeviceCapabilities</key>
-	<dict>
-		<key>accelerometer</key>
-		<true/>
-		<key>opengles-1</key>
-		<true/>
-	</dict>
+	<!-- UIRequiredDeviceCapabilities intentionally omitted.
+	     - `accelerometer` blocks Vision Pro eligibility (visionOS has
+	       no motion sensor in the classic UIKit sense) and the game
+	       doesn't actually use it.
+	     - `opengles-1` is stale (we render via Metal, not GLES).
+	     Omitting the key entirely means "runs on any device that
+	     supports the deployment target", which is what we want. -->
 	<key>UIRequiresFullScreen</key>
 	<true/>
 	<key>UIStatusBarHidden</key>
