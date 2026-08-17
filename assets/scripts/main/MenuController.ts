@@ -154,9 +154,6 @@ export class MenuController extends Component {
     @property({ type: Button, tooltip: '排行榜按钮（占位，尚未接入后端）' })
     modeBtnLeaderboard: Button | null = null;
 
-    @property({ type: Button, tooltip: '充值按钮' })
-    modeBtnTopup: Button | null = null;
-
     @property({ type: LeaderboardController, tooltip: '排行榜面板控制器（拖场景里挂了 LeaderboardController 的节点进来）' })
     leaderboardController: LeaderboardController | null = null;
 
@@ -990,7 +987,6 @@ export class MenuController extends Component {
         bindBtn(this.modeBtnLevel,         'menu.levels',      () => this.showLevelSelect());
         bindBtn(this.modeBtnBlind,         'menu.blind',       () => this.enterBlindMode());
         bindBtn(this.modeBtnLeaderboard,   'menu.leaderboard', () => this.onLeaderboardClicked());
-        bindBtn(this.modeBtnTopup,         'menu.topup',       () => this.onTopupClicked());
         bindBtn(this.modeBtnSettings,      'settings.button',  () => this.openSettingsPanel());
         // Reset progress button: DEV-only. Hidden in release builds so
         // players can't nuke their own save by accident (and to keep
