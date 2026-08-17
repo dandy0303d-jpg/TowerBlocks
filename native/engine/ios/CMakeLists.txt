@@ -49,6 +49,9 @@ list(APPEND CC_ALL_SOURCES
     ${CC_PROJECT_DIR}/service/auth/AppleAuthBridge.swift
     ${CC_PROJECT_DIR}/service/auth/AppleAuthBridgeGlue.h
     ${CC_PROJECT_DIR}/service/auth/AppleAuthBridgeGlue.mm
+    ${CC_PROJECT_DIR}/service/auth/GoogleAuthBridge.swift
+    ${CC_PROJECT_DIR}/service/auth/GoogleAuthBridgeGlue.h
+    ${CC_PROJECT_DIR}/service/auth/GoogleAuthBridgeGlue.mm
     ${CC_PROJECT_DIR}/service/gc/GameCenterBridge.swift
     ${CC_PROJECT_DIR}/service/gc/GameCenterBridgeGlue.h
     ${CC_PROJECT_DIR}/service/gc/GameCenterBridgeGlue.mm

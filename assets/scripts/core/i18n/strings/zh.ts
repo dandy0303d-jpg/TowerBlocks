@@ -244,9 +244,15 @@ export const ZH: Record<string, string> = {
     'settings.appleRecovery.failed':   '恢复失败，请重试',
     'settings.appleRecovery.success':  '账号恢复成功',
     // 绑定 Toast
-    'settings.bind.success':           '已绑定 Apple 账号',
+    'settings.bind.success':           '账号已绑定',
     'settings.bind.failed':            '绑定失败，请重试',
     'settings.bind.cancelled':         '已取消登录',
+    // Google 账号恢复
+    'settings.googleRecovery.title':   '恢复账号？',
+    'settings.googleRecovery.desc':    '此 Google 账号已绑定另一个游戏账号。确认后当前账号将切换到该已绑定账号，原游客数据（钻石、进度）不会带过去。',
+    'settings.googleRecovery.pending': '恢复中...',
+    'settings.googleRecovery.failed':  '恢复失败，请重试',
+    'settings.googleRecovery.success': '账号恢复成功',
     // 钻石不足弹窗
     'gems.insufficient': '钻石不足\n需要 {need}，当前 {have}',
     'gems.goTopUp':      '去充值',

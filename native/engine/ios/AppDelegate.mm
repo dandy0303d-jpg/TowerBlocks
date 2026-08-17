@@ -34,6 +34,7 @@
 #import "service/SDKWrapper.h"
 #import "service/iap/PurchaseBridgeGlue.h"
 #import "service/auth/AppleAuthBridgeGlue.h"
+#import "service/auth/GoogleAuthBridgeGlue.h"
 #import "service/gc/GameCenterBridgeGlue.h"
 #import "service/haptic/HapticBridgeGlue.h"
 #import "service/ClipboardBridgeGlue.h"
@@ -73,6 +74,12 @@
     // Register the Sign in with Apple bridge — 'siwa.*' events.
     if (@available(iOS 13.0, *)) {
         [AppleAuthBridgeGlue registerWithCocos];
+    }
+
+    // Register the Google Sign-In bridge — 'google.*' events. Uses
+    // ASWebAuthenticationSession (iOS 13+; we require 15+).
+    if (@available(iOS 13.0, *)) {
+        [GoogleAuthBridgeGlue registerWithCocos];
     }
 
     // Register the clipboard bridge — 'clipboard.copy' event. UIPasteboard

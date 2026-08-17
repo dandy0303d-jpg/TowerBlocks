@@ -52,6 +52,8 @@ import { LoadingController } from './LoadingController';
 // so the button click handler surfaces a benign toast rather than crashing.
 import { AppleAuth } from '../channels/apple/AppleAuth';
 import { linkAppleAccount, fetchLinkedAccounts, loginWithApple } from '../channels/apple/AppleAuthApi';
+import { GoogleAuth } from '../channels/apple/GoogleAuth';
+import { linkGoogleAccount, loginWithGoogle } from '../channels/apple/GoogleAuthApi';
 import { deletePlayerSelf } from '../core/PlayerApi';
 import { IS_DEV_BUILD } from '../core/BuildConfig';
 
@@ -1480,11 +1482,11 @@ export class MenuController extends Component {
         // ---- Wire the avatar picker (idempotent) ----
         this.wireAvatarPicker();
 
-        // ---- Google / Apple login buttons (stubs) ----
+        // ---- Google / Apple login buttons ----
         if (this.authoredSettingsGoogleLoginButton) {
             this.authoredSettingsGoogleLoginButton.node.off('click');
             this.authoredSettingsGoogleLoginButton.node.on('click',
-                () => log('[Settings] Google login tapped — SDK integration TODO'), this);
+                () => this.handleGoogleLoginClick(), this);
         }
         if (this.authoredSettingsAppleLoginButton) {
             this.authoredSettingsAppleLoginButton.node.off('click');
@@ -1505,9 +1507,13 @@ export class MenuController extends Component {
             const gt = this.authoredSettingsGoogleToggle;
             gt.node.off('toggle');
             gt.node.on('toggle', () => {
-                log(`[Settings] Google toggle → ${gt.isChecked} — SDK integration TODO`);
-                // Snap back until real Google Sign-In is wired.
-                this.refreshAuthoredSettingsValues();
+                log(`[Settings] Google toggle → ${gt.isChecked}`);
+                if (gt.isChecked && PlayerProfile.accountType !== 'google') {
+                    void this.handleGoogleLoginClick();
+                } else if (!gt.isChecked && PlayerProfile.accountType === 'google') {
+                    log('[Settings] Google toggle OFF — unbind not implemented, snapping back');
+                    this.refreshAuthoredSettingsValues();
+                }
             }, this);
         }
         if (this.authoredSettingsAppleToggle) {
@@ -1746,6 +1752,120 @@ export class MenuController extends Component {
             return;
         }
         if (btn) btn.getComponent(Button)!.interactable = true;
+    }
+
+    // ============================================================
+    //  Google Sign-In flow — mirrors Apple's shape end-to-end
+    // ============================================================
+
+    /** Kick off the Google Sign-In flow. Mirrors handleAppleLoginClick:
+     *  ASWebAuthenticationSession → server /player/link/google →
+     *  refresh profile + LevelProgress under the loading overlay →
+     *  toast success. On 409 (google already linked to another uuid)
+     *  the confirm modal offers to recover instead. */
+    private async handleGoogleLoginClick(): Promise<void> {
+        if (PlayerProfile.accountType === 'google') {
+            log('[Settings] Google already linked — no-op');
+            return;
+        }
+        const btnNode = this.authoredSettingsGoogleLoginButton?.node;
+        if (btnNode) btnNode.getComponent(Button)!.interactable = false;
+        let cachedIdToken: string | null = null;
+        let cachedNonce:   string | null = null;
+        try {
+            log('[Settings] Google login tapped — starting OAuth flow');
+            const cred = await GoogleAuth.signIn();
+            cachedIdToken = cred.idToken;
+            cachedNonce   = cred.nonce;
+            log(`[Settings] Google sign-in success — googleSub=${cred.googleSub.substring(0, 12)}..., calling /player/link/google`);
+            const result = await linkGoogleAccount(cred.idToken, cred.nonce);
+            log(`[Settings] link result — linked=${result.linked}, alreadyLinked=${result.alreadyLinked}`);
+            PlayerProfile.setAccountType('google');
+            this.closeSettingsPanel();
+            await this.runWithReloadOverlay(async () => {
+                try {
+                    const p = await PlayerProfile.fetchProfile();
+                    LevelProgress.restoreFrom((p.bestScores?.level ?? 0) - 1);
+                } catch (e) {
+                    console.warn(`[Settings] fetchProfile after Google bind failed: ${(e as Error).message}`);
+                }
+                this.refreshAuthoredSettingsValues();
+            });
+            this.showSettingsToast(t('settings.bind.success'));
+        } catch (err) {
+            const msg = (err as Error).message ?? String(err);
+            if (msg.startsWith('user-cancelled') || msg.startsWith('platform-unsupported')) {
+                log(`[Settings] Google sign-in aborted: ${msg}`);
+                if (msg.startsWith('user-cancelled')) {
+                    this.showSettingsToast(t('settings.bind.cancelled'));
+                }
+                this.refreshAuthoredSettingsValues();
+                return;
+            }
+            // 409 = 'google already linked to another uuid' — same
+            // recovery UX as Apple.
+            if (msg.includes('google already linked') && cachedIdToken && cachedNonce) {
+                const token = cachedIdToken;
+                const nonce = cachedNonce;
+                void (async () => {
+                    const ok = await this.showConfirm(
+                        t('settings.googleRecovery.title'),
+                        t('settings.googleRecovery.desc'),
+                        t('common.confirm'),
+                        t('common.cancel'),
+                    );
+                    if (!ok) {
+                        log('[Settings] Google recovery cancelled by user');
+                        this.refreshAuthoredSettingsValues();
+                        return;
+                    }
+                    await this.commitGoogleRecovery(token, nonce);
+                })();
+                return;
+            }
+            console.warn(`[Settings] Google sign-in / link failed: ${msg}`);
+            this.showSettingsToast(t('settings.bind.failed'));
+            this.refreshAuthoredSettingsValues();
+        } finally {
+            if (btnNode) btnNode.getComponent(Button)!.interactable = true;
+        }
+    }
+
+    /** Recover a previously-linked Google account — mirrors
+     *  commitAppleRecovery: POST /player/login/google → swap identity
+     *  → pull fresh profile + LevelProgress under loading overlay. */
+    private async commitGoogleRecovery(idToken: string, nonce: string): Promise<void> {
+        const btn = this.authoredSettingsGoogleLoginButton;
+        if (btn) btn.getComponent(Button)!.interactable = false;
+        try {
+            log('[Settings] Google recovery — calling /player/login/google');
+            const r = await loginWithGoogle(idToken, nonce);
+            log(`[Settings] Google recovery success — recovered uuid=${r.uuid}`);
+            PlayerProfile.swapToRecoveredAccount(r.uuid, r.bearer);
+            // swap defaults accountType='apple' inside PlayerProfile
+            // (SIWA was implemented first). Override to 'google' here
+            // so the Settings toggles paint correctly.
+            PlayerProfile.setAccountType('google');
+            this.closeSettingsPanel();
+            await this.runWithReloadOverlay(async () => {
+                try {
+                    const p = await PlayerProfile.fetchProfile();
+                    log(`[Settings] recovered Google profile — name="${p.name}", bestScores=${JSON.stringify(p.bestScores)}`);
+                    LevelProgress.restoreFrom((p.bestScores?.level ?? 0) - 1);
+                } catch (e) {
+                    console.warn(`[Settings] fetchProfile after Google recovery failed: ${(e as Error).message}`);
+                }
+                this.refreshAuthoredSettingsValues();
+            });
+            this.showSettingsToast(t('settings.googleRecovery.success'));
+        } catch (err) {
+            const msg = (err as Error).message ?? String(err);
+            console.warn(`[Settings] Google recovery failed: ${msg}`);
+            this.showSettingsToast(t('settings.googleRecovery.failed'));
+            this.refreshAuthoredSettingsValues();
+        } finally {
+            if (btn) btn.getComponent(Button)!.interactable = true;
+        }
     }
 
     /** Double-tap-confirm state for the Delete Account button. When

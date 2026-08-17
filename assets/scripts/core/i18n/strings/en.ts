@@ -238,9 +238,15 @@ export const EN: Record<string, string> = {
     'settings.appleRecovery.failed':   'Restore failed, try again',
     'settings.appleRecovery.success':  'Account restored',
     // Bind toasts
-    'settings.bind.success':           'Apple account linked',
+    'settings.bind.success':           'Account linked',
     'settings.bind.failed':            'Link failed, try again',
     'settings.bind.cancelled':         'Sign-in cancelled',
+    // Google account recovery
+    'settings.googleRecovery.title':   'Restore account?',
+    'settings.googleRecovery.desc':    'This Google account is already linked to another game account. Confirming will switch to that account. Your current guest data (gems, progress) will NOT be carried over.',
+    'settings.googleRecovery.pending': 'Restoring...',
+    'settings.googleRecovery.failed':  'Restore failed, try again',
+    'settings.googleRecovery.success': 'Account restored',
     // Not-enough-gems popup
     'gems.insufficient': 'Not enough gems\nNeed {need}, have {have}',
     'gems.goTopUp':      'Top Up',
