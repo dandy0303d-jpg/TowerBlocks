@@ -35,8 +35,29 @@
 import Foundation
 import AuthenticationServices
 
+/// Presentation delegate for ASWebAuthenticationSession. Deliberately
+/// NOT `@objc public` — that would leak the class (and its protocol
+/// conformance to ASWebAuthenticationPresentationContextProviding)
+/// into the auto-generated Swift-to-ObjC header, requiring every
+/// ObjC glue file that includes that header to also import
+/// AuthenticationServices. Keeping this internal to Swift avoids the
+/// cross-file rebuild dependency. Same pattern GameCenterUIDelegate
+/// uses for GKGameCenterControllerDelegate.
 @available(iOS 13.0, *)
-@objc public class GoogleAuthBridge: NSObject, ASWebAuthenticationPresentationContextProviding {
+class GoogleAuthPresentationDelegate: NSObject, ASWebAuthenticationPresentationContextProviding {
+    static let shared = GoogleAuthPresentationDelegate()
+    func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
+        let scenes = UIApplication.shared.connectedScenes
+        let windowScene = scenes.first { ($0.activationState == .foregroundActive) } as? UIWindowScene
+            ?? scenes.first as? UIWindowScene
+        return windowScene?.windows.first(where: { $0.isKeyWindow })
+            ?? windowScene?.windows.first
+            ?? ASPresentationAnchor()
+    }
+}
+
+@available(iOS 13.0, *)
+@objc public class GoogleAuthBridge: NSObject {
 
     @objc public static let shared = GoogleAuthBridge()
 
@@ -144,7 +165,7 @@ import AuthenticationServices
                 ]
                 completion(Self.encodeJSON(payload) ?? Self.errorJSON(kind: "unknown", detail: "json encode failed"))
             }
-            session.presentationContextProvider = self
+            session.presentationContextProvider = GoogleAuthPresentationDelegate.shared
             // prefersEphemeralWebBrowserSession=false so the user's
             // existing Google session (from Safari) is reused if
             // available — one tap sign-in when possible. Set to true
@@ -157,19 +178,6 @@ import AuthenticationServices
                 completion(Self.errorJSON(kind: "unknown", detail: "ASWebAuthenticationSession.start() returned false"))
             }
         }
-    }
-
-    // MARK: - ASWebAuthenticationPresentationContextProviding
-
-    public func presentationAnchor(for session: ASWebAuthenticationSession) -> ASPresentationAnchor {
-        // Return the app's key window. On multi-scene iPads this picks
-        // the foremost scene's window.
-        let scenes = UIApplication.shared.connectedScenes
-        let windowScene = scenes.first { ($0.activationState == .foregroundActive) } as? UIWindowScene
-            ?? scenes.first as? UIWindowScene
-        return windowScene?.windows.first(where: { $0.isKeyWindow })
-            ?? windowScene?.windows.first
-            ?? ASPresentationAnchor()
     }
 
     // MARK: - Helpers
