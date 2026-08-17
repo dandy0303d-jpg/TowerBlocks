@@ -255,13 +255,6 @@ export class MenuController extends Component {
     @property({ type: Button, tooltip: '账号信息 Button（点击复制昵称 + UUID 到剪贴板；用于客服/申诉时快速提供账号 ID）— 可空。拖你截图里那个 account 行的 Button' })
     authoredSettingsAccountButton: Button | null = null;
 
-    // ---- 第三方账号绑定按钮（登录）— 功能未接，先留 UI ----
-    @property({ type: Button, tooltip: '谷歌登录按钮（点击后暂时只 log，等接 Google Sign-In SDK 再补功能）— 可空' })
-    authoredSettingsGoogleLoginButton: Button | null = null;
-
-    @property({ type: Button, tooltip: '苹果登录按钮（点击后暂时只 log，等接 Sign in with Apple 再补功能）— 可空' })
-    authoredSettingsAppleLoginButton: Button | null = null;
-
     // ---- 已绑定账号开关（解绑）— 功能未接 ----
     @property({ type: Toggle, tooltip: '谷歌已绑定开关（isChecked 反映当前是否绑定；切换事件暂时只 log）— 可空' })
     authoredSettingsGoogleToggle: Toggle | null = null;
@@ -1482,18 +1475,10 @@ export class MenuController extends Component {
         // ---- Wire the avatar picker (idempotent) ----
         this.wireAvatarPicker();
 
-        // ---- Google / Apple login buttons ----
-        if (this.authoredSettingsGoogleLoginButton) {
-            this.authoredSettingsGoogleLoginButton.node.off('click');
-            this.authoredSettingsGoogleLoginButton.node.on('click',
-                () => this.handleGoogleLoginClick(), this);
-        }
-        if (this.authoredSettingsAppleLoginButton) {
-            this.authoredSettingsAppleLoginButton.node.off('click');
-            this.authoredSettingsAppleLoginButton.node.on('click',
-                () => this.handleAppleLoginClick(), this);
-        }
         // ---- Google / Apple linked toggles ----
+        // Login-button @property fields removed — the Toggle IS the
+        // click surface now. Tap toggle to bind, tap again to attempt
+        // unbind (not implemented yet, snaps back).
         // Toggle ON when NOT bound  → same as tapping the "Apple 登录" btn
         //                             (kicks off SIWA + link flow).
         // Toggle OFF when bound     → unbind not implemented yet. We snap
@@ -1625,8 +1610,6 @@ export class MenuController extends Component {
             log('[Settings] Apple already linked — no-op');
             return;
         }
-        const btnNode = this.authoredSettingsAppleLoginButton?.node;
-        if (btnNode) btnNode.getComponent(Button)!.interactable = false;
         let cachedIdentityToken: string | null = null;
         try {
             log('[Settings] Apple login tapped — starting SIWA flow');
@@ -1698,8 +1681,6 @@ export class MenuController extends Component {
             this.showSettingsToast(t('settings.bind.failed'));
             // Bind failed for some other reason → snap toggle back off.
             this.refreshAuthoredSettingsValues();
-        } finally {
-            if (btnNode) btnNode.getComponent(Button)!.interactable = true;
         }
     }
 
@@ -1709,23 +1690,11 @@ export class MenuController extends Component {
      *  3. Swap local PlayerProfile state (uuid, bearer, accountType='apple')
      *  4. Refresh Settings UI — wallet / linked accounts re-fetch under the new uuid */
     private async commitAppleRecovery(identityToken: string): Promise<void> {
-        const btn = this.authoredSettingsAppleLoginButton;
-        const lab = btn?.getComponentInChildren(Label);
-        const bgSprite = btn?.node.getComponent(Sprite);
-        if (btn) btn.getComponent(Button)!.interactable = false;
-        if (lab) lab.string = t('settings.appleRecovery.pending');
-
         try {
             log('[Settings] Apple recovery — calling /player/login/apple');
             const r = await loginWithApple(identityToken);
             log(`[Settings] Apple recovery success — recovered uuid=${r.uuid}`);
             PlayerProfile.swapToRecoveredAccount(r.uuid, r.bearer);
-            // Close Settings and switch to the loading overlay while we
-            // pull the recovered account's profile + level progress
-            // from the server. Overlay avoids the flash of the old
-            // guest's UI briefly showing under the new identity.
-            if (lab) lab.string = t('settings.account.apple');
-            if (bgSprite) bgSprite.color = new Color(255, 255, 255, 255);
             this.closeSettingsPanel();
             await this.runWithReloadOverlay(async () => {
                 // swap wipes the local name (it belongs to the OLD guest
@@ -1752,19 +1721,11 @@ export class MenuController extends Component {
         } catch (err) {
             const msg = (err as Error).message ?? String(err);
             console.warn(`[Settings] Apple recovery failed: ${msg}`);
-            if (lab) lab.string = t('settings.appleRecovery.failed');
             this.showSettingsToast(t('settings.appleRecovery.failed'));
             // Recovery failed → user is still on the original guest uuid;
             // snap toggle back off so it doesn't misrepresent bind state.
             this.refreshAuthoredSettingsValues();
-            setTimeout(() => {
-                if (btn) btn.getComponent(Button)!.interactable = true;
-                if (lab) lab.string = t('settings.account.apple');
-                if (bgSprite) bgSprite.color = new Color(255, 255, 255, 255);
-            }, 3000);
-            return;
         }
-        if (btn) btn.getComponent(Button)!.interactable = true;
     }
 
     // ============================================================
@@ -1781,8 +1742,6 @@ export class MenuController extends Component {
             log('[Settings] Google already linked — no-op');
             return;
         }
-        const btnNode = this.authoredSettingsGoogleLoginButton?.node;
-        if (btnNode) btnNode.getComponent(Button)!.interactable = false;
         let cachedIdToken: string | null = null;
         try {
             log('[Settings] Google login tapped — starting OAuth flow');
@@ -1837,8 +1796,6 @@ export class MenuController extends Component {
             console.warn(`[Settings] Google sign-in / link failed: ${msg}`);
             this.showSettingsToast(t('settings.bind.failed'));
             this.refreshAuthoredSettingsValues();
-        } finally {
-            if (btnNode) btnNode.getComponent(Button)!.interactable = true;
         }
     }
 
@@ -1846,8 +1803,6 @@ export class MenuController extends Component {
      *  commitAppleRecovery: POST /player/login/google → swap identity
      *  → pull fresh profile + LevelProgress under loading overlay. */
     private async commitGoogleRecovery(idToken: string): Promise<void> {
-        const btn = this.authoredSettingsGoogleLoginButton;
-        if (btn) btn.getComponent(Button)!.interactable = false;
         try {
             log('[Settings] Google recovery — calling /player/login/google');
             const r = await loginWithGoogle(idToken);
