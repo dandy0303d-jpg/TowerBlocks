@@ -2397,17 +2397,23 @@ export class MenuController extends Component {
         // toggles read as OFF. First paint is from local state (fast,
         // no flash); the server-side reconcile below then corrects
         // any drift.
-        const acct = PlayerProfile.accountType;
         // Programmatic isChecked= fires 'toggle' events in Cocos —
         // wrap in the suppress flag so the handlers know it's not a
         // user tap.
+        //
+        // Toggle state is paint from _knownLinkedProviders (server
+        // truth) — NOT PlayerProfile.accountType. The accountType only
+        // reflects ONE provider (apple wins when both bound), so
+        // painting from it would force the OTHER toggle off every
+        // refresh + make Google visibly flip whenever the user taps
+        // Apple.
         this._suppressToggleEvents = true;
         try {
             if (this.authoredSettingsGoogleToggle) {
-                this.authoredSettingsGoogleToggle.isChecked = (acct === 'google');
+                this.authoredSettingsGoogleToggle.isChecked = this._knownLinkedProviders.has('google');
             }
             if (this.authoredSettingsAppleToggle) {
-                this.authoredSettingsAppleToggle.isChecked = (acct === 'apple');
+                this.authoredSettingsAppleToggle.isChecked = this._knownLinkedProviders.has('apple');
             }
             if (this.authoredSettingsHapticToggle) {
                 this.authoredSettingsHapticToggle.isChecked = (getHapticMode() === 'on');
