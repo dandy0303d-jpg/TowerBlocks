@@ -200,19 +200,36 @@ class Profile {
         console.log(`[PlayerProfile] swapped to recovered account: ${uuid} (accountType=apple)`);
     }
 
-    /** Persist a new display name. Server-side truncates to MAX_NAME_LEN.
-     *  Ignored for empty / whitespace-only strings so accidental clears
-     *  don't wipe the current name. Also fires a fire-and-forget PUT
-     *  to the server so the change survives cross-device play. */
-    setName(next: string): void {
+    /** Persist a new display name. Server-side validates for
+     *  profanity, reserved names, length — a 400 response ('nickname:
+     *  profanity' / 'nickname: reserved' / 'nickname: too-long' /
+     *  'nickname: too-short') REJECTS the change AND leaves local
+     *  state untouched, so the caller can toast an error and prompt
+     *  again with the OLD name still displayed.
+     *
+     *  Returns a Promise so UI can await + surface errors. Rejects
+     *  with the raw server error string on validation failure or
+     *  network error. */
+    async setName(next: string): Promise<void> {
         const trimmed = next.trim();
         if (!trimmed) return;
-        this._name = trimmed;
-        sys.localStorage.setItem(NAME_KEY, trimmed);
-        console.log(`[PlayerProfile] setName → "${trimmed}" — syncing to server…`);
-        updatePlayerProfile({ name: trimmed })
-            .then((r) => console.log(`[PlayerProfile] setName synced: server saved "${r.name}"`))
-            .catch((err) => console.warn(`[PlayerProfile] setName sync FAILED: ${err?.message}`));
+        // Try the server FIRST — only mutate local state after a
+        // successful round-trip. Prevents the UI from claiming the
+        // new nickname when the server actually rejected it.
+        const prev = this._name;
+        console.log(`[PlayerProfile] setName → "${trimmed}" — validating with server…`);
+        try {
+            const r = await updatePlayerProfile({ name: trimmed });
+            // Server may normalise (truncate / strip whitespace) —
+            // adopt the server's canonical form as the source of truth.
+            this._name = r.name;
+            sys.localStorage.setItem(NAME_KEY, r.name);
+            console.log(`[PlayerProfile] setName saved: "${r.name}"`);
+        } catch (err) {
+            const msg = (err as Error)?.message ?? String(err);
+            console.warn(`[PlayerProfile] setName rejected: ${msg} — keeping "${prev}"`);
+            throw err;
+        }
     }
 
     /** Currently-selected avatar index. `null` means the player hasn't

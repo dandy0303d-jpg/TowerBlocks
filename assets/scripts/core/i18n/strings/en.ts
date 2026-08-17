@@ -209,6 +209,11 @@ export const EN: Record<string, string> = {
     'settings.nickname.tooLong':     'Nickname must be at most {n} characters',
     'settings.nickname.title':       'Edit Nickname',
     'settings.nickname.placeholder': 'Enter a new nickname',
+    'settings.nickname.profanity':   'Nickname contains prohibited words',
+    'settings.nickname.reserved':    'That nickname is reserved',
+    'settings.nickname.tooShort':    'Nickname too short',
+    'settings.nickname.tooLongServer':'Nickname too long',
+    'settings.nickname.rejected':    'Invalid nickname, try another',
 
     // ---------- Common modal buttons ----------
     'common.confirm':    'Confirm',

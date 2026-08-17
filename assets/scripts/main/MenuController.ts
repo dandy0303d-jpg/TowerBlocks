@@ -1999,7 +1999,22 @@ export class MenuController extends Component {
         if (trimmed === currentName) {
             return;   // unchanged, skip the setName round-trip
         }
-        PlayerProfile.setName(trimmed);
+        try {
+            await PlayerProfile.setName(trimmed);
+        } catch (err) {
+            const msg = (err as Error)?.message ?? String(err);
+            // Server returns 400 with error body 'nickname: <code>'
+            // (see server/src/nickname-validator.ts). Map each code
+            // to a specific toast so the player knows WHY.
+            let toastKey = 'settings.nickname.rejected';   // generic fallback
+            if (msg.includes('nickname: profanity')) toastKey = 'settings.nickname.profanity';
+            else if (msg.includes('nickname: reserved')) toastKey = 'settings.nickname.reserved';
+            else if (msg.includes('nickname: too-long')) toastKey = 'settings.nickname.tooLongServer';
+            else if (msg.includes('nickname: too-short')) toastKey = 'settings.nickname.tooShort';
+            log(`[Settings] nickname rejected by server: ${msg}`);
+            this.showSettingsToast(t(toastKey));
+            return;
+        }
         // Repaint the Settings screen so the new name shows immediately.
         this.refreshAuthoredSettingsValues();
         log(`[Settings] nickname saved via prompt: ${PlayerProfile.name}`);

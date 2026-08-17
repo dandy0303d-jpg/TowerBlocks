@@ -214,6 +214,11 @@ export const ZH: Record<string, string> = {
     'settings.nickname.tooLong':     '昵称最多 {n} 个字符',
     'settings.nickname.title':       '修改昵称',
     'settings.nickname.placeholder': '输入新昵称',
+    'settings.nickname.profanity':   '昵称含违禁词，请换一个',
+    'settings.nickname.reserved':    '此昵称为系统保留，请换一个',
+    'settings.nickname.tooShort':    '昵称太短',
+    'settings.nickname.tooLongServer':'昵称太长',
+    'settings.nickname.rejected':    '昵称不合法，请换一个',
 
     // ---------- Common modal buttons ----------
     'common.confirm':    '确认',
