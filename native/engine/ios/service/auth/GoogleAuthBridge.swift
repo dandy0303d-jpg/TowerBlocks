@@ -88,7 +88,8 @@ class GoogleAuthPresentationDelegate: NSObject, ASWebAuthenticationPresentationC
     ///                                    // re-extracts after signature verify.
     ///   Cancel:  {"success":false, "kind":"user-cancelled", "error":"..."}
     ///   Failure: {"success":false, "kind":"...", "error":"..."}
-    @objc public func signIn(completion: @escaping (String) -> Void) {
+    @objc(signInWithCompletion:)
+    public func signIn(completion: @escaping (String) -> Void) {
         // Random 32-byte nonce (base64url, no padding) — echoed in the
         // id_token; server compares to guard against replay.
         var nonceBytes = [UInt8](repeating: 0, count: 32)
