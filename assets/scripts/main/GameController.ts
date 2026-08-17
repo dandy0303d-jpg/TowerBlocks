@@ -3155,7 +3155,6 @@ export class GameController extends Component {
     private onDomKeyDown = (e: KeyboardEvent): void => {
         if (Date.now() - this.lastCocosKeyAt < 100) return;
         if (!this.gameState) return;
-        log('[TowerBlocks] keyDown(DOM) code=' + e.code + (e.repeat ? ' (repeat)' : ''));
         const now = Date.now();
         let handled = true;
         switch (e.code) {
