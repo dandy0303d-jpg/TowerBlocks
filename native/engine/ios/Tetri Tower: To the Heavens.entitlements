@@ -8,7 +8,5 @@
 	</array>
 	<key>com.apple.developer.game-center</key>
 	<true/>
-	<key>com.apple.developer.ubiquity-kvstore-identifier</key>
-	<string>$(TeamIdentifierPrefix)$(CFBundleIdentifier)</string>
 </dict>
 </plist>

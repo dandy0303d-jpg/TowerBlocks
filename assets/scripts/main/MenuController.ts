@@ -31,7 +31,6 @@ import { LevelSelectStage3D } from './LevelSelectStage3D';
 import { LeaderboardController } from './LeaderboardController';
 import { TopUpController } from './TopUpController';
 import { PlayerProfile } from '../core/PlayerProfile';
-import { CloudSync } from '../core/CloudSync';
 import { setBannedHandler, getBannedState, type BannedState } from '../core/Http';
 import { fetchWallet } from '../core/WalletApi';
 import { BACKEND_BASE_URL } from '../core/BackendConfig';
@@ -1980,9 +1979,6 @@ export class MenuController extends Component {
                 sys.localStorage.removeItem('tt.player.token');
                 sys.localStorage.removeItem('tt.player.tokenExpEpochSec');
                 sys.localStorage.removeItem('tt.player.avatarIdx');
-                // Wipe the iCloud identity blob too — otherwise a
-                // reinstall would restore the just-deleted uuid.
-                CloudSync.clear();
                 // Also wipe level progress — the deleted account's
                 // cleared levels don't belong to the fresh guest.
                 LevelProgress.reset();

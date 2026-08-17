@@ -36,7 +36,6 @@
 #import "service/auth/AppleAuthBridgeGlue.h"
 #import "service/gc/GameCenterBridgeGlue.h"
 #import "service/haptic/HapticBridgeGlue.h"
-#import "service/cloudkv/CloudKVBridgeGlue.h"
 #import "service/ClipboardBridgeGlue.h"
 
 @implementation AppDelegate
@@ -88,12 +87,6 @@
     // Register the haptic bridge — 'haptic.impact' event. Pre-warms
     // UIImpactFeedbackGenerators to avoid the first-fire lag.
     [HapticBridgeGlue registerWithCocos];
-
-    // Register the iCloud key-value bridge. Immediately readable on
-    // boot (sync happens in the iCloud daemon, not our request path).
-    // Requires com.apple.developer.ubiquity-kvstore-identifier
-    // entitlement in CocosGame.entitlements.
-    [CloudKVBridgeGlue registerWithCocos];
 
     return YES;
 }
