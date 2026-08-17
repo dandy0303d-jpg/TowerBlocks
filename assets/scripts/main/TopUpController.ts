@@ -53,6 +53,7 @@ import {
     fetchWallet,
     topupWallet,
     formatPrice,
+    overrideSkuDisplayPrice,
     WalletSku,
 } from '../core/WalletApi';
 import { Providers } from '../core/channels/Providers';
@@ -143,6 +144,42 @@ export class TopUpController extends Component {
         this.paintBalance(this.cachedBalance);
         // Background refresh; paint updates when it lands.
         this.refreshBalance();
+        // Also re-fetch localized prices in case the player switched
+        // Apple ID / storefront since the last preload. Cheap — Apple
+        // caches products at the OS level.
+        void this.refreshLocalizedPrices();
+    }
+
+    /** Ask the active purchase provider for real localized prices +
+     *  overwrite the hard-coded WALLET_SKUS entries so the display
+     *  string matches what StoreKit will actually charge. On non-Apple
+     *  channels (MockPurchaseProvider) this is a no-op — the mock
+     *  returns the input array unchanged. Fire-and-forget; on
+     *  completion we re-paint if anything changed. */
+    private async refreshLocalizedPrices(): Promise<void> {
+        try {
+            const localized = await Providers.purchase.fetchLocalizedPrices(WALLET_SKUS);
+            let changed = false;
+            for (const s of localized) {
+                if (s.displayPrice) {
+                    // Persist onto the shared WALLET_SKUS entry so the
+                    // next paint (or any other consumer of formatPrice)
+                    // sees the localized string. `overrideSkuDisplayPrice`
+                    // is a no-op when the value already matches.
+                    const idx = WALLET_SKUS.findIndex((x) => x.id === s.id);
+                    if (idx >= 0 && WALLET_SKUS[idx].displayPrice !== s.displayPrice) {
+                        overrideSkuDisplayPrice(s.id, s.displayPrice);
+                        changed = true;
+                    }
+                }
+            }
+            if (changed) {
+                log('[TopUp] localized prices updated — repainting');
+                this.paintSkuCards();
+            }
+        } catch (err) {
+            console.warn('[TopUp] refreshLocalizedPrices failed (falling back to defaults):', (err as Error).message);
+        }
     }
 
     public hide(): void {
@@ -182,7 +219,14 @@ export class TopUpController extends Component {
         // free on the main branch. Errors are logged but don't block
         // preload — a broken IAP layer shouldn't prevent the game
         // from booting; the purchase will just fail on click.
-        Providers.purchase.init().catch((err) => {
+        Providers.purchase.init().then(() => {
+            // Once StoreKit is ready, pull the real localized prices
+            // from Apple (bakes in the player's App Store storefront
+            // currency + tax + regional pricing). Overrides the
+            // hard-coded $-USD defaults in WALLET_SKUS so the UI
+            // matches what actually gets charged.
+            void this.refreshLocalizedPrices();
+        }).catch((err) => {
             console.warn('[TopUp] purchase provider init failed:', err && err.message);
         });
         // Same trick as LeaderboardController — briefly activate the
