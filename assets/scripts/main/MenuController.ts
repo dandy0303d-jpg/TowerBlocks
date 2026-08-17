@@ -1503,30 +1503,42 @@ export class MenuController extends Component {
         //                             snap-back with the real call.
         // Toggle ON when already ON → no-op (handleAppleLoginClick's
         //                             own early-out covers this).
+        // NOTE ON DUAL-BIND LOOP:
+        // A user can be bound to BOTH Apple and Google. reconcile picks
+        // ONE as `accountType` (apple wins today), but sets BOTH toggles
+        // to their true bind state. If we only check `accountType` here,
+        // Google Toggle=true + accountType='apple' would re-fire login.
+        // Guard by checking `_knownLinkedProviders` (server-authoritative
+        // set) — only trigger login when a provider is truly NOT bound.
+        // Also suppress toggle events during programmatic isChecked=
+        // assignment (Cocos fires 'toggle' on both user + programmatic).
         if (this.authoredSettingsGoogleToggle) {
             const gt = this.authoredSettingsGoogleToggle;
             gt.node.off('toggle');
             gt.node.on('toggle', () => {
+                if (this._suppressToggleEvents) return;
                 log(`[Settings] Google toggle → ${gt.isChecked}`);
-                if (gt.isChecked && PlayerProfile.accountType !== 'google') {
+                const alreadyBound = this._knownLinkedProviders.has('google');
+                if (gt.isChecked && !alreadyBound) {
                     void this.handleGoogleLoginClick();
-                } else if (!gt.isChecked && PlayerProfile.accountType === 'google') {
+                } else if (!gt.isChecked && alreadyBound) {
                     log('[Settings] Google toggle OFF — unbind not implemented, snapping back');
                     this.refreshAuthoredSettingsValues();
                 }
+                // isChecked matches the bound state (either both true
+                // or both false) → no-op, don't re-trigger login.
             }, this);
         }
         if (this.authoredSettingsAppleToggle) {
             const at = this.authoredSettingsAppleToggle;
             at.node.off('toggle');
             at.node.on('toggle', () => {
+                if (this._suppressToggleEvents) return;
                 log(`[Settings] Apple toggle → ${at.isChecked}`);
-                if (at.isChecked && PlayerProfile.accountType !== 'apple') {
-                    // Fresh bind attempt — reuse the button's handler so
-                    // we hit the same 409-recovery path.
+                const alreadyBound = this._knownLinkedProviders.has('apple');
+                if (at.isChecked && !alreadyBound) {
                     void this.handleAppleLoginClick();
-                } else if (!at.isChecked && PlayerProfile.accountType === 'apple') {
-                    // Unbind not supported yet — snap check back on.
+                } else if (!at.isChecked && alreadyBound) {
                     log('[Settings] Apple toggle OFF — unbind not implemented, snapping back');
                     this.refreshAuthoredSettingsValues();
                 }
@@ -1624,6 +1636,7 @@ export class MenuController extends Component {
             const result = await linkAppleAccount(cred.identityToken, cred.appleSub, cred.authorizationCode);
             log(`[Settings] link result — linked=${result.linked}, alreadyLinked=${result.alreadyLinked}`);
             PlayerProfile.setAccountType('apple');
+            this._knownLinkedProviders.add('apple');
             // Show the loading overlay while we sync the newly-bound
             // account state (server-authoritative profile + level
             // progress) so the transition looks intentional. Settings
@@ -1779,6 +1792,7 @@ export class MenuController extends Component {
             const result = await linkGoogleAccount(cred.idToken);
             log(`[Settings] link result — linked=${result.linked}, alreadyLinked=${result.alreadyLinked}`);
             PlayerProfile.setAccountType('google');
+            this._knownLinkedProviders.add('google');
             this.closeSettingsPanel();
             await this.runWithReloadOverlay(async () => {
                 try {
@@ -2103,6 +2117,7 @@ export class MenuController extends Component {
                 // module-level singleton would keep serving the deleted
                 // uuid, which no longer exists server-side.
                 PlayerProfile.resetInMemoryState();
+                this._knownLinkedProviders.clear();
                 log('[Settings] re-registering as fresh guest…');
                 await PlayerProfile.ensureRegistered();
                 log('[Settings] fresh guest ready — refreshing Settings UI');
@@ -2383,17 +2398,22 @@ export class MenuController extends Component {
         // no flash); the server-side reconcile below then corrects
         // any drift.
         const acct = PlayerProfile.accountType;
-        if (this.authoredSettingsGoogleToggle) {
-            this.authoredSettingsGoogleToggle.isChecked = (acct === 'google');
-        }
-        if (this.authoredSettingsAppleToggle) {
-            this.authoredSettingsAppleToggle.isChecked = (acct === 'apple');
-        }
-        // Haptic toggle — reflect Settings state each open (may have
-        // been changed by another entry point, though today it's only
-        // touched from this panel).
-        if (this.authoredSettingsHapticToggle) {
-            this.authoredSettingsHapticToggle.isChecked = (getHapticMode() === 'on');
+        // Programmatic isChecked= fires 'toggle' events in Cocos —
+        // wrap in the suppress flag so the handlers know it's not a
+        // user tap.
+        this._suppressToggleEvents = true;
+        try {
+            if (this.authoredSettingsGoogleToggle) {
+                this.authoredSettingsGoogleToggle.isChecked = (acct === 'google');
+            }
+            if (this.authoredSettingsAppleToggle) {
+                this.authoredSettingsAppleToggle.isChecked = (acct === 'apple');
+            }
+            if (this.authoredSettingsHapticToggle) {
+                this.authoredSettingsHapticToggle.isChecked = (getHapticMode() === 'on');
+            }
+        } finally {
+            this._suppressToggleEvents = false;
         }
         if (this.authoredSettingsHapticLabel) {
             this.trackI18nLabel(this.authoredSettingsHapticLabel, 'settings.haptic');
@@ -2434,12 +2454,25 @@ export class MenuController extends Component {
                     log(`[Settings] server reconcile — accountType ${PlayerProfile.accountType} → ${newAcct}`);
                     PlayerProfile.setAccountType(newAcct);
                 }
-                // Repaint the toggles with the server truth.
-                if (this.authoredSettingsGoogleToggle) {
-                    this.authoredSettingsGoogleToggle.isChecked = hasGoogle;
-                }
-                if (this.authoredSettingsAppleToggle) {
-                    this.authoredSettingsAppleToggle.isChecked = hasApple;
+                // Update the known-linked-providers cache so the
+                // toggle handlers don't misinterpret a dual-bound
+                // repaint as a fresh login attempt.
+                this._knownLinkedProviders.clear();
+                if (hasApple)  this._knownLinkedProviders.add('apple');
+                if (hasGoogle) this._knownLinkedProviders.add('google');
+                // Repaint the toggles with the server truth. Suppress
+                // toggle events during programmatic isChecked= so we
+                // don't re-fire login handlers.
+                this._suppressToggleEvents = true;
+                try {
+                    if (this.authoredSettingsGoogleToggle) {
+                        this.authoredSettingsGoogleToggle.isChecked = hasGoogle;
+                    }
+                    if (this.authoredSettingsAppleToggle) {
+                        this.authoredSettingsAppleToggle.isChecked = hasApple;
+                    }
+                } finally {
+                    this._suppressToggleEvents = false;
                 }
                 // Repaint the account-type label as well. Use
                 // formatAccountRow (not accountTypeText) so the UUID +
@@ -2667,6 +2700,21 @@ export class MenuController extends Component {
      *  as false (cancelled) and take over the modal. */
     private _confirmPendingResolve: ((confirmed: boolean) => void) | null = null;
     private _confirmModalWired: boolean = false;
+
+    /** Set to true around any programmatic assignment to
+     *  authored*Toggle.isChecked so the fired 'toggle' event handlers
+     *  short-circuit — otherwise we get an infinite login loop
+     *  (see the block wire in wireAuthoredSettingsPanel).
+     *  See MenuController._suppressToggleEvents. */
+    private _suppressToggleEvents: boolean = false;
+
+    /** Server-authoritative snapshot of providers this uuid is bound
+     *  to. Updated by reconcileLinkedAccountsFromServer + immediately
+     *  after successful link. Toggle handlers consult this to decide
+     *  whether an ON tap is a real bind attempt or a re-paint from a
+     *  dual-bound state (bound to BOTH apple + google but accountType
+     *  only stores one). */
+    private _knownLinkedProviders: Set<string> = new Set();
 
     /** Show the generic confirmation modal. Returns a Promise that
      *  resolves to `true` if the user tapped Confirm, `false` if they
