@@ -231,4 +231,18 @@ export const ZH: Record<string, string> = {
     'gems.insufficient': '钻石不足\n需要 {need}，当前 {have}',
     'gems.goTopUp':      '去充值',
     'gems.cancel':       '取消',
+
+    // ---------- Consent modal (login-gate) ----------
+    'consent.title':                             '请阅读并同意以下条款',
+    'consent.agreeAll':                             '我同意全部条款',
+    'consent.tos.label':                             '同意服务条款',
+    'consent.privacy.label':                             '同意隐私政策',
+    'consent.age.label':                             '我已满 14 周岁',
+    'consent.marketing.label':                             '同意接收营销信息',
+    'consent.required':                             '必选',
+    'consent.optional':                             '可选',
+    'consent.view':                             '查看',
+    'consent.start':                             '同意并开始',
+    'consent.mustAgree':                             '必须同意所有必选项才能开始游戏。',
+    'consent.error':                             '同意记录失败，请稍后重试。',
 };

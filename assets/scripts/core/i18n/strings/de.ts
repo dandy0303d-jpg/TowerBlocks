@@ -203,4 +203,18 @@ export const DE: Record<string, string> = {
     'gems.insufficient': 'Nicht genug Edelsteine\nBenötigt {need}, hast {have}',
     'gems.goTopUp':      'Aufladen',
     'gems.cancel':       'Abbrechen',
+
+    // ---------- Consent modal (login-gate) ----------
+    'consent.title':                             'Bitte stimmen Sie zu, um fortzufahren',
+    'consent.agreeAll':                             'Ich stimme allem zu',
+    'consent.tos.label':                             'Nutzungsbedingungen zustimmen',
+    'consent.privacy.label':                             'Datenschutzerklärung zustimmen',
+    'consent.age.label':                             'Ich bin 14 Jahre oder älter',
+    'consent.marketing.label':                             'Marketing-Mitteilungen erhalten',
+    'consent.required':                             'Erforderlich',
+    'consent.optional':                             'Optional',
+    'consent.view':                             'Ansehen',
+    'consent.start':                             'Zustimmen und starten',
+    'consent.mustAgree':                             'Sie müssen allen erforderlichen Punkten zustimmen, um zu starten.',
+    'consent.error':                             'Zustimmung konnte nicht gespeichert werden. Bitte erneut versuchen.',
 };
