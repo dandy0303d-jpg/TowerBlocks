@@ -29,6 +29,8 @@ const EV = {
     authenticate:            'gc.authenticate',
     getState:                'gc.getState',
     authResult:              'gc.authResult',
+    fetchIdentity:           'gc.fetchIdentity',
+    identityResult:          'gc.identityResult',
     submitScore:             'gc.submitScore',
     submitScoreResult:       'gc.submitScoreResult',
     reportAchievement:       'gc.reportAchievement',
@@ -81,14 +83,16 @@ const listeners: Set<Listener> = new Set();
 let lastResult: GameCenterResult | null = null;
 
 // Pending one-shot resolvers for submitScore / reportAchievement /
-// showUI. Keyed by event name — only one in flight per kind at a
-// time (calls are serialised by the caller; overlap replaces the
-// prior slot which is fine for fire-and-forget game telemetry).
-type OneShot = (payload: { success: boolean; kind?: string; error?: string }) => void;
+// showUI / fetchIdentity. Keyed by event name — only one in flight
+// per kind at a time (calls are serialised by the caller; overlap
+// replaces the prior slot which is fine for fire-and-forget game
+// telemetry).
+type OneShot = (payload: any) => void;
 const oneShotSlots: Record<string, OneShot | null> = {
     [EV.submitScoreResult]:       null,
     [EV.reportAchievementResult]: null,
     [EV.showUIResult]:            null,
+    [EV.identityResult]:          null,
 };
 
 // Install the router only when running on native iOS. On other
@@ -227,4 +231,47 @@ export const GameCenter = {
     showUI(stateKind: string = ''): Promise<{ success: boolean; error?: string }> {
         return oneShotCall(EV.showUI, EV.showUIResult, stateKind);
     },
+
+    /** Fetch the identity-verification payload used to authenticate
+     *  the current Game Center player with the game's own backend.
+     *  Server verifies the RSA-SHA256 signature against Apple's
+     *  public key and, on success, mints a bearer token bound to
+     *  the player's uuid.
+     *
+     *  Returns:
+     *    success = true  → payload ready to POST to
+     *                       /player/login/gamecenter (or /link/gamecenter)
+     *    success = false → error kind ("not-authenticated" is the
+     *                       common one — GC auto-login hasn't fired
+     *                       or the user is signed out of Game Center)
+     */
+    fetchIdentity(timeoutMs = 15_000): Promise<GameCenterIdentityResult> {
+        return oneShotCall(EV.fetchIdentity, EV.identityResult, '', timeoutMs) as
+            Promise<GameCenterIdentityResult>;
+    },
 };
+
+/** Payload returned by `GameCenter.fetchIdentity()`. Fields match the
+ *  shape produced by GKLocalPlayer.fetchItems(forIdentityVerificationSignature:)
+ *  and are POSTed verbatim to the server's /player/{login,link}/gamecenter
+ *  routes. */
+export interface GameCenterIdentitySuccess {
+    success:      true;
+    gamePlayerID: string;
+    teamPlayerID: string;
+    displayName:  string;
+    alias:        string;
+    publicKeyURL: string;
+    signature:    string;   // base64
+    salt:         string;   // base64
+    timestamp:    number;   // uint64 ms since epoch
+    bundleID:     string;
+}
+
+export interface GameCenterIdentityFailure {
+    success:  false;
+    kind:     string;
+    error?:   string;
+}
+
+export type GameCenterIdentityResult = GameCenterIdentitySuccess | GameCenterIdentityFailure;

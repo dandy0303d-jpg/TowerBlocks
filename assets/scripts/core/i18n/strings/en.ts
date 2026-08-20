@@ -27,8 +27,9 @@ export const EN: Record<string, string> = {
     // ---------- Picker ----------
     'picker.title':      '⚡ Pick a Magic Item',
     'picker.hint':       'Tap to confirm · Colour = Rarity',
-    'picker.refresh':    '🔄 Free Reroll',
+    'picker.refresh':    '🔄 Free Reroll ({n})',
     'picker.adRefresh':  '🎬 Watch Ad to Reroll',
+    'picker.adRefresh.failed': 'Ad unavailable, try again later',
     'rarity.common':     'Common',
     'rarity.uncommon':   'Uncommon',
     'rarity.rare':       'Rare',
@@ -91,7 +92,8 @@ export const EN: Record<string, string> = {
 
     // ---------- Fate piece modal ----------
     'fate.modalTitle':   'Fate Piece',
-    'fate.reroll':       'Reroll Fate',
+    'fate.reroll':       'Reroll Fate ({n})',
+    'fate.reroll.ad':    '🎬 Watch Ad to Reroll',
     'fate.start':        'Start',
     'fate.cellCount':    '{n} cells',
     'fate.endlessSub':   'Endless',
@@ -99,6 +101,7 @@ export const EN: Record<string, string> = {
     'fate.endlessMid':   'Endless · Layer {layer}',
     'fate.subtitle':     '{tag} · {n} cells',
     'fate.hint':         'Reroll: watch an ad to swap for a random fate piece',
+    'fate.reroll.failed':'Ad unavailable, try again later',
 
     // ---------- Collect mode ----------
     'collect.header':    'Collect Goals',
@@ -208,6 +211,8 @@ export const EN: Record<string, string> = {
     'settings.account.copyFailed':  'Copy failed',
     'settings.nickname.tooLong':     'Nickname must be at most {n} characters',
     'settings.nickname.title':       'Edit Nickname',
+    'settings.nickname.cooldown':    '{n} day(s) until you can change again',
+    'settings.nickname.cooldownReady':'You can change now (7-day cooldown after)',
     'settings.nickname.placeholder': 'Enter a new nickname',
     'settings.nickname.profanity':   'Nickname contains prohibited words',
     'settings.nickname.reserved':    'That nickname is reserved',

@@ -73,6 +73,16 @@ static inline void DispatchToJS(NSString *event, NSString *arg) {
         } copy];
         [bridge addScriptEventListener:@"gc.getState" listener:stateListener];
 
+        // -- gc.fetchIdentity --------------------------------------------
+        // arg = ignored. Native side calls fetchItemsForIdentityVerification
+        // and replies with a JSON payload the server can verify.
+        OnScriptEventListener identityListener = [^(NSString *_ignored) {
+            [impl fetchIdentityForServerWithCompletion:^(NSString *result) {
+                DispatchToJS(@"gc.identityResult", result);
+            }];
+        } copy];
+        [bridge addScriptEventListener:@"gc.fetchIdentity" listener:identityListener];
+
         // -- gc.submitScore ----------------------------------------------
         // arg = JSON {"leaderboardID":"...", "score":<int>}
         OnScriptEventListener submitListener = [^(NSString *arg) {
@@ -145,7 +155,7 @@ static inline void DispatchToJS(NSString *event, NSString *arg) {
             [impl startAutoLogin];
         });
 
-        NSLog(@"[GameCenter] GameCenterBridgeGlue registered — 5 event listeners active, auto-login kicked off");
+        NSLog(@"[GameCenter] GameCenterBridgeGlue registered — 6 event listeners active, auto-login kicked off");
     });
 }
 

@@ -58,6 +58,18 @@ list(APPEND CC_ALL_SOURCES
     ${CC_PROJECT_DIR}/service/haptic/HapticBridge.swift
     ${CC_PROJECT_DIR}/service/haptic/HapticBridgeGlue.h
     ${CC_PROJECT_DIR}/service/haptic/HapticBridgeGlue.mm
+    # AppLovin MAX bridge — files kept on disk for future mediation
+    # reference but NOT compiled (Podfile does not include AppLovinSDK,
+    # so Swift can't resolve `import AppLovinSDK`). Re-add these three
+    # lines and add `pod 'AppLovinSDK'` to Podfile if switching back
+    # to AppLovin, or use AppLovin as a mediation network under AdMob.
+    #     ${CC_PROJECT_DIR}/service/ads/AppLovinBridge.swift
+    #     ${CC_PROJECT_DIR}/service/ads/AppLovinBridgeGlue.h
+    #     ${CC_PROJECT_DIR}/service/ads/AppLovinBridgeGlue.mm
+    # Google AdMob bridge — active ad provider.
+    ${CC_PROJECT_DIR}/service/ads/AdMobBridge.swift
+    ${CC_PROJECT_DIR}/service/ads/AdMobBridgeGlue.h
+    ${CC_PROJECT_DIR}/service/ads/AdMobBridgeGlue.mm
     ${CC_PROJECT_DIR}/service/ClipboardBridgeGlue.h
     ${CC_PROJECT_DIR}/service/ClipboardBridgeGlue.mm
 )
@@ -74,6 +86,58 @@ set_source_files_properties(${PRIVACY_MANIFEST} PROPERTIES
 cc_ios_before_target(${EXECUTABLE_NAME})
 add_executable(${EXECUTABLE_NAME} ${CC_ALL_SOURCES})
 cc_ios_after_target(${EXECUTABLE_NAME})
+
+# ---- CocoaPods integration for AdMob ----
+# Copy the source-controlled Podfile into the generated project dir
+# (alongside the .xcodeproj) so `pod install` works without extra
+# steps after each Cocos regen. COPYONLY = no variable expansion
+# (the Podfile has no CMake @VARS@).
+configure_file(
+    ${CC_PROJECT_DIR}/Podfile
+    ${CMAKE_BINARY_DIR}/Podfile
+    COPYONLY
+)
+
+# Auto-run `pod install` every time CMake regenerates the project.
+# Root cause: Cocos rebuilds the xcodeproj from scratch on every
+# native build, wiping out the CocoaPods integration (xcconfig refs,
+# framework search paths, workspace file). Without this hook you'd
+# have to manually run `pod install` after every Cocos build or
+# you'd hit `No such module 'GoogleMobileAds'`. Running it at CMake
+# configure time is the earliest reliable point — before Xcode ever
+# opens the project — so the workspace + Pods are ready by the time
+# the user hits Cmd+B.
+#
+# ~5-10s slow on cold cache (first run downloads pods); fast on
+# incremental (CocoaPods diffs Podfile.lock).
+find_program(POD_EXECUTABLE
+    NAMES pod
+    HINTS /usr/local/bin /opt/homebrew/bin
+    PATHS ENV PATH
+)
+if(POD_EXECUTABLE)
+    message(STATUS "Auto-running pod install (keeps AdMob framework linked across Cocos regens)...")
+    execute_process(
+        COMMAND ${POD_EXECUTABLE} install
+        WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+        RESULT_VARIABLE POD_RESULT
+        OUTPUT_VARIABLE POD_OUTPUT
+        ERROR_VARIABLE  POD_ERROR
+    )
+    if(NOT POD_RESULT EQUAL 0)
+        message(WARNING
+            "pod install FAILED (exit code ${POD_RESULT}). "
+            "Run manually: cd ${CMAKE_BINARY_DIR} && pod install\n"
+            "Output: ${POD_OUTPUT}\nError: ${POD_ERROR}")
+    else()
+        message(STATUS "pod install OK — open Tetri Tower.xcworkspace (NOT .xcodeproj)")
+    endif()
+else()
+    message(WARNING
+        "CocoaPods 'pod' binary not found in PATH — AdMob framework won't link. "
+        "Install with: sudo gem install cocoapods -v 1.11.3\n"
+        "Then run manually: cd ${CMAKE_BINARY_DIR} && pod install")
+endif()
 
 # ---- StoreKit 2 + SIWA frameworks + Swift build settings ----
 target_link_libraries(${EXECUTABLE_NAME}

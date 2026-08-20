@@ -30,8 +30,9 @@ export const ZH: Record<string, string> = {
     // ---------- 道具卡 / Picker ----------
     'picker.title':      '⚡ 选 1 个魔法道具',
     'picker.hint':       '点击卡片确认 · 颜色 = 稀有度',
-    'picker.refresh':    '🔄 免费刷新',
+    'picker.refresh':    '🔄 免费刷新 ({n})',
     'picker.adRefresh':  '🎬 看广告再刷一次',
+    'picker.adRefresh.failed': '广告加载失败，请稍后再试',
     'rarity.common':     '普通',
     'rarity.uncommon':   '少见',
     'rarity.rare':       '稀有',
@@ -94,7 +95,8 @@ export const ZH: Record<string, string> = {
 
     // ---------- 本命方块弹窗 ----------
     'fate.modalTitle':   '本命方块',
-    'fate.reroll':       '逆天改命',
+    'fate.reroll':       '逆天改命 ({n})',
+    'fate.reroll.ad':    '🎬 看广告改命',
     'fate.start':        '直接开始',
     'fate.cellCount':    '共 {n} 格',
     'fate.endlessSub':   '无尽模式',
@@ -102,6 +104,7 @@ export const ZH: Record<string, string> = {
     'fate.endlessMid':   '无尽模式 · {layer} 层',
     'fate.subtitle':     '{tag} · 共 {n} 格',
     'fate.hint':         '逆天改命：观看广告随机换一个本命方块',
+    'fate.reroll.failed':'广告加载失败，请稍后再试',
 
     // ---------- 收集模式 ----------
     'collect.header':    '收集目标',
@@ -213,6 +216,8 @@ export const ZH: Record<string, string> = {
     'settings.account.copyFailed':  '复制失败',
     'settings.nickname.tooLong':     '昵称最多 {n} 个字符',
     'settings.nickname.title':       '修改昵称',
+    'settings.nickname.cooldown':    '距下次可修改还有 {n} 天',
+    'settings.nickname.cooldownReady':'现在可以修改（下次修改需等 7 天）',
     'settings.nickname.placeholder': '输入新昵称',
     'settings.nickname.profanity':   '昵称含违禁词，请换一个',
     'settings.nickname.reserved':    '此昵称为系统保留，请换一个',

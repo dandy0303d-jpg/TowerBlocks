@@ -80,10 +80,10 @@ export class TopUpController extends Component {
     mockNoticeLabel: Label | null = null;
 
     // ---- SKU grid (6 cards; parallel arrays, order matches WALLET_SKUS) ----
-    @property({ type: [Label],  tooltip: '6 个"{n} 宝石"Label（顺序：60/300/700/1500/4000/10000 宝石）' })
+    @property({ type: [Label],  tooltip: '6 个"{n} 钻石"Label（顺序：100/500/1100/2400/6200/14500 钻石）' })
     skuGemLabels: Label[] = [];
 
-    @property({ type: [Label],  tooltip: '6 个价格 Label（顺序同上）；formatPrice 输出带币种符号的字符串' })
+    @property({ type: [Label],  tooltip: '6 个价格 Label（顺序同上：$0.99/$4.99/$9.99/$19.99/$49.99/$99.99）；formatPrice 输出带币种符号的字符串' })
     skuPriceLabels: Label[] = [];
 
     @property({ type: [Button], tooltip: '6 个"购买"按钮（顺序同上）；内部 Label 脚本自动 getComponentInChildren 找' })

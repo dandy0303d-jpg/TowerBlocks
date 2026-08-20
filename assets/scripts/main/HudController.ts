@@ -28,11 +28,14 @@ import { GameController } from './GameController';
 // Rollup rejects at build time.
 import { ITEM_KEYS, ITEM_BASE_PROBS, MagicItemKey, ENERGY_FULL_THRESHOLD, COLORS, SHAPES, PieceType, CellValue, COLS } from '../core/Constants';
 import { FATE_SHAPES, fateIndexOfShape, pickFateIndex, pickFateIndex4Connected, FATE_SHAPES_4CONNECTED_INDICES, fateShapeAsCustomPiece } from '../core/FateShapes';
+import { DailyFreeCounter } from '../core/DailyFreeCounter';
+import { consumeDailyFree } from '../core/DailyFreeApi';
+import { PlayerProfile } from '../core/PlayerProfile';
 import { CustomPieceDef, LevelData } from '../core/Types';
 import { getKeysMode, subscribe as subscribeSettings } from '../core/Settings';
 import { BgmManager } from '../audio/BgmManager';
 import { t, subscribe as subscribeI18n } from '../core/i18n/I18n';
-import { fetchRefreshCost, purchaseRefresh, RefreshType } from '../core/RefreshApi';
+import { fetchRefreshCost, purchaseRefresh, RefreshType, REFRESH_COST_TIERS, MAX_PAID_REFRESHES_PER_MODAL } from '../core/RefreshApi';
 import { IS_DEV_BUILD } from '../core/BuildConfig';
 
 /** 5-row × 3-col pixel-font bitmap patterns for digits 0-9. Each row is
@@ -405,6 +408,11 @@ export class HudController extends Component {
     private pickerSlotKeys: (MagicItemKey | null)[] = [null, null];
     private refreshBtnLabel!: Label;
     private refreshesUsedThisFull = 0;       // resets when picker closes
+
+    /** Count of fate-piece rerolls used in the current fate modal open.
+     *  First reroll each modal is free; subsequent ones require the
+     *  player to watch a rewarded ad. Resets in `showFateModal`. */
+    private fateRerollsUsedThisModal = 0;
     private hooksWired = false;
 
     // ---------- 本命方块 (fate piece) entry modal ----------
@@ -1472,14 +1480,35 @@ export class HudController extends Component {
     }
 
     private updateRefreshButtonLabel(): void {
-        // 1st refresh is free; subsequent ones cost an ad watch (UI gate
-        // not implemented yet — we just keep refreshing for now and the
-        // label communicates the future cost).
-        const txt = this.refreshesUsedThisFull === 0
-            ? t('picker.refresh')
-            : t('picker.adRefresh');
-        if (this.authoredPickerRefreshLabel) this.authoredPickerRefreshLabel.string = txt;
-        if (this.refreshBtnLabel) this.refreshBtnLabel.string = txt;
+        try {
+            const serverRemaining = PlayerProfile.dailyFreeRemaining('magic');
+            const remaining = (typeof serverRemaining === 'number')
+                ? serverRemaining
+                : DailyFreeCounter.max('magic');
+            const txt = remaining > 0
+                ? t('picker.refresh', { n: remaining })
+                : t('picker.adRefresh');
+            let painted = 0;
+            if (this.authoredPickerRefreshLabel) {
+                this.authoredPickerRefreshLabel.string = txt;
+                painted++;
+            }
+            if (this.refreshBtnLabel) {
+                this.refreshBtnLabel.string = txt;
+                painted++;
+            }
+            // Fallback: if neither authored label is bound but the
+            // picker overlay has a refresh button node with a Label
+            // descendant, paint that too. Handles scenes where the
+            // designer wired only the Button component, not the Label.
+            if (painted === 0 && this.authoredPickerRefreshButton) {
+                const labels = this.authoredPickerRefreshButton.node.getComponentsInChildren(Label);
+                for (const lab of labels) { lab.string = txt; painted++; }
+            }
+            log(`[HUD] updateRefreshButtonLabel: painted "${txt}" onto ${painted} label(s)`);
+        } catch (e) {
+            log(`[HUD] updateRefreshButtonLabel failed (non-fatal): ${(e as Error)?.message ?? e}`);
+        }
     }
 
     // ---- Authored (Sprite-based) picker path ----
@@ -1516,8 +1545,10 @@ export class HudController extends Component {
         const overlay = this.authoredEnergyPicker;
         if (!overlay) return;
         this.wireAuthoredPicker();
-        // Fetch + paint the paid-refresh cost every time the picker
-        // opens (server may have rebalanced).
+        // Reset the per-modal paid-refresh counter and paint the button
+        // label. Fresh cost tier (10 gems) + full quota (2/2) for each
+        // picker open.
+        this.resetPaidRefreshCounter('magic');
         this.refreshPaidRefreshLabel('magic');
         // Static labels.
         if (this.authoredPickerTitleLabel)    this.authoredPickerTitleLabel.string    = t('picker.title');
@@ -1595,11 +1626,70 @@ export class HudController extends Component {
     private onRefreshClicked(): void {
         const g = this.gameController?.gameState;
         if (!g) return;
-        // TODO(ads): when refreshesUsedThisFull > 0, gate behind a successful
-        // ad-watch callback. For now we always allow the refresh.
-        g.refreshEnergyPicker();
-        this.refreshesUsedThisFull++;
-        this.updateRefreshButtonLabel();
+        // Server-authoritative daily-free gate. Wrapper is async because
+        // the server does the atomic check-and-increment; button UI
+        // stays responsive because the click handler returns immediately.
+        void this.tryFreeOrAdRefresh(g);
+    }
+
+    /** Ask the server for one free daily use; on success, grant the
+     *  refresh. On exhausted (429) or any error, fall through to the
+     *  rewarded-ad path. Client-side DailyFreeCounter is kept in sync
+     *  for offline label display but is NOT the source of truth. */
+    private async tryFreeOrAdRefresh(g: { refreshEnergyPicker: () => void }): Promise<void> {
+        let grantedFree = false;
+        try {
+            const r = await consumeDailyFree('magic');
+            console.log(`[DailyFree] magic consume result: ok=${r.ok} remaining=${r.remaining} err=${r.error ?? '(none)'}`);
+            if (r.ok) {
+                // Do the refresh FIRST — that's the critical user
+                // action. Bookkeeping (counter mirror, label) is in a
+                // nested try so any hiccup there doesn't cause an
+                // accidental fall-through to the ad path.
+                g.refreshEnergyPicker();
+                grantedFree = true;
+                try {
+                    this.refreshesUsedThisFull++;
+                    DailyFreeCounter.consume('magic');
+                    PlayerProfile.setDailyFreeRemaining('magic', r.remaining);
+                    this.updateRefreshButtonLabel();
+                } catch (postErr) {
+                    log(`[DailyFree] post-grant bookkeeping failed (non-fatal): ${(postErr as Error)?.message ?? postErr}`);
+                }
+            } else {
+                // Server says exhausted → mirror locally + go to ad.
+                PlayerProfile.setDailyFreeRemaining('magic', 0);
+                this.updateRefreshButtonLabel();
+            }
+        } catch (e) {
+            // Network / 5xx — fall through to ad. Player still sees a
+            // refresh happen (via the ad flow) so the UX doesn't just
+            // break silently on a bad connection.
+            log(`[DailyFree] consume(magic) failed — falling through to ad: ${(e as Error)?.message ?? e}`);
+        }
+        if (grantedFree) return;
+        void this.doAdRefresh(g);
+    }
+
+    private async doAdRefresh(g: { refreshEnergyPicker: () => void }): Promise<void> {
+        // Lazy import so mock branch bundles don't drag AppLovin JS
+        // wrapper (which is iOS-only via native.bridge anyway).
+        const { AdManager } = await import('../channels/apple/AdManager');
+        const r = await AdManager.showRewarded('magic');
+        if (r.success && r.rewarded) {
+            g.refreshEnergyPicker();
+            this.refreshesUsedThisFull++;
+            this.updateRefreshButtonLabel();
+        } else {
+            log(`[Ads] rewarded not granted — kind=${r.kind} error=${r.error}`);
+            // Optional: surface a toast to the player. Reuse
+            // menuController's showSettingsToast if wired; falls back
+            // to a console-only log otherwise.
+            const mc = (this.menuController as any);
+            if (mc && typeof mc.showSettingsToast === 'function') {
+                mc.showSettingsToast(t('picker.adRefresh.failed'));
+            }
+        }
     }
 
     // ============================================================
@@ -1829,11 +1919,15 @@ export class HudController extends Component {
         if (this.authoredFateRerollButton) {
             this.authoredFateRerollButton.node.off('click');
             this.authoredFateRerollButton.node.on('click', () => {
-                console.log('[FateModal] REROLL clicked');
-                this.onFateReroll();
+                console.log('[FateModal] REROLL clicked — consulting server for free quota');
+                void this.tryFreeOrAdFateReroll();
             }, this);
-            const lab = this.authoredFateRerollButton.getComponentInChildren(Label);
-            if (lab) this.trackI18nLabel(lab, 'fate.reroll');
+            // Do NOT call updateFateRerollLabel() here — it's called
+            // from showFateModal on each modal open. Calling it inside
+            // wireAuthoredFateModal (which runs during scene onLoad,
+            // BEFORE PlayerProfile boot completes) risks throwing on
+            // missing profile state and dropping the subsequent
+            // paid-refresh + start button wiring.
         }
         // Paid refresh (spend gems). Cost is fetched from the server
         // on every fate-modal open (see `refreshFatePaidCost`). Click
@@ -2015,6 +2109,10 @@ export class HudController extends Component {
         // Track whether this modal was opened as an endless entry (no
         // pre-assigned shape) — affects the reroll button's pool.
         this.fateIsEndlessEntry = !cp;
+        // Reset the free-reroll counter for this modal open — first
+        // 逆天改命 click is free, second+ require watching a rewarded
+        // ad (paid-refresh with gems always available as parallel path).
+        this.fateRerollsUsedThisModal = 0;
         this.fateResolve = onStart;
         this.fateCancel  = onCancel || null;
         this.refreshFateSubtitle();
@@ -2034,7 +2132,13 @@ export class HudController extends Component {
         // Async: fetch the current gem cost + paint the paid-refresh
         // button label. Runs after the modal is on screen so the user
         // sees a placeholder ("💎 …") until the number lands.
+        // Reset the per-modal paid-refresh counter — cost tier starts
+        // at 10 gems again for each fresh open, cap at 2 uses.
+        this.resetPaidRefreshCounter('fate');
         this.refreshPaidRefreshLabel('fate');
+        // Paint the ad-gated reroll button to reflect today's remaining
+        // free quota (or the ad label if exhausted).
+        this.updateFateRerollLabel();
     }
 
     private hideFateModal(): void {
@@ -2101,68 +2205,88 @@ export class HudController extends Component {
     // ============================================================
     //  Paid refresh (spend gems to re-roll)
     // ============================================================
-    /** Cost cache — set from server on modal open, read on button click.
-     *  Kept as `null` when the fetch is in flight or failed so the
-     *  click handler can bail rather than firing a purchase with a
-     *  stale/zero cost. */
-    private _paidRefreshCost: Partial<Record<RefreshType, number>> = {};
+    /** Per-modal counters for how many paid refreshes have been used.
+     *  Reset in showFateModal (fate) and showAuthoredPicker (magic).
+     *  Read by the label painter (to show remaining) and the click
+     *  handler (to compute cost tier + gate at cap).
+     *
+     *  Cost tiers are in REFRESH_COST_TIERS = [10, 15, 20]; cap is
+     *  MAX_PAID_REFRESHES_PER_MODAL = 2. Server also enforces via
+     *  the tier parameter — client counter is UX only. */
+    private _paidRefreshUsed: Record<RefreshType, number> = { fate: 0, magic: 0 };
 
-    /** Fetch the server-configured cost for `type` and paint it onto
-     *  the corresponding button label. Called from showFateModal /
-     *  showAuthoredPicker. Silent no-op if the button isn't wired. */
+    /** Reset the per-modal paid-refresh counter for `type`. Called
+     *  when the corresponding modal opens (fresh session). */
+    private resetPaidRefreshCounter(type: RefreshType): void {
+        this._paidRefreshUsed[type] = 0;
+    }
+
+    /** Paint the paid-refresh button label to show current cost +
+     *  remaining count. Called on modal open and after each successful
+     *  purchase. Format: `${cost}  (${remaining}/${max}剩余)`.
+     *  When remaining = 0, shows `已达上限` and disables the button. */
     private refreshPaidRefreshLabel(type: RefreshType): void {
         const btn = type === 'fate'
             ? this.authoredFatePaidRefreshButton
             : this.authoredPickerPaidRefreshButton;
-        const lab = type === 'fate'
-            ? (this.authoredFatePaidRefreshLabel ?? btn?.getComponentInChildren(Label) ?? null)
-            : (this.authoredPickerPaidRefreshLabel ?? btn?.getComponentInChildren(Label) ?? null);
         if (!btn) return;
-        // Placeholder text while fetch is in flight. Just the number,
-        // no gem icon — icon should live on the button prefab as a
-        // separate Sprite child, not baked into the label.
-        if (lab) lab.string = '…';
-        this._paidRefreshCost[type] = undefined;
-        fetchRefreshCost(type)
-            .then((r) => {
-                this._paidRefreshCost[type] = r.gems;
-                if (lab) lab.string = `${r.gems}`;
-            })
-            .catch((err) => {
-                console.warn(`[HUD] fetchRefreshCost(${type}) failed:`, err?.message);
-                if (lab) lab.string = '?';
-            });
+        const authoredLab = type === 'fate'
+            ? this.authoredFatePaidRefreshLabel
+            : this.authoredPickerPaidRefreshLabel;
+        // Paint every Label descendant to defeat scene wiring where the
+        // authored slot points at the wrong sub-Label.
+        const labels: Label[] = authoredLab
+            ? [authoredLab]
+            : btn.node.getComponentsInChildren(Label);
+
+        const used      = this._paidRefreshUsed[type];
+        const remaining = Math.max(0, MAX_PAID_REFRESHES_PER_MODAL - used);
+        const exhausted = remaining <= 0;
+        // Costs beyond the tier table are clamped at the highest
+        // tier — irrelevant at cap=2 with 3 tiers, but future-proof.
+        const cost = REFRESH_COST_TIERS[Math.min(used, REFRESH_COST_TIERS.length - 1)];
+
+        const text = exhausted
+            ? '已达上限'
+            : `${cost}  (${remaining}/${MAX_PAID_REFRESHES_PER_MODAL})`;
+        for (const lab of labels) lab.string = text;
+
+        // Grey out the button when exhausted so it visually communicates
+        // "no more clicks". Cocos Button.interactable = false also blocks
+        // click events → the "no reaction" behaviour the design calls for.
+        btn.interactable = !exhausted;
     }
 
-    /** Fate paid refresh click — spend gems on the server, then trigger
-     *  the local re-roll on success. Toast the error on failure. */
+    /** Fate paid refresh click — check quota, send tier, spend gems.
+     *  When quota is exhausted the button is `interactable = false` and
+     *  this handler shouldn't fire; the guard below is belt-and-suspenders. */
     private onFatePaidRefreshClicked(): void {
-        const cost = this._paidRefreshCost.fate;
-        if (cost === undefined) {
-            console.warn('[FateModal] paid refresh clicked before cost loaded');
-            return;
-        }
-        purchaseRefresh('fate')
+        const used = this._paidRefreshUsed.fate;
+        if (used >= MAX_PAID_REFRESHES_PER_MODAL) return;   // no-op past cap
+        const tier = used;
+        const cost = REFRESH_COST_TIERS[Math.min(tier, REFRESH_COST_TIERS.length - 1)];
+        purchaseRefresh('fate', tier)
             .then((r) => {
-                console.log(`[FateModal] paid refresh OK — spent=${r.gemsSpent} balance=${r.balance}`);
+                console.log(`[FateModal] paid refresh OK (tier=${tier}) — spent=${r.gemsSpent} balance=${r.balance}`);
+                this._paidRefreshUsed.fate++;
                 this.onFateReroll();
+                this.refreshPaidRefreshLabel('fate');
             })
             .catch((err) => this.handlePaidRefreshError(err, cost));
     }
 
-    /** Picker paid refresh click — spend gems, then re-roll the two
-     *  choices via GameState.refreshEnergyPicker (bypasses the free /
-     *  ad-gated path). */
+    /** Picker paid refresh click — same pattern as fate. */
     private onPickerPaidRefreshClicked(): void {
-        const cost = this._paidRefreshCost.magic;
-        if (cost === undefined) {
-            console.warn('[Picker] paid refresh clicked before cost loaded');
-            return;
-        }
-        purchaseRefresh('magic')
+        const used = this._paidRefreshUsed.magic;
+        if (used >= MAX_PAID_REFRESHES_PER_MODAL) return;
+        const tier = used;
+        const cost = REFRESH_COST_TIERS[Math.min(tier, REFRESH_COST_TIERS.length - 1)];
+        purchaseRefresh('magic', tier)
             .then((r) => {
-                console.log(`[Picker] paid refresh OK — spent=${r.gemsSpent} balance=${r.balance}`);
+                console.log(`[Picker] paid refresh OK (tier=${tier}) — spent=${r.gemsSpent} balance=${r.balance}`);
+                this._paidRefreshUsed.magic++;
                 this.gameController?.gameState?.refreshEnergyPicker();
+                this.refreshPaidRefreshLabel('magic');
             })
             .catch((err) => this.handlePaidRefreshError(err, cost));
     }
@@ -2204,6 +2328,104 @@ export class HudController extends Component {
         this.fateCurrentBase = (['I','O','T','S','Z','J','L'] as PieceType[])[newIdx % 7];
         this.refreshFateSubtitle();
         this.drawFateShape();
+    }
+
+    /** Server-authoritative fate reroll gate. Ask server for a free
+     *  use; on success, reroll immediately. On exhausted / error,
+     *  fall through to the rewarded-ad path. */
+    private async tryFreeOrAdFateReroll(): Promise<void> {
+        let grantedFree = false;
+        try {
+            const r = await consumeDailyFree('fate');
+            console.log(`[DailyFree] fate consume result: ok=${r.ok} remaining=${r.remaining} kind=${r.kind ?? '(n/a)'} err=${r.error ?? '(none)'}`);
+            if (r.ok) {
+                // Do the reroll FIRST — that's the critical user action.
+                // Cache updates / label repaint come after, wrapped in
+                // their own try/catch so any hiccup there doesn't cause
+                // an accidental fall-through to the ad path.
+                this.onFateReroll();
+                grantedFree = true;
+                try {
+                    DailyFreeCounter.consume('fate');
+                    PlayerProfile.setDailyFreeRemaining('fate', r.remaining);
+                    this.fateRerollsUsedThisModal++;
+                    this.updateFateRerollLabel();
+                } catch (postErr) {
+                    log(`[DailyFree] post-grant bookkeeping failed (non-fatal): ${(postErr as Error)?.message ?? postErr}`);
+                }
+            } else {
+                PlayerProfile.setDailyFreeRemaining('fate', 0);
+                this.updateFateRerollLabel();
+            }
+        } catch (e) {
+            log(`[DailyFree] consume(fate) failed — falling through to ad: ${(e as Error)?.message ?? e}`);
+        }
+        if (grantedFree) return;
+        void this.doAdFateReroll();
+    }
+
+    /** Ad-gated fate reroll — show a rewarded video on the 'fate' slot;
+     *  only reroll on successful watch. Non-iOS / no ad ready: silent
+     *  toast + no reroll (player can still use the paid refresh button). */
+    private async doAdFateReroll(): Promise<void> {
+        const { AdManager } = await import('../channels/apple/AdManager');
+        const r = await AdManager.showRewarded('fate');
+        if (r.success && r.rewarded) {
+            this.onFateReroll();
+            this.fateRerollsUsedThisModal++;
+            this.updateFateRerollLabel();
+        } else {
+            log(`[Ads] fate rewarded not granted — kind=${r.kind} error=${r.error}`);
+            const mc = (this.menuController as any);
+            if (mc && typeof mc.showSettingsToast === 'function') {
+                mc.showSettingsToast(t('fate.reroll.failed'));
+            }
+        }
+    }
+
+    /** Paint the fate reroll button label. Prefers the server's cached
+     *  remaining count; falls back to the daily max (optimistic 3) when
+     *  the server hasn't reported yet — DailyFreeCounter is intentionally
+     *  NOT used as a fallback because it can carry stale used-counts
+     *  from earlier client-only testing. The atomic consume call is the
+     *  real source of truth; a wrong optimistic label just means one
+     *  extra click that will correctly fall through to the ad path.
+     *
+     *  Scene may have multiple Label children under the button (icon +
+     *  text, plain Label, RichText wrapper, etc.). We overwrite ALL
+     *  Label components found — any that turn out to be static icons
+     *  will just be a noop; the intended text label will get the
+     *  correct string.
+     */
+    private updateFateRerollLabel(): void {
+        try {
+            if (!this.authoredFateRerollButton) {
+                log('[FateModal] updateFateRerollLabel: authoredFateRerollButton not bound');
+                return;
+            }
+            const serverRemaining = PlayerProfile.dailyFreeRemaining('fate');
+            const remaining = (typeof serverRemaining === 'number')
+                ? serverRemaining
+                : DailyFreeCounter.max('fate');   // optimistic max
+            const text = remaining > 0
+                ? t('fate.reroll', { n: remaining })
+                : t('fate.reroll.ad');
+            // Overwrite every Label descendant under the button, not
+            // just the first — some scenes nest a background Label
+            // sibling above the text Label and getComponentInChildren
+            // grabs the wrong one.
+            const labels = this.authoredFateRerollButton.node.getComponentsInChildren(Label);
+            if (labels.length === 0) {
+                log('[FateModal] updateFateRerollLabel: no Label children found under reroll button');
+                return;
+            }
+            for (const lab of labels) {
+                lab.string = text;
+            }
+            log(`[FateModal] updateFateRerollLabel: painted "${text}" onto ${labels.length} label(s)`);
+        } catch (e) {
+            log(`[FateModal] updateFateRerollLabel failed (non-fatal): ${(e as Error)?.message ?? e}`);
+        }
     }
 
     private onFateConfirm(): void {

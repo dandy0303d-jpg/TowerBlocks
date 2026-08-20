@@ -37,6 +37,10 @@
 #import "service/auth/GoogleAuthBridgeGlue.h"
 #import "service/gc/GameCenterBridgeGlue.h"
 #import "service/haptic/HapticBridgeGlue.h"
+// AppLovin bridge exists but is not registered — AdMob is the active
+// provider. Left available for future mediation.
+// #import "service/ads/AppLovinBridgeGlue.h"
+#import "service/ads/AdMobBridgeGlue.h"
 #import "service/ClipboardBridgeGlue.h"
 
 @implementation AppDelegate
@@ -94,6 +98,11 @@
     // Register the haptic bridge — 'haptic.impact' event. Pre-warms
     // UIImpactFeedbackGenerators to avoid the first-fire lag.
     [HapticBridgeGlue registerWithCocos];
+
+    // Register the ads bridge — 'ads.*' events. JS calls ads.init
+    // with credentials on boot; the SDK initialises asynchronously
+    // and starts loading the first ad slots.
+    [AdMobBridgeGlue registerWithCocos];
 
     return YES;
 }

@@ -311,6 +311,9 @@ export class MenuController extends Component {
     @property({ type: Button, tooltip: '通用输入弹窗"取消"按钮（次按钮）— 脚本 wire 点击关弹窗+resolve null' })
     authoredPromptModalCancelButton: Button | null = null;
 
+    @property({ type: Label, tooltip: '通用输入弹窗提示 Label（脚本填提示文本，例如改名冷却剩余天数；不填就隐藏）— 可空' })
+    authoredPromptModalHint: Label | null = null;
+
     // ---- 通用 Toast（设置面板内错误提示，例如昵称超长）----
     @property({ type: Node, tooltip: '设置面板通用 Toast 根节点（含背景 + 内部 Label；默认 active=false；脚本会 tween 淡入淡出）— 可空' })
     authoredSettingsToastNode: Node | null = null;
@@ -486,6 +489,18 @@ export class MenuController extends Component {
                 // Otherwise log and continue.
                 if (!getBannedState()) {
                     console.warn(`[MenuController] boot wallet fetch failed (non-ban): ${err?.message}`);
+                }
+            });
+
+            // Boot-time profile fetch — populates PlayerProfile with
+            // server-authoritative state: nickname cooldown, daily-free
+            // reroll counters. Without this, HUD labels fall back to
+            // localStorage counters which can go stale after server-
+            // side resets or midnight rollovers. Fire-and-forget;
+            // labels update reactively when the profile lands.
+            PlayerProfile.fetchProfile().catch((err) => {
+                if (!getBannedState()) {
+                    console.warn(`[MenuController] boot fetchProfile failed (non-ban): ${err?.message}`);
                 }
             });
 
@@ -1937,6 +1952,57 @@ export class MenuController extends Component {
      *  in case someone paste-drops a longer string past that gate. */
     private static readonly NICKNAME_MAX_CHARS = 20;
 
+    // ---- Nickname change cooldown (client-side) ----
+    //
+    // Players can only change their nickname once every 7 days.
+    // Timestamp is stored in localStorage and read at modal open time
+    // to render the remaining-days hint. Cheatable via device-clock
+    // rollback — server-side enforcement is a follow-up (add a
+    // `nickname_changed_at` column + reject PUT /player/profile when
+    // within cooldown). Client gate catches honest players and
+    // provides the required UX.
+    private static readonly NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
+    private static readonly NICKNAME_CHANGED_AT_KEY = 'nicknameChangedAt';
+
+    /** Read the last recorded nickname change timestamp (ms epoch), or
+     *  0 if never changed / storage unavailable / malformed. */
+    private static readNicknameChangedAt(): number {
+        if (typeof localStorage === 'undefined') return 0;
+        const raw = localStorage.getItem(MenuController.NICKNAME_CHANGED_AT_KEY);
+        const n = raw ? Number(raw) : 0;
+        return Number.isFinite(n) && n > 0 ? n : 0;
+    }
+
+    /** Persist the current time as the last nickname change. Called on
+     *  successful setName only — a rejected change (profanity, network)
+     *  should NOT arm the cooldown. */
+    private static markNicknameChanged(): void {
+        if (typeof localStorage === 'undefined') return;
+        try {
+            localStorage.setItem(MenuController.NICKNAME_CHANGED_AT_KEY, String(Date.now()));
+        } catch { /* full/private mode — noop */ }
+    }
+
+    /** Whole days remaining until the player can change their nickname
+     *  again. Prefers the server-authoritative `nicknameNextChangeAt`
+     *  (from GET /profile / mutating PUTs); falls back to localStorage
+     *  when the server hasn't reported yet or is on an older build.
+     *  Rounds UP so "6.1 days left" reads as "7 days". */
+    public static remainingNicknameCooldownDays(): number {
+        const serverReadyAt = PlayerProfile.nicknameNextChangeAt;
+        const localLast = MenuController.readNicknameChangedAt();
+        const localReadyAt = localLast > 0
+            ? localLast + MenuController.NICKNAME_COOLDOWN_MS
+            : 0;
+        // Take whichever is later — server truth wins when present,
+        // local truth catches offline-changed-then-came-back-online.
+        const readyAt = Math.max(serverReadyAt ?? 0, localReadyAt);
+        if (readyAt === 0) return 0;
+        const msLeft = readyAt - Date.now();
+        if (msLeft <= 0) return 0;
+        return Math.ceil(msLeft / (24 * 60 * 60 * 1000));
+    }
+
     /** Read the nickname EditBox, hand it to PlayerProfile.setName
      *  (empty / whitespace is rejected inside setName), then refresh
      *  the settings values so the EditBox re-anchors on the persisted
@@ -1972,6 +2038,14 @@ export class MenuController extends Component {
      *  compat with old scenes). Cancel → no-op. */
     private async editNicknameViaPrompt(): Promise<void> {
         const currentName = PlayerProfile.name;
+        // 7-day nickname change cooldown. Timestamp lives in
+        // localStorage — see NICKNAME_COOLDOWN_MS / readNicknameChangedAt.
+        // Server-side enforcement is a follow-up; this catches honest
+        // players and gives visible UX for the limit.
+        const remainingDays = MenuController.remainingNicknameCooldownDays();
+        const hint = remainingDays > 0
+            ? t('settings.nickname.cooldown', { n: remainingDays })
+            : t('settings.nickname.cooldownReady');
         const next = await this.showPrompt(
             t('settings.nickname.title'),
             currentName,
@@ -1979,9 +2053,19 @@ export class MenuController extends Component {
             t('common.confirm'),
             t('common.cancel'),
             MenuController.NICKNAME_MAX_CHARS,
+            hint,
         );
         if (next === null) {
             log('[Settings] nickname edit cancelled');
+            return;
+        }
+        // Re-check cooldown at submit time in case the user opened the
+        // modal exactly at the boundary (or the day rolled over while
+        // the modal was open). Reject with a toast if still on cooldown.
+        const remainingAtSubmit = MenuController.remainingNicknameCooldownDays();
+        if (remainingAtSubmit > 0) {
+            this.showSettingsToast(t('settings.nickname.cooldown', { n: remainingAtSubmit }));
+            log(`[Settings] nickname change blocked — ${remainingAtSubmit} day(s) remaining`);
             return;
         }
         const trimmed = next.trim();
@@ -2001,8 +2085,23 @@ export class MenuController extends Component {
         }
         try {
             await PlayerProfile.setName(trimmed);
+            // Record the successful change timestamp so the 7-day
+            // cooldown starts from now. Only on success — a rejected
+            // change (profanity, server error) should NOT arm the timer.
+            MenuController.markNicknameChanged();
         } catch (err) {
             const msg = (err as Error)?.message ?? String(err);
+            // 429 nickname:cooldown — PlayerProfile.setName already
+            // updated the cached nicknameNextChangeAt from the server's
+            // retryAt; re-read the remaining days off that and show a
+            // precise toast. Falls back to generic message if the body
+            // couldn't be parsed.
+            if (msg.startsWith('HTTP 429') && msg.includes('nickname:cooldown')) {
+                const days = MenuController.remainingNicknameCooldownDays();
+                this.showSettingsToast(t('settings.nickname.cooldown', { n: days || 1 }));
+                log(`[Settings] nickname change rejected by server cooldown — ${days} day(s) remaining`);
+                return;
+            }
             // Server returns 400 with error body 'nickname: <code>'
             // (see server/src/nickname-validator.ts). Map each code
             // to a specific toast so the player knows WHY.
@@ -2819,6 +2918,7 @@ export class MenuController extends Component {
         confirmLabelText: string,
         cancelLabelText: string,
         maxLength?: number,
+        hintText?: string,
     ): Promise<string | null> {
         const panel = this.authoredPromptModal;
         if (!panel) {
@@ -2836,6 +2936,16 @@ export class MenuController extends Component {
 
             if (this.authoredPromptModalTitle) {
                 this.authoredPromptModalTitle.string = title;
+            }
+            // Optional hint Label — set text if scene binds one and
+            // hintText is non-empty; hide/blank otherwise so leftover
+            // text from a previous prompt doesn't leak through.
+            if (this.authoredPromptModalHint) {
+                const hint = hintText ?? '';
+                this.authoredPromptModalHint.string = hint;
+                if (this.authoredPromptModalHint.node) {
+                    this.authoredPromptModalHint.node.active = hint.length > 0;
+                }
             }
             if (this.authoredPromptModalConfirmButton) {
                 const lab = this.authoredPromptModalConfirmButton.getComponentInChildren(Label);

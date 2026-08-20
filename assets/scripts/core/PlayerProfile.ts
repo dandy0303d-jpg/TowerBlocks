@@ -23,7 +23,10 @@
 
 import { sys } from 'cc';
 import { registerPlayer, updatePlayerProfile, fetchPlayerProfile, refreshPlayerToken } from './LeaderboardApi';
+import type { DailyFreeState } from './LeaderboardApi';
 import { setBearerToken } from './Http';
+import { GameCenter } from '../channels/apple/GameCenter';
+import { loginWithGameCenter, linkGameCenterAccount } from '../channels/apple/GameCenterAuthApi';
 
 const UUID_KEY    = 'tt.player.uuid';
 const NAME_KEY    = 'tt.player.name';
@@ -41,6 +44,15 @@ const REFRESH_WINDOW_SEC = 60 * 60 * 24 * 7;
 /** How the player is currently identified. `anonymous` = server
  *  issued the uuid; player hasn't bound a real account yet. */
 export type AccountType = 'anonymous' | 'email' | 'google' | 'apple';
+
+/** Parse an ISO-8601 timestamp into a ms epoch, or return null for
+ *  null / undefined / empty / malformed input. Small helper so we
+ *  don't scatter `p.field ? Date.parse(...) : null` across the file. */
+function parseIsoToEpoch(iso: string | null | undefined): number | null {
+    if (!iso) return null;
+    const ms = Date.parse(iso);
+    return Number.isFinite(ms) ? ms : null;
+}
 
 /** Fallback UUID generator — used ONLY when the server register call
  *  fails on first launch and we need to keep the game playable
@@ -72,6 +84,20 @@ class Profile {
     private _name: string | null = null;
     private _accountType: AccountType | null | undefined = undefined;   // undefined = not loaded
     private _avatarIdx: number | null = null;   // null = never picked → renderer falls back to uuid hash
+
+    /** Server-authoritative timestamp (ms epoch) after which the player
+     *  can change their nickname again. `null` = never on cooldown /
+     *  ready to change now. Populated from GET /player/:uuid/profile
+     *  and refreshed when PUT /player/:uuid/profile succeeds. Backing
+     *  UI (MenuController) reads via `nicknameNextChangeAt` getter. */
+    private _nicknameNextChangeAt: number | null = null;
+
+    /** Server-authoritative daily-free reroll counters. `null` = not
+     *  yet fetched (fresh boot, offline). HUD callers should call
+     *  DailyFreeApi.consume() rather than reading this directly for
+     *  the atomic check-and-increment; this cache exists so the UI
+     *  can render "N left today" labels without a round-trip. */
+    private _dailyFree: DailyFreeState | null = null;
 
     /** Current uuid. If `ensureRegistered()` hasn't succeeded yet,
      *  returns a lazily-generated local UUID (offline fallback). */
@@ -224,9 +250,27 @@ class Profile {
             // adopt the server's canonical form as the source of truth.
             this._name = r.name;
             sys.localStorage.setItem(NAME_KEY, r.name);
-            console.log(`[PlayerProfile] setName saved: "${r.name}"`);
+            // Server just armed the 7-day cooldown; adopt its
+            // authoritative next-change timestamp.
+            this._nicknameNextChangeAt = parseIsoToEpoch(r.nicknameNextChangeAt);
+            console.log(`[PlayerProfile] setName saved: "${r.name}" nextChangeAt=${r.nicknameNextChangeAt}`);
         } catch (err) {
             const msg = (err as Error)?.message ?? String(err);
+            // 429 nickname:cooldown — server rejected because the
+            // 7-day rule hasn't elapsed. Extract retryAt so the caller
+            // can display exact remaining time. Payload shape:
+            //   { error: 'nickname:cooldown', retryAt: '<iso>' }
+            if (msg.startsWith('HTTP 429')) {
+                const bodyStart = msg.indexOf('{');
+                if (bodyStart > 0) {
+                    try {
+                        const body = JSON.parse(msg.slice(bodyStart));
+                        if (body?.error === 'nickname:cooldown' && typeof body.retryAt === 'string') {
+                            this._nicknameNextChangeAt = parseIsoToEpoch(body.retryAt);
+                        }
+                    } catch { /* ignore malformed body */ }
+                }
+            }
             console.warn(`[PlayerProfile] setName rejected: ${msg} — keeping "${prev}"`);
             throw err;
         }
@@ -273,6 +317,13 @@ class Profile {
         const p = await fetchPlayerProfile();
         this._name = p.name;
         this._avatarIdx = p.avatarIdx;
+        // Adopt server-authoritative nickname cooldown + daily-free
+        // state. Older server builds omit these fields → keep whatever
+        // we had cached (null on cold boot, which is the safe default:
+        // client will optimistically show "can change now" / "3/3" and
+        // the server enforces truth on the next mutating call).
+        this._nicknameNextChangeAt = parseIsoToEpoch(p.nicknameNextChangeAt);
+        if (p.dailyFree) this._dailyFree = p.dailyFree;
         sys.localStorage.setItem(NAME_KEY, p.name);
         sys.localStorage.setItem(AVATAR_KEY, String(p.avatarIdx));
         return {
@@ -280,6 +331,41 @@ class Profile {
             avatarIdx: p.avatarIdx,
             bestScores: p.bestScores,
         };
+    }
+
+    /** Server-authoritative epoch (ms) when nickname can next be
+     *  changed. `null` when the player has never changed a name or
+     *  the cooldown has elapsed. Used by MenuController to render the
+     *  cooldown hint + gate the save button. */
+    get nicknameNextChangeAt(): number | null {
+        return this._nicknameNextChangeAt;
+    }
+
+    /** Remaining daily-free rerolls for a given slot, per the server's
+     *  last known state. Returns `null` when server hasn't reported
+     *  yet (fresh boot / offline) — UI should treat null as "unknown,
+     *  optimistically show 3 and let the atomic consume call correct
+     *  it". Returns 0 when the slot is exhausted for today. */
+    dailyFreeRemaining(kind: 'magic' | 'fate'): number | null {
+        if (!this._dailyFree) return null;
+        return this._dailyFree[kind]?.remaining ?? null;
+    }
+
+    /** Overwrite the local cache of a slot's remaining count after a
+     *  successful DailyFreeApi.consume — keeps HUD labels fresh without
+     *  needing a full profile refetch. */
+    setDailyFreeRemaining(kind: 'magic' | 'fate', remaining: number): void {
+        if (!this._dailyFree) return;
+        const slot = this._dailyFree[kind];
+        if (!slot) return;
+        slot.remaining = Math.max(0, remaining);
+        slot.used = Math.max(0, slot.max - slot.remaining);
+    }
+
+    /** Update cached cooldown after a successful nickname change or
+     *  when the server rejects a change with `retryAt`. */
+    setNicknameNextChangeAt(epochMs: number | null): void {
+        this._nicknameNextChangeAt = epochMs;
     }
 
     /**
@@ -322,6 +408,23 @@ class Profile {
             }
             return;
         }
+        // ---- iOS: try Game Center silent login BEFORE guest register ----
+        // Only fires on iOS with a live Game Center session. On success
+        // we recover the previously-linked uuid + bearer and skip guest
+        // register entirely — this is how "reinstall and progress comes
+        // back automatically" works.
+        //
+        // On any failure (not-linked, not-authenticated, signature error,
+        // network) we silently fall through to guest register + attempt
+        // to link GC to the fresh uuid so future reinstalls succeed.
+        if (sys.os === sys.OS.IOS) {
+            const gcRecovered = await this._tryGameCenterRecover();
+            if (gcRecovered) {
+                console.log('[PlayerProfile] recovered via Game Center:', gcRecovered.uuid);
+                return;
+            }
+        }
+
         try {
             const { uuid, nickname, avatarIdx, token, expEpochSec } = await registerPlayer();
             sys.localStorage.setItem(UUID_KEY, uuid);
@@ -342,9 +445,103 @@ class Profile {
             this._name = nickname;
             this._accountType = 'anonymous';
             console.log('[PlayerProfile] registered with server:', uuid, nickname);
+
+            // Opportunistically link Game Center to this fresh uuid so
+            // that a future reinstall recovers automatically. Fire-and-
+            // forget — a link failure is not user-visible.
+            if (sys.os === sys.OS.IOS) {
+                void this._tryGameCenterLink();
+            }
         } catch (err) {
             console.warn('[PlayerProfile] server register failed — falling back to local uuid, will retry next launch. Error:', err);
             void this.uuid;
+        }
+    }
+
+    /** Attempt GC-based uuid recovery. On success writes localStorage +
+     *  bearer + instance state and returns { uuid, bearer }. On any
+     *  failure returns null (silent — caller falls back to guest). */
+    private async _tryGameCenterRecover(): Promise<{ uuid: string; bearer: string } | null> {
+        try {
+            // Wait for GC's authenticateHandler to resolve before asking
+            // for the identity signature — GC auto-login can take a
+            // couple of seconds on cold boot and fetchIdentity() before
+            // that returns "not-authenticated".
+            const auth = await GameCenter.authenticate();
+            if (!auth.success) {
+                console.log('[PlayerProfile][GC] auth not available:', auth.kind, auth.error);
+                return null;
+            }
+            const ident = await GameCenter.fetchIdentity();
+            if (!ident.success) {
+                console.log('[PlayerProfile][GC] fetchIdentity not available:', ident.kind);
+                return null;
+            }
+
+            const r = await loginWithGameCenter(ident);
+            // Persist and hydrate — matches the registerPlayer branch above.
+            sys.localStorage.setItem(UUID_KEY, r.uuid);
+            sys.localStorage.setItem(ACCOUNT_KEY, 'anonymous');
+            sys.localStorage.setItem(TOKEN_KEY, r.bearer);
+            // Server issues 14-day tokens — write a conservative exp so
+            // the refresh-window logic works on subsequent boots. We
+            // don't get the exp back from /login/gamecenter so estimate.
+            const expEpochSec = Math.floor(Date.now() / 1000) + 14 * 24 * 3600;
+            sys.localStorage.setItem(TOKEN_EXP_KEY, String(expEpochSec));
+
+            setBearerToken(r.bearer);
+            this._uuid = r.uuid;
+            this._accountType = 'anonymous';
+
+            // Nickname/avatar not returned by /login — fetch them so
+            // the UI has the right values on first paint.
+            try {
+                const p = await fetchPlayerProfile();
+                if (p?.name) {
+                    this._name = p.name;
+                    sys.localStorage.setItem(NAME_KEY, p.name);
+                }
+                if (typeof p?.avatarIdx === 'number' && Number.isFinite(p.avatarIdx)) {
+                    this._avatarIdx = p.avatarIdx;
+                    sys.localStorage.setItem(AVATAR_KEY, String(p.avatarIdx));
+                }
+            } catch (e) {
+                console.warn('[PlayerProfile][GC] profile fetch after recovery failed:', e);
+            }
+            return { uuid: r.uuid, bearer: r.bearer };
+        } catch (e: any) {
+            // 404 = not linked (normal for a first-time GC player). Any
+            // other error also drops through to guest register.
+            const msg = String(e?.message || e);
+            if (msg.includes('404')) {
+                console.log('[PlayerProfile][GC] not linked yet — will link after guest register');
+            } else {
+                console.warn('[PlayerProfile][GC] login attempt failed:', msg);
+            }
+            return null;
+        }
+    }
+
+    /** Link the current (already-registered) uuid to the current GC
+     *  player identity. Best-effort; fire-and-forget from ensureRegistered. */
+    private async _tryGameCenterLink(): Promise<void> {
+        try {
+            // Same reason as _tryGameCenterRecover — wait for auto-login
+            // before fetching the identity signature.
+            const auth = await GameCenter.authenticate();
+            if (!auth.success) {
+                console.log('[PlayerProfile][GC] link skipped — auth:', auth.kind, auth.error);
+                return;
+            }
+            const ident = await GameCenter.fetchIdentity();
+            if (!ident.success) {
+                console.log('[PlayerProfile][GC] link skipped — fetchIdentity:', ident.kind);
+                return;
+            }
+            const r = await linkGameCenterAccount(ident);
+            console.log('[PlayerProfile][GC] linked to fresh uuid — alreadyLinked=', r.alreadyLinked);
+        } catch (e: any) {
+            console.warn('[PlayerProfile][GC] link attempt failed (non-fatal):', String(e?.message || e));
         }
     }
 }

@@ -322,6 +322,11 @@ export class GameController extends Component {
      *  reason code passed by GameState. Same delay logic as level-win. */
     private pendingGameOverReason: number | null | undefined = undefined;
 
+    /** Counts game-overs so we can show a rewarded interstitial every
+     *  3rd death instead of every one. First two deaths = no ad, so
+     *  brand-new players don't hit an ad wall before they've committed. */
+    private _gameOverAdCounter: number = 0;
+
     /** True while the "look at your final tower, tap to continue"
      *  overlay is up (between the game-over signal firing and the
      *  actual fail popup showing). Blind mode uses this to force the
@@ -585,6 +590,21 @@ export class GameController extends Component {
                     log('[TowerBlocks] GAME OVER, reason=', r, '(deferred until effects clear)');
                     this.pendingGameOverReason = r;
                     SoundManager.instance?.play('game_over');
+                    // Interstitial ad — every 3rd game-over. Rate-
+                    // limited to avoid ad-per-death spam that would
+                    // gut retention. First 2 game-overs = no ad, so
+                    // new players don't hit ads before they've
+                    // committed. Fire-and-forget; if no ad ready,
+                    // the fail popup opens as usual.
+                    this._gameOverAdCounter++;
+                    if (this._gameOverAdCounter >= 3) {
+                        this._gameOverAdCounter = 0;
+                        void (async () => {
+                            const { AdManager } = await import('../channels/apple/AdManager');
+                            const res = await AdManager.showInterstitial();
+                            if (!res.success) log(`[Ads] interstitial not shown — ${res.kind}: ${res.error}`);
+                        })();
+                    }
                     // ---- Leaderboard submission ----
                     // Endless / blind: submit the tower height reached this run.
                     // Level mode game-over is a FAIL, not a completion — skip.

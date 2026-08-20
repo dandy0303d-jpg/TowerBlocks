@@ -58,15 +58,20 @@ const CURRENCY_INFO: Record<CurrencyCode, CurrencyInfo> = {
     TWD: { symbol: 'NT$',  decimals: 2 },
 };
 
-/** Default SKU catalog (USD prices). Client + server must keep the
- *  `id` set identical so `POST /wallet/topup { sku }` resolves. */
+/** Default SKU catalog (USD prices). Client + server + App Store
+ *  Connect product IDs must all match exactly — server validates the
+ *  `sku` on POST /wallet/topup, StoreKit uses the id as the productId.
+ *
+ *  Renamed 2026-08 from `gems_*` to `Tgems*` to match App Store
+ *  Connect product IDs (Konenine naming convention). Gem amounts
+ *  and USD prices tuned for the new tier ladder. */
 export const WALLET_SKUS: WalletSku[] = [
-    { id: 'gems_60',    gems:    60, priceCents:   99, currency: 'USD' },
-    { id: 'gems_300',   gems:   300, priceCents:  499, currency: 'USD' },
-    { id: 'gems_700',   gems:   700, priceCents:  999, currency: 'USD' },
-    { id: 'gems_1500',  gems:  1500, priceCents: 1999, currency: 'USD' },
-    { id: 'gems_4000',  gems:  4000, priceCents: 4999, currency: 'USD' },
-    { id: 'gems_10000', gems: 10000, priceCents: 9999, currency: 'USD' },
+    { id: 'Tgems100',   gems:   100, priceCents:   99, currency: 'USD' },
+    { id: 'Tgems500',   gems:   500, priceCents:  499, currency: 'USD' },
+    { id: 'Tgems1100',  gems:  1100, priceCents:  999, currency: 'USD' },
+    { id: 'Tgems2400',  gems:  2400, priceCents: 1999, currency: 'USD' },
+    { id: 'Tgems6200',  gems:  6200, priceCents: 4999, currency: 'USD' },
+    { id: 'Tgems14500', gems: 14500, priceCents: 9999, currency: 'USD' },
 ];
 
 export interface WalletState {

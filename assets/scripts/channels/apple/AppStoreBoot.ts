@@ -23,6 +23,7 @@ import { Providers } from '../../core/channels/Providers';
 import { StoreKitProvider } from './StoreKitProvider';
 import { AppleAuth } from './AppleAuth';
 import { GameCenter } from './GameCenter';
+import { AdManager } from './AdManager';
 
 (function initAppStore(): void {
     if (sys.os !== sys.OS.IOS) {
@@ -52,6 +53,15 @@ import { GameCenter } from './GameCenter';
         .catch((e) => {
             console.warn('[AppStoreBoot][GC] authenticate threw:', e);
         });
+
+    // Kick off AppLovin MAX ad SDK. Async init + auto-preload
+    // rewarded + interstitial slots. Non-blocking — gameplay hooks
+    // that call showRewarded / showInterstitial will get 'not-ready'
+    // if init hasn't landed yet, and immediately trigger a load for
+    // next time.
+    AdManager.init().then((r) => {
+        console.log(`[AppStoreBoot][Ads] init result — success=${r.success}`);
+    });
 
     // ---- DEBUG: expose SIWA to globalThis so we can trigger it from
     // Safari Web Inspector while the Settings-screen UI is still WIP.

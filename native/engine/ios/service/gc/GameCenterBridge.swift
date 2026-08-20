@@ -141,6 +141,66 @@ class GameCenterUIDelegate: NSObject, GKGameCenterControllerDelegate {
         }
     }
 
+    /// Fetch the identity-verification signature payload for server-side
+    /// authentication (paralleling Sign in with Apple's identity token).
+    /// Returns JSON with `publicKeyURL / signature / salt / timestamp /
+    /// gamePlayerID / teamPlayerID / bundleID` — the server verifies the
+    /// RSA-SHA256 signature against Apple's public key and, on success,
+    /// looks up or creates a player row bound to `gamePlayerID`.
+    ///
+    /// Completion payloads:
+    ///   success: {"success":true,"gamePlayerID":"...","teamPlayerID":"...",
+    ///             "displayName":"...","alias":"...","publicKeyURL":"https://...",
+    ///             "signature":"<base64>","salt":"<base64>","timestamp":<ms>,
+    ///             "bundleID":"com.foo.bar"}
+    ///   failure: {"success":false,"kind":"not-authenticated"|"ios-too-old"|"fetch-failed"|...,
+    ///             "error":"..."}
+    ///
+    /// Requires iOS 13.5+ (fetchItems is 13.5+; older API is deprecated).
+    @objc public func fetchIdentityForServer(completion: @escaping (String) -> Void) {
+        guard GKLocalPlayer.local.isAuthenticated else {
+            completion(Self.errorJSON(kind: "not-authenticated", detail: "not signed into Game Center"))
+            return
+        }
+        if #available(iOS 13.5, *) {
+            let player = GKLocalPlayer.local
+            player.fetchItems(forIdentityVerificationSignature: { publicKeyURL, signature, salt, timestamp, error in
+                if let error = error {
+                    NSLog("[GameCenter] fetchIdentityForServer failed: \(error.localizedDescription)")
+                    completion(Self.errorJSON(kind: "fetch-failed", detail: error.localizedDescription))
+                    return
+                }
+                guard
+                    let publicKeyURL = publicKeyURL,
+                    let signature = signature,
+                    let salt = salt
+                else {
+                    completion(Self.errorJSON(kind: "missing-material", detail: "fetchItems returned nil parts"))
+                    return
+                }
+                let payload: [String: Any] = [
+                    "success":      true,
+                    "gamePlayerID": player.gamePlayerID,
+                    "teamPlayerID": player.teamPlayerID,
+                    "displayName":  player.displayName,
+                    "alias":        player.alias,
+                    "publicKeyURL": publicKeyURL.absoluteString,
+                    "signature":    signature.base64EncodedString(),
+                    "salt":         salt.base64EncodedString(),
+                    // timestamp is uint64 ms since epoch — encode as NSNumber
+                    // so JSONSerialization emits it as a JS number.
+                    "timestamp":    NSNumber(value: timestamp),
+                    "bundleID":     Bundle.main.bundleIdentifier ?? "",
+                ]
+                let json = Self.encodeJSON(payload)
+                    ?? Self.errorJSON(kind: "encode-failed", detail: "json encode failed")
+                completion(json)
+            })
+        } else {
+            completion(Self.errorJSON(kind: "ios-too-old", detail: "requires iOS 13.5+ for identity verification"))
+        }
+    }
+
     /// Submit a score to a Game Center leaderboard.
     /// - leaderboardID must match an ID created in ASC → Game Center.
     /// - score is an Int64 — GC preserves whatever units the leaderboard
