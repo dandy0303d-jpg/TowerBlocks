@@ -205,7 +205,7 @@ export const DE: Record<string, string> = {
     'gems.cancel':       'Abbrechen',
 
     // ---------- Consent modal (login-gate) ----------
-    'consent.title':                             'Bitte stimmen Sie zu, um fortzufahren',
+    'consent.title':                             'Sie müssen den Nutzungsbedingungen und der Datenschutzerklärung zustimmen, um zu spielen!',
     'consent.agreeAll':                             'Ich stimme allem zu',
     'consent.tos.label':                             'Nutzungsbedingungen zustimmen',
     'consent.privacy.label':                             'Datenschutzerklärung zustimmen',

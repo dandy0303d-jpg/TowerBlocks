@@ -21,9 +21,6 @@
  *       │   ├── PrivacyToggle
  *       │   ├── PrivacyLabel
  *       │   └── PrivacyView
- *       ├── AgeRow
- *       │   ├── AgeToggle
- *       │   └── AgeLabel     (Label — consent.age.label + (필수))
  *       ├── MarketingRow
  *       │   ├── MarketingToggle
  *       │   └── MarketingLabel (Label — consent.marketing.label + (선택))
@@ -71,10 +68,6 @@ export class ConsentModal extends Component {
     @property({ type: Button, tooltip: 'Privacy「查看」按钮 — 打开 Privacy URL' })
     privacyViewBtn: Button = null!;
 
-    // 必选：Age
-    @property({ type: Toggle }) ageToggle: Toggle = null!;
-    @property({ type: Label })  ageLabel: Label = null!;
-
     // 可选：Marketing
     @property({ type: Toggle }) marketingToggle: Toggle = null!;
     @property({ type: Label })  marketingLabel: Label = null!;
@@ -91,13 +84,22 @@ export class ConsentModal extends Component {
     private _syncingAgreeAll: boolean = false;
     private _busy: boolean = false;
     private _onCompleteResolver: (() => void) | null = null;
+    /** true if gate() has been called and the modal SHOULD stay visible;
+     *  onLoad honors this so it doesn't re-hide right after gate() shows. */
+    private _shouldStayVisible: boolean = false;
 
     onLoad() {
+        // Defensive: if you forgot to leave ConsentModalNode active=false in
+        // the scene, hide it now so we don't flash the consent UI at boot.
+        // BUT if gate() was already called (activating the node — which is
+        // what caused onLoad to fire in the first place), respect that and
+        // don't re-hide.
+        if (this.root && !this._shouldStayVisible) this.root.active = false;
+
         // Toggle wiring
         this.agreeAllToggle?.node.on('toggle', this.onAgreeAllToggle, this);
         this.tosToggle?.node.on('toggle',       this.onAnyChildToggle, this);
         this.privacyToggle?.node.on('toggle',   this.onAnyChildToggle, this);
-        this.ageToggle?.node.on('toggle',       this.onAnyChildToggle, this);
         this.marketingToggle?.node.on('toggle', this.onAnyChildToggle, this);
 
         // View buttons
@@ -108,8 +110,6 @@ export class ConsentModal extends Component {
 
         // Start button
         this.startBtn?.node.on(Button.EventType.CLICK, this.onStart, this);
-
-        this.root && (this.root.active = false);
     }
 
     /** Called by LoadingController when consent is required. Returns
@@ -118,6 +118,10 @@ export class ConsentModal extends Component {
     public async gate(status: ConsentStatusResult): Promise<void> {
         this._currentTos     = status.current.tos;
         this._currentPrivacy = status.current.privacy;
+        // Set FIRST — if activating this.root causes onLoad to run for
+        // the first time (scene was authored active=false), onLoad will
+        // see the flag and skip its defensive hide.
+        this._shouldStayVisible = true;
 
         this.paintLabels();
         this.resetToggles();
@@ -141,7 +145,6 @@ export class ConsentModal extends Component {
         const opt = ' (' + t('consent.optional') + ')';
         this.tosLabel       && (this.tosLabel.string       = t('consent.tos.label')       + req);
         this.privacyLabel   && (this.privacyLabel.string   = t('consent.privacy.label')   + req);
-        this.ageLabel       && (this.ageLabel.string       = t('consent.age.label')       + req);
         this.marketingLabel && (this.marketingLabel.string = t('consent.marketing.label') + opt);
 
         this.hintLabel      && (this.hintLabel.string      = t('consent.mustAgree'));
@@ -159,7 +162,7 @@ export class ConsentModal extends Component {
 
     private resetToggles() {
         [this.agreeAllToggle, this.tosToggle, this.privacyToggle,
-         this.ageToggle, this.marketingToggle].forEach(tg => {
+         this.marketingToggle].forEach(tg => {
             if (tg) tg.isChecked = false;
         });
     }
@@ -173,7 +176,6 @@ export class ConsentModal extends Component {
             const on = toggle.isChecked;
             if (this.tosToggle)       this.tosToggle.isChecked       = on;
             if (this.privacyToggle)   this.privacyToggle.isChecked   = on;
-            if (this.ageToggle)       this.ageToggle.isChecked       = on;
             if (this.marketingToggle) this.marketingToggle.isChecked = on;
         } finally {
             this._syncingAgreeAll = false;
@@ -183,11 +185,10 @@ export class ConsentModal extends Component {
 
     private onAnyChildToggle() {
         if (this._syncingAgreeAll) return;
-        // Sync master toggle: on iff ALL four children are on.
+        // Sync master toggle: on iff ALL three children are on.
         const all =
             !!this.tosToggle?.isChecked &&
             !!this.privacyToggle?.isChecked &&
-            !!this.ageToggle?.isChecked &&
             !!this.marketingToggle?.isChecked;
         if (this.agreeAllToggle && this.agreeAllToggle.isChecked !== all) {
             this._syncingAgreeAll = true;
@@ -202,13 +203,16 @@ export class ConsentModal extends Component {
 
     private allRequiredChecked(): boolean {
         return !!(this.tosToggle?.isChecked
-               && this.privacyToggle?.isChecked
-               && this.ageToggle?.isChecked);
+               && this.privacyToggle?.isChecked);
     }
 
     private refreshStartButton() {
         if (!this.startBtn) return;
-        this.startBtn.interactable = this.allRequiredChecked() && !this._busy;
+        // Keep button always clickable when idle so a user tapping it
+        // without required checks gets to see the hint label instead
+        // of being blocked by a silently-disabled button. Busy state
+        // still greys out to prevent double-submit.
+        this.startBtn.interactable = !this._busy;
     }
 
     // ---- View legal in system browser ----
@@ -257,7 +261,10 @@ export class ConsentModal extends Component {
             await postConsent({
                 tosVersion:     this._currentTos,
                 privacyVersion: this._currentPrivacy,
-                ageConfirmed:   !!this.ageToggle?.isChecked,
+                // Age gate removed — game rating (App Store rating) handles it.
+                // Send true so the server-side field stays populated (and the
+                // required-check on the server passes).
+                ageConfirmed:   true,
                 marketingOptIn: !!this.marketingToggle?.isChecked,
             });
             console.log('[Consent] recorded — resuming boot');

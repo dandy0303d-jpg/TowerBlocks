@@ -233,7 +233,7 @@ export const ZH: Record<string, string> = {
     'gems.cancel':       '取消',
 
     // ---------- Consent modal (login-gate) ----------
-    'consent.title':                             '请阅读并同意以下条款',
+    'consent.title':                             '必须同意用户协议和隐私政策才能开始游戏！',
     'consent.agreeAll':                             '我同意全部条款',
     'consent.tos.label':                             '同意服务条款',
     'consent.privacy.label':                             '同意隐私政策',

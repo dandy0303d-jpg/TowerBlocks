@@ -226,7 +226,7 @@ export const KO: Record<string, string> = {
     'gems.cancel':       '취소',
 
     // ---------- Consent modal (login-gate) ----------
-    'consent.title':                             '서비스 이용에 동의해주세요',
+    'consent.title':                             '게임을 시작하려면 이용약관 및 개인정보처리방침에 동의해야 합니다!',
     'consent.agreeAll':                             '전체 동의합니다',
     'consent.tos.label':                             '이용약관 동의',
     'consent.privacy.label':                             '개인정보처리방침 동의',

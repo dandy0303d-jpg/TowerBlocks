@@ -225,7 +225,7 @@ export const ES: Record<string, string> = {
     'gems.cancel':       'Cancelar',
 
     // ---------- Consent modal (login-gate) ----------
-    'consent.title':                             'Acepta para continuar',
+    'consent.title':                             '¡Debes aceptar los Términos del Servicio y la Política de Privacidad para jugar!',
     'consent.agreeAll':                             'Acepto todo',
     'consent.tos.label':                             'Términos del servicio',
     'consent.privacy.label':                             'Política de Privacidad',

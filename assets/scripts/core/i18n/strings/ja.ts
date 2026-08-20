@@ -231,7 +231,7 @@ export const JA: Record<string, string> = {
     'gems.cancel':       'キャンセル',
 
     // ---------- Consent modal (login-gate) ----------
-    'consent.title':                             'ご利用にあたり同意をお願いします',
+    'consent.title':                             'プレイするには利用規約およびプライバシーポリシーへの同意が必要です！',
     'consent.agreeAll':                             'すべてに同意する',
     'consent.tos.label':                             '利用規約に同意',
     'consent.privacy.label':                             'プライバシーポリシーに同意',

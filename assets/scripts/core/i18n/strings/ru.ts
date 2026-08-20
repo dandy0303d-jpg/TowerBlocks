@@ -204,7 +204,7 @@ export const RU: Record<string, string> = {
     'gems.cancel':       'Отмена',
 
     // ---------- Consent modal (login-gate) ----------
-    'consent.title':                             'Пожалуйста, примите условия, чтобы продолжить',
+    'consent.title':                             'Чтобы играть, необходимо принять Условия использования и Политику конфиденциальности!',
     'consent.agreeAll':                             'Я принимаю всё',
     'consent.tos.label':                             'Принять Условия использования',
     'consent.privacy.label':                             'Принять Политику конфиденциальности',

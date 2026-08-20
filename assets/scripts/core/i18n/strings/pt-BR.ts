@@ -209,7 +209,7 @@ export const PT_BR: Record<string, string> = {
     'gems.cancel':       'Cancelar',
 
     // ---------- Consent modal (login-gate) ----------
-    'consent.title':                             'Concorde para continuar',
+    'consent.title':                             'Você precisa aceitar os Termos de Serviço e a Política de Privacidade para jogar!',
     'consent.agreeAll':                             'Concordo com tudo',
     'consent.tos.label':                             'Termos de Serviço',
     'consent.privacy.label':                             'Política de Privacidade',
