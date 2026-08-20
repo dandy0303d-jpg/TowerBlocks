@@ -223,4 +223,18 @@ export const ES: Record<string, string> = {
     'gems.insufficient': 'Gemas insuficientes\nNecesitas {need}, tienes {have}',
     'gems.goTopUp':      'Recargar',
     'gems.cancel':       'Cancelar',
+
+    // ---------- Consent modal (login-gate) ----------
+    'consent.title':                             '¡Debes aceptar los Términos del Servicio y la Política de Privacidad para jugar!',
+    'consent.agreeAll':                             'Acepto todo',
+    'consent.tos.label':                             'Términos del servicio',
+    'consent.privacy.label':                             'Política de Privacidad',
+    'consent.age.label':                             'Tengo 14 años o más',
+    'consent.marketing.label':                             'Recibir comunicaciones de marketing',
+    'consent.required':                             'Obligatorio',
+    'consent.optional':                             'Opcional',
+    'consent.view':                             'Ver',
+    'consent.start':                             'Aceptar y comenzar',
+    'consent.mustAgree':                             'Debes aceptar todos los elementos obligatorios para comenzar.',
+    'consent.error':                             'Error al registrar tu aceptación. Inténtalo de nuevo.',
 };

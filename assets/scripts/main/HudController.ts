@@ -57,8 +57,7 @@ const BLIND_DIGIT_PIXELS: Record<string, string[]> = {
 };
 
 /** Item glyphs shown in the energy picker — kept here so the HUD can render
- *  the picker without depending on external SpriteFrames. Emoji-based —
- *  no per-project asset dependencies to wire. */
+ *  the picker without depending on external SpriteFrames. */
 const ITEM_GLYPHS: Record<MagicItemKey, string> = {
     hourglass1:    '⏳',
     hourglass2:    '⏳',
@@ -761,6 +760,7 @@ export class HudController extends Component {
         } else {
             log('[HudController] authoredPauseButton not wired');
         }
+
         // Debug win — hidden in endless mode by hideDebugWinInEndless(),
         // which reads debugWinButtonNode.
         // Also DEV-only overall: hidden in release builds so players
