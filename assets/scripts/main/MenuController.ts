@@ -143,9 +143,6 @@ export class MenuController extends Component {
     @property({ type: Button, tooltip: '排行榜按钮（占位，尚未接入后端）' })
     modeBtnLeaderboard: Button | null = null;
 
-    @property({ type: Button, tooltip: '充值按钮' })
-    modeBtnTopup: Button | null = null;
-
     @property({ type: LeaderboardController, tooltip: '排行榜面板控制器（拖场景里挂了 LeaderboardController 的节点进来）' })
     leaderboardController: LeaderboardController | null = null;
 
@@ -244,14 +241,7 @@ export class MenuController extends Component {
     @property({ type: Button, tooltip: '账号信息 Button（点击复制昵称 + UUID 到剪贴板；用于客服/申诉时快速提供账号 ID）— 可空。拖你截图里那个 account 行的 Button' })
     authoredSettingsAccountButton: Button | null = null;
 
-    // ---- 第三方账号绑定按钮（登录）— 功能未接，先留 UI ----
-    @property({ type: Button, tooltip: '谷歌登录按钮（点击后暂时只 log，等接 Google Sign-In SDK 再补功能）— 可空' })
-    authoredSettingsGoogleLoginButton: Button | null = null;
-
-    @property({ type: Button, tooltip: '苹果登录按钮（点击后暂时只 log，等接 Sign in with Apple 再补功能）— 可空' })
-    authoredSettingsAppleLoginButton: Button | null = null;
-
-    // ---- 已绑定账号开关（解绑）— 功能未接 ----
+    // ---- 已绑定账号开关（登录 + 解绑一体，登录按钮已废弃）----
     @property({ type: Toggle, tooltip: '谷歌已绑定开关（isChecked 反映当前是否绑定；切换事件暂时只 log）— 可空' })
     authoredSettingsGoogleToggle: Toggle | null = null;
 
@@ -996,7 +986,6 @@ export class MenuController extends Component {
         bindBtn(this.modeBtnLevel,         'menu.levels',      () => this.showLevelSelect());
         bindBtn(this.modeBtnBlind,         'menu.blind',       () => this.enterBlindMode());
         bindBtn(this.modeBtnLeaderboard,   'menu.leaderboard', () => this.onLeaderboardClicked());
-        bindBtn(this.modeBtnTopup,         'menu.topup',       () => this.onTopupClicked());
         bindBtn(this.modeBtnSettings,      'settings.button',  () => this.openSettingsPanel());
         // Reset progress button: DEV-only. Hidden in release builds so
         // players can't nuke their own save by accident (and to keep
@@ -1481,18 +1470,8 @@ export class MenuController extends Component {
         // ---- Wire the avatar picker (idempotent) ----
         this.wireAvatarPicker();
 
-        // ---- Google / Apple login buttons (stubs) ----
-        if (this.authoredSettingsGoogleLoginButton) {
-            this.authoredSettingsGoogleLoginButton.node.off('click');
-            this.authoredSettingsGoogleLoginButton.node.on('click',
-                () => log('[Settings] Google login tapped — SDK integration TODO'), this);
-        }
-        if (this.authoredSettingsAppleLoginButton) {
-            this.authoredSettingsAppleLoginButton.node.off('click');
-            this.authoredSettingsAppleLoginButton.node.on('click',
-                () => log('[Settings] Apple login tapped — SDK integration TODO'), this);
-        }
-        // ---- Google / Apple linked toggles (stubs) ----
+        // ---- Google / Apple linked toggles ----
+        // Login-button stubs removed — Toggle is the single click surface now.
         // The 'toggle' event fires AFTER the check state flips. For now
         // we snap the toggle back to whatever the real bind state says
         // (via refreshAuthoredSettingsValues) so the UI doesn't lie
