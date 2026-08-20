@@ -202,4 +202,18 @@ export const RU: Record<string, string> = {
     'gems.insufficient': 'Недостаточно кристаллов\nНужно {need}, есть {have}',
     'gems.goTopUp':      'Пополнить',
     'gems.cancel':       'Отмена',
+
+    // ---------- Consent modal (login-gate) ----------
+    'consent.title':                             'Чтобы играть, необходимо принять Условия использования и Политику конфиденциальности!',
+    'consent.agreeAll':                             'Я принимаю всё',
+    'consent.tos.label':                             'Принять Условия использования',
+    'consent.privacy.label':                             'Принять Политику конфиденциальности',
+    'consent.age.label':                             'Мне 14 лет или больше',
+    'consent.marketing.label':                             'Получать маркетинговые сообщения',
+    'consent.required':                             'Обязательно',
+    'consent.optional':                             'Необязательно',
+    'consent.view':                             'Смотреть',
+    'consent.start':                             'Принять и начать',
+    'consent.mustAgree':                             'Чтобы начать игру, необходимо принять все обязательные пункты.',
+    'consent.error':                             'Не удалось записать согласие. Попробуйте ещё раз.',
 };

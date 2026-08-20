@@ -54,8 +54,7 @@ const BLIND_DIGIT_PIXELS: Record<string, string[]> = {
 };
 
 /** Item glyphs shown in the energy picker — kept here so the HUD can render
- *  the picker without depending on external SpriteFrames. (We DO use the
- *  itemIcons array when available; these emoji are the fallback.) */
+ *  the picker without depending on external SpriteFrames. */
 const ITEM_GLYPHS: Record<MagicItemKey, string> = {
     hourglass1:    '⏳',
     hourglass2:    '⏳',
@@ -172,11 +171,6 @@ export class HudController extends Component {
             } | null) ?? null;
     }
 
-    /** Icons for the 5 magic items, in ITEM_KEYS order:
-     *  hourglass, excavator, shapeshifter, rewind, meteor. */
-    @property([SpriteFrame])
-    itemIcons: SpriteFrame[] = [];
-
     // ============================================================
     //  Authored HUD — top strip / Row 1 buttons / score label /
     //  NEXT preview. Drag the scene nodes into these slots; the
@@ -184,23 +178,14 @@ export class HudController extends Component {
     //  NEXT preview Graphics.
     // ============================================================
 
-    @property({ type: Node, tooltip: '顶部条容器根节点（Sprite 背景）' })
-    authoredHudStrip: Node | null = null;
-
     @property({ type: Button, tooltip: '暂停按钮（点击 → togglePause）' })
     authoredPauseButton: Button | null = null;
-
-    @property({ type: Label, tooltip: '暂停按钮里的 Label（脚本会写 ⏸ / ▶）' })
-    authoredPauseButtonLabel: Label | null = null;
 
     @property({ type: Button, tooltip: '通关按钮（DEV，无尽模式自动隐藏）' })
     authoredDebugWinButton: Button | null = null;
 
     @property({ type: Label, tooltip: '层高 Label（右上角）' })
     authoredScoreLabel: Label | null = null;
-
-    @property({ type: Node, tooltip: '层高显示的容器节点（脚本会在非无尽模式下 setActive(false) 整块隐藏；不拖就只隐藏 Label 本身）' })
-    authoredScoreContainer: Node | null = null;
 
     // ============================================================
     //  Authored HUD — 本命方块 (fate piece) modal
@@ -345,9 +330,6 @@ export class HudController extends Component {
     private linesLabel!:   Label;
     private modeLabel!:    Label;
     private nextLabel!:    Label;
-    /** Pause button label — swapped between ⏸ and ▶ so the button's own
-     *  glyph reflects the current gameState.paused state. */
-    private pauseBtnLabel: Label | null = null;
     /** Debug "instant win" button — dev-only, visible in level mode. */
     private debugWinButtonNode: Node | null = null;
     /** Full-screen "已暂停" overlay. Lazily built the first time the
@@ -565,7 +547,6 @@ export class HudController extends Component {
         // authored them in the scene, not necessarily under this.node,
         // so we can't find them by name — toggle each wired @property
         // node directly.
-        if (this.authoredHudStrip) this.authoredHudStrip.active = on;
         if (this.authoredPauseButton) this.authoredPauseButton.node.active = on;
         // Debug win button follows HUD visibility, but only if this is
         // a dev build. Release builds keep it forever-hidden.
@@ -576,9 +557,7 @@ export class HudController extends Component {
         // When on=true, only show if we're in endless mode; otherwise
         // keep hidden so it doesn't flash visible for one frame before
         // refreshHud fires. When on=false (going to menu), always hide.
-        const scoreTarget = this.authoredScoreContainer
-            ?? this.authoredScoreLabel?.node
-            ?? null;
+        const scoreTarget = this.authoredScoreLabel?.node ?? null;
         if (scoreTarget) {
             const mode = this.gameController?.gameState?.mode;
             // Endless AND blind mode both use the height-based scoring
@@ -659,7 +638,7 @@ export class HudController extends Component {
         // The score field still exists internally so item snapshots /
         // rewind don't churn; it just isn't rendered.
         if (this.scoreLabel) {
-            const scoreTarget = this.authoredScoreContainer ?? this.scoreLabel.node;
+            const scoreTarget = this.scoreLabel.node;
             // Blind mode uses endless mechanics (height-based scoring),
             // so show 层高 there too.
             if (g.mode === 'endless' || g.mode === 'blind') {
@@ -773,7 +752,6 @@ export class HudController extends Component {
         } else {
             log('[HudController] authoredPauseButton not wired');
         }
-        this.pauseBtnLabel = this.authoredPauseButtonLabel ?? null;
 
         // Debug win — hidden in endless mode by hideDebugWinInEndless(),
         // which reads debugWinButtonNode.
@@ -2582,9 +2560,6 @@ export class HudController extends Component {
         const gs = this.gameController?.gameState;
         const paused = !!(gs && gs.paused && gs.running && !gs.gameOver);
         this.pauseUiLastPaused = paused;
-        if (this.pauseBtnLabel) {
-            this.pauseBtnLabel.string = paused ? '▶' : '⏸';
-        }
         // Freeze / restore the BGM alongside the visual pause. Uses
         // pause()/resume() (not stop/play) so the track picks up mid-
         // measure when the player unpauses instead of restarting.

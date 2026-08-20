@@ -43,6 +43,8 @@ import { BgmManager } from '../audio/BgmManager';
 import { LevelProgress } from '../core/LevelProgress';
 import { deletePlayerSelf } from '../core/PlayerApi';
 import { IS_DEV_BUILD } from '../core/BuildConfig';
+import { fetchConsentStatus } from '../core/ConsentApi';
+import { ConsentModal } from './ConsentModal';
 
 const { ccclass, property } = _decorator;
 
@@ -140,9 +142,6 @@ export class MenuController extends Component {
 
     @property({ type: Button, tooltip: '排行榜按钮（占位，尚未接入后端）' })
     modeBtnLeaderboard: Button | null = null;
-
-    @property({ type: Button, tooltip: '充值按钮' })
-    modeBtnTopup: Button | null = null;
 
     @property({ type: LeaderboardController, tooltip: '排行榜面板控制器（拖场景里挂了 LeaderboardController 的节点进来）' })
     leaderboardController: LeaderboardController | null = null;
@@ -242,14 +241,7 @@ export class MenuController extends Component {
     @property({ type: Button, tooltip: '账号信息 Button（点击复制昵称 + UUID 到剪贴板；用于客服/申诉时快速提供账号 ID）— 可空。拖你截图里那个 account 行的 Button' })
     authoredSettingsAccountButton: Button | null = null;
 
-    // ---- 第三方账号绑定按钮（登录）— 功能未接，先留 UI ----
-    @property({ type: Button, tooltip: '谷歌登录按钮（点击后暂时只 log，等接 Google Sign-In SDK 再补功能）— 可空' })
-    authoredSettingsGoogleLoginButton: Button | null = null;
-
-    @property({ type: Button, tooltip: '苹果登录按钮（点击后暂时只 log，等接 Sign in with Apple 再补功能）— 可空' })
-    authoredSettingsAppleLoginButton: Button | null = null;
-
-    // ---- 已绑定账号开关（解绑）— 功能未接 ----
+    // ---- 已绑定账号开关（登录 + 解绑一体，登录按钮已废弃）----
     @property({ type: Toggle, tooltip: '谷歌已绑定开关（isChecked 反映当前是否绑定；切换事件暂时只 log）— 可空' })
     authoredSettingsGoogleToggle: Toggle | null = null;
 
@@ -268,6 +260,10 @@ export class MenuController extends Component {
 
     @property({ type: Button, tooltip: '"钻石不足"弹窗内的"取消"按钮（点击 → 关闭弹窗）— 可空' })
     authoredInsufficientGemsCancelButton: Button | null = null;
+
+    // ---- 用户协议同意弹窗（韩国 PIPA 合规必需）----
+    @property({ type: Node, tooltip: '同意弹窗根节点（挂 ConsentModal 组件）— 默认 active=false。留空则跳过合规 gate（App Store 前必须填）' })
+    consentModalNode: Node | null = null;
 
     // ---- 通用确认弹窗（供 SIWA 恢复、删除账号、其他需要"你确定吗"确认的场景复用）----
     @property({ type: Node, tooltip: '通用确认弹窗根节点（含 dim + 卡片 + 标题 + 消息 + 确认/取消 两个按钮）— 默认 active=false' })
@@ -457,17 +453,28 @@ export class MenuController extends Component {
      *  the boot proceed; the tutorial (step 2) doesn't depend on the
      *  network. */
     public beginBootAfterLoading(): void {
-        void PlayerProfile.ensureRegistered().finally(() => {
+        void (async () => {
+            // Step 1: register / recover the player identity
+            await PlayerProfile.ensureRegistered().catch((e) => {
+                console.warn('[MenuController] ensureRegistered failed:', e);
+            });
             log(`[MenuController] beginBootAfterLoading — uuid=${PlayerProfile.uuid} name=${PlayerProfile.name}`);
+
+            // Step 2: consent gate (韩国 PIPA / 게임산업진흥법 요구). Blocks
+            // menu reveal until player agrees to current ToS + Privacy
+            // versions. If the network's down or the server errors, we
+            // skip the gate and let the user in — better than locking
+            // them out. `needsConsent=true` on the next successful
+            // fetch will re-show the modal.
+            await this.maybeShowConsentGate();
+
+            // Step 3: tutorial or menu
             const needTutorial = !TutorialProgress.hasSeen('operations')
                               && !!this.tutorialController;
             if (!needTutorial) {
                 this.showModeSelect();
                 return;
             }
-            // Show the gameplay 3D scene so the tutorial tower is
-            // visible behind the tutorial overlay. Menu stays hidden
-            // until the tutorial finishes.
             log('[MenuController] first launch — running operations tutorial before showing menu');
             this.setGameplayVisible(true);
             if (this.modeSelectPanel) this.modeSelectPanel.active = false;
@@ -475,7 +482,37 @@ export class MenuController extends Component {
                 log('[MenuController] tutorial done — showing main menu');
                 this.showModeSelect();
             });
-        });
+        })();
+    }
+
+    /** Poll server for consent status; if the current player hasn't
+     *  agreed to the latest ToS + Privacy versions, block boot until
+     *  they do. Safe no-op if server errors or the ConsentModal node
+     *  isn't wired (older scenes). */
+    private async maybeShowConsentGate(): Promise<void> {
+        if (!this.consentModalNode) {
+            console.log('[MenuController] consent modal not wired — skipping gate');
+            return;
+        }
+        let status;
+        try {
+            status = await fetchConsentStatus();
+        } catch (e) {
+            console.warn('[MenuController] consent status fetch failed — proceeding:', e);
+            return;
+        }
+        if (!status.needsConsent) {
+            console.log('[MenuController] consent OK — versions match');
+            return;
+        }
+        const modal = this.consentModalNode.getComponent(ConsentModal);
+        if (!modal) {
+            console.warn('[MenuController] consentModalNode missing ConsentModal component');
+            return;
+        }
+        console.log('[MenuController] consent required — gating boot');
+        await modal.gate(status);
+        console.log('[MenuController] consent recorded — resuming boot');
     }
 
     // ============================================================
@@ -949,7 +986,6 @@ export class MenuController extends Component {
         bindBtn(this.modeBtnLevel,         'menu.levels',      () => this.showLevelSelect());
         bindBtn(this.modeBtnBlind,         'menu.blind',       () => this.enterBlindMode());
         bindBtn(this.modeBtnLeaderboard,   'menu.leaderboard', () => this.onLeaderboardClicked());
-        bindBtn(this.modeBtnTopup,         'menu.topup',       () => this.onTopupClicked());
         bindBtn(this.modeBtnSettings,      'settings.button',  () => this.openSettingsPanel());
         // Reset progress button: DEV-only. Hidden in release builds so
         // players can't nuke their own save by accident (and to keep
@@ -1434,18 +1470,8 @@ export class MenuController extends Component {
         // ---- Wire the avatar picker (idempotent) ----
         this.wireAvatarPicker();
 
-        // ---- Google / Apple login buttons (stubs) ----
-        if (this.authoredSettingsGoogleLoginButton) {
-            this.authoredSettingsGoogleLoginButton.node.off('click');
-            this.authoredSettingsGoogleLoginButton.node.on('click',
-                () => log('[Settings] Google login tapped — SDK integration TODO'), this);
-        }
-        if (this.authoredSettingsAppleLoginButton) {
-            this.authoredSettingsAppleLoginButton.node.off('click');
-            this.authoredSettingsAppleLoginButton.node.on('click',
-                () => log('[Settings] Apple login tapped — SDK integration TODO'), this);
-        }
-        // ---- Google / Apple linked toggles (stubs) ----
+        // ---- Google / Apple linked toggles ----
+        // Login-button stubs removed — Toggle is the single click surface now.
         // The 'toggle' event fires AFTER the check state flips. For now
         // we snap the toggle back to whatever the real bind state says
         // (via refreshAuthoredSettingsValues) so the UI doesn't lie

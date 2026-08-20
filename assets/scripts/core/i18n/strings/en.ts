@@ -225,4 +225,18 @@ export const EN: Record<string, string> = {
     'gems.insufficient': 'Not enough gems\nNeed {need}, have {have}',
     'gems.goTopUp':      'Top Up',
     'gems.cancel':       'Cancel',
+
+    // ---------- Consent modal (login-gate) ----------
+    'consent.title':                             'You must agree to the Terms of Service and Privacy Policy to play!',
+    'consent.agreeAll':                             'I agree to all',
+    'consent.tos.label':                             'Terms of Service',
+    'consent.privacy.label':                             'Privacy Policy',
+    'consent.age.label':                             'I am 14 or older',
+    'consent.marketing.label':                             'Receive marketing communications',
+    'consent.required':                             'Required',
+    'consent.optional':                             'Optional',
+    'consent.view':                             'View',
+    'consent.start':                             'Agree & Start',
+    'consent.mustAgree':                             'You must agree to all required items to start the game.',
+    'consent.error':                             'Failed to record your agreement. Please try again.',
 };

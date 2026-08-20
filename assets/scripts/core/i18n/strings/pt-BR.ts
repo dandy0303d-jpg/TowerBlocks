@@ -207,4 +207,18 @@ export const PT_BR: Record<string, string> = {
     'gems.insufficient': 'Gemas insuficientes\nPrecisa {need}, tem {have}',
     'gems.goTopUp':      'Recarregar',
     'gems.cancel':       'Cancelar',
+
+    // ---------- Consent modal (login-gate) ----------
+    'consent.title':                             'Você precisa aceitar os Termos de Serviço e a Política de Privacidade para jogar!',
+    'consent.agreeAll':                             'Concordo com tudo',
+    'consent.tos.label':                             'Termos de Serviço',
+    'consent.privacy.label':                             'Política de Privacidade',
+    'consent.age.label':                             'Tenho 14 anos ou mais',
+    'consent.marketing.label':                             'Receber comunicações de marketing',
+    'consent.required':                             'Obrigatório',
+    'consent.optional':                             'Opcional',
+    'consent.view':                             'Ver',
+    'consent.start':                             'Concordar e iniciar',
+    'consent.mustAgree':                             'Você deve concordar com todos os itens obrigatórios para iniciar.',
+    'consent.error':                             'Falha ao registrar sua concordância. Tente novamente.',
 };

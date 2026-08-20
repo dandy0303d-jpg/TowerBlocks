@@ -224,4 +224,18 @@ export const KO: Record<string, string> = {
     'gems.insufficient': '다이아가 부족합니다\n필요 {need}, 보유 {have}',
     'gems.goTopUp':      '충전하러 가기',
     'gems.cancel':       '취소',
+
+    // ---------- Consent modal (login-gate) ----------
+    'consent.title':                             '게임을 시작하려면 이용약관 및 개인정보처리방침에 동의해야 합니다!',
+    'consent.agreeAll':                             '전체 동의합니다',
+    'consent.tos.label':                             '이용약관 동의',
+    'consent.privacy.label':                             '개인정보처리방침 동의',
+    'consent.age.label':                             '만 14세 이상입니다',
+    'consent.marketing.label':                             '마케팅 정보 수신 동의',
+    'consent.required':                             '필수',
+    'consent.optional':                             '선택',
+    'consent.view':                             '보기',
+    'consent.start':                             '동의하고 시작하기',
+    'consent.mustAgree':                             '필수 항목에 모두 동의해야 게임을 시작할 수 있습니다.',
+    'consent.error':                             '동의 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
 };

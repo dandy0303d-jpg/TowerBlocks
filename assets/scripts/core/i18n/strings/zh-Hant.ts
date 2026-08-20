@@ -227,4 +227,18 @@ export const ZH_HANT: Record<string, string> = {
     'gems.insufficient': '寶石不足\n需要 {need},目前 {have}',
     'gems.goTopUp':      '去儲值',
     'gems.cancel':       '取消',
+
+    // ---------- Consent modal (login-gate) ----------
+    'consent.title':                             '必須同意使用者條款和隱私權政策才能開始遊戲！',
+    'consent.agreeAll':                             '我同意全部條款',
+    'consent.tos.label':                             '同意服務條款',
+    'consent.privacy.label':                             '同意隱私權政策',
+    'consent.age.label':                             '我已滿 14 歲',
+    'consent.marketing.label':                             '同意接收行銷資訊',
+    'consent.required':                             '必選',
+    'consent.optional':                             '選填',
+    'consent.view':                             '檢視',
+    'consent.start':                             '同意並開始',
+    'consent.mustAgree':                             '必須同意所有必選項才能開始遊戲。',
+    'consent.error':                             '同意記錄失敗，請稍後再試。',
 };

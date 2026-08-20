@@ -229,4 +229,18 @@ export const JA: Record<string, string> = {
     'gems.insufficient': 'ジェム不足\n必要 {need}、所持 {have}',
     'gems.goTopUp':      'チャージへ',
     'gems.cancel':       'キャンセル',
+
+    // ---------- Consent modal (login-gate) ----------
+    'consent.title':                             'プレイするには利用規約およびプライバシーポリシーへの同意が必要です！',
+    'consent.agreeAll':                             'すべてに同意する',
+    'consent.tos.label':                             '利用規約に同意',
+    'consent.privacy.label':                             'プライバシーポリシーに同意',
+    'consent.age.label':                             '14歳以上です',
+    'consent.marketing.label':                             'マーケティング情報の受信に同意',
+    'consent.required':                             '必須',
+    'consent.optional':                             '任意',
+    'consent.view':                             '表示',
+    'consent.start':                             '同意して開始',
+    'consent.mustAgree':                             'ゲームを開始するには必須項目すべてに同意する必要があります。',
+    'consent.error':                             '同意の記録に失敗しました。しばらくしてから再試行してください。',
 };
