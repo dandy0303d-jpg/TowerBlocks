@@ -1,3 +1,4 @@
 /* English */
 CFBundleDisplayName = "Tetri Tower";
 CFBundleName = "Tetri Tower";
+NSUserTrackingUsageDescription = "Allow us to use an anonymous identifier to show more relevant ads. This does not affect gameplay.";

@@ -1,3 +1,4 @@
 /* Français - French */
 CFBundleDisplayName = "Vertige de Blocs";
 CFBundleName = "Vertige de Blocs";
+NSUserTrackingUsageDescription = "Autorisez-nous à utiliser un identifiant anonyme pour afficher des publicités plus pertinentes. Cela n'affecte pas le jeu.";
