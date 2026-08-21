@@ -155,11 +155,12 @@ else()
         "Then run manually: cd ${CMAKE_BINARY_DIR} && pod install")
 endif()
 
-# ---- StoreKit 2 + SIWA frameworks + Swift build settings ----
+# ---- StoreKit 2 + SIWA + ATT frameworks + Swift build settings ----
 target_link_libraries(${EXECUTABLE_NAME}
     "-framework StoreKit"
     "-framework AuthenticationServices"
     "-framework GameKit"
+    "-framework AppTrackingTransparency"
 )
 
 # The Swift-to-ObjC generated header is #import'ed from
