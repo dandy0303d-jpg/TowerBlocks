@@ -215,4 +215,17 @@ export const FR: Record<string, string> = {
     'consent.start':                             'Accepter et démarrer',
     'consent.mustAgree':                             'Vous devez accepter tous les éléments obligatoires pour démarrer.',
     'consent.error':                             'Échec de l\'enregistrement de votre accord. Veuillez réessayer.',
+
+    // ---------- Account recovery popup ----------
+    'settings.appleRecovery.confirm':                                       'Cet Apple ID est déjà lié à un autre compte. Touchez à nouveau pour restaurer',
+    'settings.appleRecovery.title':                                       'Restaurer le compte ?',
+    'settings.appleRecovery.desc':                                       'Cet Apple ID est déjà lié à un autre compte de jeu. En confirmant, vous passerez à ce compte et les données actuelles d\'invité (gemmes, progression) NE seront PAS conservées.',
+    'settings.appleRecovery.pending':                                       'Restauration...',
+    'settings.appleRecovery.failed':                                       'Échec de la restauration, réessayez',
+    'settings.appleRecovery.success':                                       'Compte restauré',
+    'settings.googleRecovery.title':                                       'Restaurer le compte ?',
+    'settings.googleRecovery.desc':                                       'Ce compte Google est déjà lié à un autre compte de jeu. En confirmant, vous passerez à ce compte et les données actuelles (gemmes, progression) NE seront PAS conservées.',
+    'settings.googleRecovery.pending':                                       'Restauration...',
+    'settings.googleRecovery.failed':                                       'Échec de la restauration, réessayez',
+    'settings.googleRecovery.success':                                       'Compte restauré',
 };
