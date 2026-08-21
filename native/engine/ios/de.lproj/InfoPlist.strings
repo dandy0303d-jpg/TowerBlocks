@@ -1,3 +1,4 @@
 /* Deutsch - German */
 CFBundleDisplayName = "Endloser Turm";
 CFBundleName = "Endloser Turm";
+NSUserTrackingUsageDescription = "Erlauben Sie uns, eine anonyme Kennung zu verwenden, um relevantere Werbung zu zeigen. Das Gameplay wird nicht beeinträchtigt.";

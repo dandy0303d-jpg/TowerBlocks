@@ -1,3 +1,4 @@
 /* 한국어 - Korean */
 CFBundleDisplayName = "테트리 타워";
 CFBundleName = "테트리 타워";
+NSUserTrackingUsageDescription = "맞춤형 광고를 위해 익명 식별자를 사용할 수 있도록 허용해 주세요. 게임 플레이에는 영향을 주지 않습니다.";

@@ -1,3 +1,4 @@
 /* 繁體中文 - Traditional Chinese (Taiwan / HK) */
 CFBundleDisplayName = "無盡塔方";
 CFBundleName = "無盡塔方";
+NSUserTrackingUsageDescription = "廣告個人化，請允許我們取得匿名識別碼以協助我們提供更相關的廣告。此項不會影響你玩遊戲。";
