@@ -200,6 +200,12 @@ set_target_properties(${EXECUTABLE_NAME} PROPERTIES
     # simpler than the per-variant syntax which older CMake versions
     # silently drop.
     XCODE_ATTRIBUTE_DEBUG_INFORMATION_FORMAT "dwarf-with-dsym"
+    # DEBUG_INFORMATION_FORMAT alone is NOT enough — Xcode Release
+    # template silently sets GCC_GENERATE_DEBUGGING_SYMBOLS=NO which
+    # short-circuits dwarf-with-dsym → no .dSYM in Archive → App Store
+    # Connect rejects upload with "The archive did not include a dSYM
+    # for the Tetri Tower.app". Force YES for ALL configs (Debug too).
+    XCODE_ATTRIBUTE_GCC_GENERATE_DEBUGGING_SYMBOLS "YES"
     # Persist the entitlements file across every Cocos regen. Without
     # this, Xcode's "Signing & Capabilities" panel resets on rebuild
     # and any manually-added capability (SIWA / Game Center / iCloud)
