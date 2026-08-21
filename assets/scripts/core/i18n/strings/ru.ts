@@ -23,7 +23,7 @@ export const RU: Record<string, string> = {
 
     'picker.title':      '⚡ Выбери 1 магический предмет',
     'picker.hint':       'Нажми для подтверждения · Цвет = Редкость',
-    'picker.refresh':    '🔄 Бесплатный реролл',
+    'picker.refresh':    '🔄 Бесплатный реролл ({n}/3)',
     'picker.adRefresh':  '🎬 Смотри рекламу для реролла',
     'rarity.common':     'Обычный',
     'rarity.uncommon':   'Необычный',
@@ -83,7 +83,7 @@ export const RU: Record<string, string> = {
     'shapeshifter.cancel':   'Отмена',
 
     'fate.modalTitle':   'Блок Судьбы',
-    'fate.reroll':       'Изменить судьбу',
+    'fate.reroll':       'Изменить судьбу ({n}/3)',
     'fate.start':        'Старт',
     'fate.cellCount':    '{n} клеток',
     'fate.endlessSub':   'Бесконечный',

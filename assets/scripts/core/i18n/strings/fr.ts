@@ -22,7 +22,7 @@ export const FR: Record<string, string> = {
 
     'picker.title':      '⚡ Choisis 1 objet magique',
     'picker.hint':       'Touche pour valider · Couleur = Rareté',
-    'picker.refresh':    '🔄 Reroll gratuit',
+    'picker.refresh':    '🔄 Reroll gratuit ({n}/3)',
     'picker.adRefresh':  '🎬 Voir pub pour rerroll',
     'rarity.common':     'Commun',
     'rarity.uncommon':   'Peu commun',
@@ -82,7 +82,7 @@ export const FR: Record<string, string> = {
     'shapeshifter.cancel':   'Annuler',
 
     'fate.modalTitle':   'Pièce du Destin',
-    'fate.reroll':       'Reroll du Destin',
+    'fate.reroll':       'Reroll du Destin ({n}/3)',
     'fate.start':        'Commencer',
     'fate.cellCount':    '{n} cases',
     'fate.endlessSub':   'Infini',

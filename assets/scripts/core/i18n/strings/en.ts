@@ -27,7 +27,7 @@ export const EN: Record<string, string> = {
     // ---------- Picker ----------
     'picker.title':      '⚡ Pick a Magic Item',
     'picker.hint':       'Tap to confirm · Colour = Rarity',
-    'picker.refresh':    '🔄 Free Reroll ({n})',
+    'picker.refresh':    '🔄 Free Reroll ({n}/3)',
     'picker.adRefresh':  '🎬 Watch Ad to Reroll',
     'picker.adRefresh.failed': 'Ad unavailable, try again later',
     'rarity.common':     'Common',
@@ -92,7 +92,7 @@ export const EN: Record<string, string> = {
 
     // ---------- Fate piece modal ----------
     'fate.modalTitle':   'Fate Piece',
-    'fate.reroll':       'Reroll Fate ({n})',
+    'fate.reroll':       'Reroll Fate ({n}/3)',
     'fate.reroll.ad':    '🎬 Watch Ad to Reroll',
     'fate.start':        'Start',
     'fate.cellCount':    '{n} cells',

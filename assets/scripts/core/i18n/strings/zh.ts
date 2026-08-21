@@ -30,7 +30,7 @@ export const ZH: Record<string, string> = {
     // ---------- 道具卡 / Picker ----------
     'picker.title':      '⚡ 选 1 个魔法道具',
     'picker.hint':       '点击卡片确认 · 颜色 = 稀有度',
-    'picker.refresh':    '🔄 免费刷新 ({n})',
+    'picker.refresh':    '🔄 免费刷新 ({n}/3)',
     'picker.adRefresh':  '🎬 看广告再刷一次',
     'picker.adRefresh.failed': '广告加载失败，请稍后再试',
     'rarity.common':     '普通',
@@ -95,7 +95,7 @@ export const ZH: Record<string, string> = {
 
     // ---------- 本命方块弹窗 ----------
     'fate.modalTitle':   '本命方块',
-    'fate.reroll':       '逆天改命 ({n})',
+    'fate.reroll':       '逆天改命 ({n}/3)',
     'fate.reroll.ad':    '🎬 看广告改命',
     'fate.start':        '直接开始',
     'fate.cellCount':    '共 {n} 格',
