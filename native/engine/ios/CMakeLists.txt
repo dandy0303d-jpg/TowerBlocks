@@ -83,6 +83,22 @@ list(APPEND CC_ALL_SOURCES ${PRIVACY_MANIFEST})
 set_source_files_properties(${PRIVACY_MANIFEST} PROPERTIES
     MACOSX_PACKAGE_LOCATION "Resources")
 
+# Localized InfoPlist.strings — one per language. Each file overrides
+# CFBundleDisplayName / CFBundleName so iOS shows the localized game
+# name on the Home Screen based on the device's system language.
+# Base.lproj is auto-picked up by Cocos (LaunchScreen.storyboard is
+# referenced from Info.plist), so we only need to declare the localized
+# variants explicitly here.
+set(INFO_PLIST_LOCALIZATIONS
+    ko en ja zh-Hans zh-Hant es fr pt-BR de ru
+)
+foreach(LANG IN LISTS INFO_PLIST_LOCALIZATIONS)
+    set(STRINGS_FILE ${CC_PROJECT_DIR}/${LANG}.lproj/InfoPlist.strings)
+    list(APPEND CC_ALL_SOURCES ${STRINGS_FILE})
+    set_source_files_properties(${STRINGS_FILE} PROPERTIES
+        MACOSX_PACKAGE_LOCATION "Resources/${LANG}.lproj")
+endforeach()
+
 cc_ios_before_target(${EXECUTABLE_NAME})
 add_executable(${EXECUTABLE_NAME} ${CC_ALL_SOURCES})
 cc_ios_after_target(${EXECUTABLE_NAME})
