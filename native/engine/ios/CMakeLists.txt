@@ -84,24 +84,42 @@ set_source_files_properties(${PRIVACY_MANIFEST} PROPERTIES
     MACOSX_PACKAGE_LOCATION "Resources")
 
 # Localized InfoPlist.strings — one per language. Each file overrides
-# CFBundleDisplayName / CFBundleName so iOS shows the localized game
-# name on the Home Screen based on the device's system language.
-# Base.lproj is auto-picked up by Cocos (LaunchScreen.storyboard is
-# referenced from Info.plist), so we only need to declare the localized
-# variants explicitly here.
+# CFBundleDisplayName / CFBundleName / NSUserTrackingUsageDescription
+# so iOS shows the localized game name on the Home Screen + localized
+# ATT prompt copy based on device language.
+#
+# NOTE: we don't use `MACOSX_PACKAGE_LOCATION` here because CMake's
+# Xcode generator + the fact these files live under `<lang>.lproj/`
+# on disk causes double-nesting (`.app/ko.lproj/ko.lproj/InfoPlist.strings`).
+# POST_BUILD copy is straightforward and bypasses Xcode's PBXVariantGroup
+# logic entirely.
 set(INFO_PLIST_LOCALIZATIONS
     ko en ja zh-Hans zh-Hant es fr pt-BR de ru
 )
-foreach(LANG IN LISTS INFO_PLIST_LOCALIZATIONS)
-    set(STRINGS_FILE ${CC_PROJECT_DIR}/${LANG}.lproj/InfoPlist.strings)
-    list(APPEND CC_ALL_SOURCES ${STRINGS_FILE})
-    set_source_files_properties(${STRINGS_FILE} PROPERTIES
-        MACOSX_PACKAGE_LOCATION "Resources/${LANG}.lproj")
-endforeach()
 
 cc_ios_before_target(${EXECUTABLE_NAME})
 add_executable(${EXECUTABLE_NAME} ${CC_ALL_SOURCES})
 cc_ios_after_target(${EXECUTABLE_NAME})
+
+# POST_BUILD: copy each <lang>.lproj folder into the built .app bundle.
+# Uses Xcode's build-time env vars ($TARGET_BUILD_DIR + $WRAPPER_NAME) —
+# NOT CMake's $<TARGET_BUNDLE_DIR:...> generator expression, which bakes
+# in the wrong SYMROOT path (`build/ios-release/proj/Debug…`) when Xcode
+# actually builds into DerivedData. Escaping the $ preserves the literal
+# ${...} in the generated pbxproj so Xcode evaluates it at build time.
+foreach(LANG IN LISTS INFO_PLIST_LOCALIZATIONS)
+    # `\$` is a CMake-literal `$` (won't be expanded as CMake variable).
+    # `${LANG}` still gets expanded by CMake. Result string is:
+    #   ${TARGET_BUILD_DIR}/${WRAPPER_NAME}/ko.lproj
+    # which Xcode evaluates as shell env vars at build time.
+    # No VERBATIM here — otherwise CMake shell-escapes `$` into `\$`.
+    add_custom_command(TARGET ${EXECUTABLE_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${CC_PROJECT_DIR}/${LANG}.lproj"
+            "\${TARGET_BUILD_DIR}/\${WRAPPER_NAME}/${LANG}.lproj"
+        COMMENT "Copying ${LANG}.lproj into .app bundle"
+    )
+endforeach()
 
 # ---- CocoaPods integration for AdMob ----
 # Copy the source-controlled Podfile into the generated project dir
