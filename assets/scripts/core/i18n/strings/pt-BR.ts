@@ -221,4 +221,17 @@ export const PT_BR: Record<string, string> = {
     'consent.start':                             'Concordar e iniciar',
     'consent.mustAgree':                             'Você deve concordar com todos os itens obrigatórios para iniciar.',
     'consent.error':                             'Falha ao registrar sua concordância. Tente novamente.',
+
+    // ---------- Account recovery popup ----------
+    'settings.appleRecovery.confirm':                                       'Este Apple ID está vinculado a outra conta. Toque novamente para restaurar',
+    'settings.appleRecovery.title':                                       'Restaurar conta?',
+    'settings.appleRecovery.desc':                                       'Este Apple ID já está vinculado a outra conta do jogo. Ao confirmar, você mudará para essa conta e os dados atuais de convidado (diamantes, progresso) NÃO serão transferidos.',
+    'settings.appleRecovery.pending':                                       'Restaurando...',
+    'settings.appleRecovery.failed':                                       'Falha na restauração, tente novamente',
+    'settings.appleRecovery.success':                                       'Conta restaurada',
+    'settings.googleRecovery.title':                                       'Restaurar conta?',
+    'settings.googleRecovery.desc':                                       'Esta conta do Google já está vinculada a outra conta do jogo. Ao confirmar, você mudará para essa conta e os dados atuais (diamantes, progresso) NÃO serão transferidos.',
+    'settings.googleRecovery.pending':                                       'Restaurando...',
+    'settings.googleRecovery.failed':                                       'Falha na restauração, tente novamente',
+    'settings.googleRecovery.success':                                       'Conta restaurada',
 };

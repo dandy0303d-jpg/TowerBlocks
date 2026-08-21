@@ -217,4 +217,17 @@ export const DE: Record<string, string> = {
     'consent.start':                             'Zustimmen und starten',
     'consent.mustAgree':                             'Sie müssen allen erforderlichen Punkten zustimmen, um zu starten.',
     'consent.error':                             'Zustimmung konnte nicht gespeichert werden. Bitte erneut versuchen.',
+
+    // ---------- Account recovery popup ----------
+    'settings.appleRecovery.confirm':                                       'Diese Apple ID ist mit einem anderen Konto verknüpft. Nochmal tippen zum Wiederherstellen',
+    'settings.appleRecovery.title':                                       'Konto wiederherstellen?',
+    'settings.appleRecovery.desc':                                       'Diese Apple ID ist bereits mit einem anderen Spielkonto verknüpft. Bei Bestätigung wechseln Sie zu diesem Konto und die aktuellen Gastdaten (Diamanten, Fortschritt) werden NICHT übernommen.',
+    'settings.appleRecovery.pending':                                       'Wird wiederhergestellt...',
+    'settings.appleRecovery.failed':                                       'Wiederherstellung fehlgeschlagen, bitte erneut versuchen',
+    'settings.appleRecovery.success':                                       'Konto wiederhergestellt',
+    'settings.googleRecovery.title':                                       'Konto wiederherstellen?',
+    'settings.googleRecovery.desc':                                       'Dieses Google-Konto ist bereits mit einem anderen Spielkonto verknüpft. Bei Bestätigung wechseln Sie zu diesem Konto und die aktuellen Daten (Diamanten, Fortschritt) werden NICHT übernommen.',
+    'settings.googleRecovery.pending':                                       'Wird wiederhergestellt...',
+    'settings.googleRecovery.failed':                                       'Wiederherstellung fehlgeschlagen, bitte erneut versuchen',
+    'settings.googleRecovery.success':                                       'Konto wiederhergestellt',
 };

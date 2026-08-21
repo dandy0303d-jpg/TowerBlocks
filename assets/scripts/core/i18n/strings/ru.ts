@@ -216,4 +216,17 @@ export const RU: Record<string, string> = {
     'consent.start':                             'Принять и начать',
     'consent.mustAgree':                             'Чтобы начать игру, необходимо принять все обязательные пункты.',
     'consent.error':                             'Не удалось записать согласие. Попробуйте ещё раз.',
+
+    // ---------- Account recovery popup ----------
+    'settings.appleRecovery.confirm':                                       'Этот Apple ID уже связан с другим аккаунтом. Нажмите ещё раз для восстановления',
+    'settings.appleRecovery.title':                                       'Восстановить аккаунт?',
+    'settings.appleRecovery.desc':                                       'Этот Apple ID уже связан с другой игровой учётной записью. При подтверждении вы переключитесь на неё, и данные текущего гостя (алмазы, прогресс) НЕ будут перенесены.',
+    'settings.appleRecovery.pending':                                       'Восстановление...',
+    'settings.appleRecovery.failed':                                       'Ошибка восстановления, попробуйте ещё раз',
+    'settings.appleRecovery.success':                                       'Аккаунт восстановлен',
+    'settings.googleRecovery.title':                                       'Восстановить аккаунт?',
+    'settings.googleRecovery.desc':                                       'Этот аккаунт Google уже связан с другой игровой учётной записью. При подтверждении вы переключитесь на неё, и данные текущей учётной записи (алмазы, прогресс) НЕ будут перенесены.',
+    'settings.googleRecovery.pending':                                       'Восстановление...',
+    'settings.googleRecovery.failed':                                       'Ошибка восстановления, попробуйте ещё раз',
+    'settings.googleRecovery.success':                                       'Аккаунт восстановлен',
 };
