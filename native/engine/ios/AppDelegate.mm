@@ -42,6 +42,7 @@
 // #import "service/ads/AppLovinBridgeGlue.h"
 #import "service/ads/AdMobBridgeGlue.h"
 #import "service/ClipboardBridgeGlue.h"
+#import <AppTrackingTransparency/AppTrackingTransparency.h>
 
 @implementation AppDelegate
 @synthesize window;
@@ -103,6 +104,30 @@
     // with credentials on boot; the SDK initialises asynchronously
     // and starts loading the first ad slots.
     [AdMobBridgeGlue registerWithCocos];
+
+    // Request App Tracking Transparency (ATT) permission ~1 s after
+    // launch. Apple guideline: don't fire ATT immediately at boot —
+    // wait until UI has settled so the system sheet doesn't compete
+    // with launch animation. Without this call, AdMob can only serve
+    // non-personalized ads and IDFA stays zeroed.
+    // The prompt localizes via NSUserTrackingUsageDescription in
+    // each .lproj/InfoPlist.strings (already set up).
+    if (@available(iOS 14.0, *)) {
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(1.0 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            [ATTrackingManager requestTrackingAuthorizationWithCompletionHandler:^(ATTrackingManagerAuthorizationStatus status) {
+                NSString *statusName;
+                switch (status) {
+                    case ATTrackingManagerAuthorizationStatusAuthorized:    statusName = @"authorized"; break;
+                    case ATTrackingManagerAuthorizationStatusDenied:        statusName = @"denied"; break;
+                    case ATTrackingManagerAuthorizationStatusRestricted:    statusName = @"restricted"; break;
+                    case ATTrackingManagerAuthorizationStatusNotDetermined: statusName = @"notDetermined"; break;
+                    default:                                                statusName = @"unknown"; break;
+                }
+                NSLog(@"[ATT] tracking authorization status = %@", statusName);
+            }];
+        });
+    }
 
     return YES;
 }
