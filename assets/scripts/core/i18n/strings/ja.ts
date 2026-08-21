@@ -243,4 +243,17 @@ export const JA: Record<string, string> = {
     'consent.start':                             '同意して開始',
     'consent.mustAgree':                             'ゲームを開始するには必須項目すべてに同意する必要があります。',
     'consent.error':                             '同意の記録に失敗しました。しばらくしてから再試行してください。',
+
+    // ---------- Account recovery popup ----------
+    'settings.appleRecovery.confirm':                                       'この Apple ID は別のアカウントに連携されています。もう一度タップで復元',
+    'settings.appleRecovery.title':                                       'アカウントを復元しますか？',
+    'settings.appleRecovery.desc':                                       'この Apple ID は既に別のゲームアカウントに連携されています。確定するとそのアカウントに切り替わり、現在のゲストデータ（ダイヤモンド、進行状況）は引き継がれません。',
+    'settings.appleRecovery.pending':                                       '復元中...',
+    'settings.appleRecovery.failed':                                       '復元失敗、再試行してください',
+    'settings.appleRecovery.success':                                       'アカウントを復元しました',
+    'settings.googleRecovery.title':                                       'アカウントを復元しますか？',
+    'settings.googleRecovery.desc':                                       'この Google アカウントは既に別のゲームアカウントに連携されています。確定するとそのアカウントに切り替わり、現在のゲストデータ（ダイヤモンド、進行状況）は引き継がれません。',
+    'settings.googleRecovery.pending':                                       '復元中...',
+    'settings.googleRecovery.failed':                                       '復元失敗、再試行してください',
+    'settings.googleRecovery.success':                                       'アカウントを復元しました',
 };

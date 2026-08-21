@@ -241,4 +241,17 @@ export const ZH_HANT: Record<string, string> = {
     'consent.start':                             '同意並開始',
     'consent.mustAgree':                             '必須同意所有必選項才能開始遊戲。',
     'consent.error':                             '同意記錄失敗，請稍後再試。',
+
+    // ---------- Account recovery popup ----------
+    'settings.appleRecovery.confirm':                                       '此 Apple 已綁其他帳號，再點確認恢復',
+    'settings.appleRecovery.title':                                       '恢復帳號？',
+    'settings.appleRecovery.desc':                                       '此 Apple ID 已綁定另一個遊戲帳號。確認後將切換到該已綁定帳號，原訪客帳號的資料（鑽石、進度）不會帶過去。',
+    'settings.appleRecovery.pending':                                       '恢復中...',
+    'settings.appleRecovery.failed':                                       '恢復失敗，請重試',
+    'settings.appleRecovery.success':                                       '帳號已恢復',
+    'settings.googleRecovery.title':                                       '恢復帳號？',
+    'settings.googleRecovery.desc':                                       '此 Google 帳號已綁定另一個遊戲帳號。確認後將切換到該已綁定帳號，原訪客帳號的資料（鑽石、進度）不會帶過去。',
+    'settings.googleRecovery.pending':                                       '恢復中...',
+    'settings.googleRecovery.failed':                                       '恢復失敗，請重試',
+    'settings.googleRecovery.success':                                       '帳號已恢復',
 };

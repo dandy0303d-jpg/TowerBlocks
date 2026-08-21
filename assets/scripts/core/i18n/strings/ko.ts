@@ -220,6 +220,10 @@ export const KO: Record<string, string> = {
     'settings.deleteAccount.failed':  '삭제 실패, 다시 시도',
     'settings.tos':     '이용약관',
     'settings.privacy': '개인정보 처리방침',
+    'settings.deleteAccount':          '계정 삭제',
+    'settings.deleteAccount.confirm':  '삭제하려면 다시 탭하세요',
+    'settings.deleteAccount.pending':  '삭제 중...',
+    'settings.deleteAccount.failed':   '삭제 실패, 다시 시도',
     // 다이아 부족 팝업
     'gems.insufficient': '다이아가 부족합니다\n필요 {need}, 보유 {have}',
     'gems.goTopUp':      '충전하러 가기',
@@ -238,4 +242,17 @@ export const KO: Record<string, string> = {
     'consent.start':                             '동의하고 시작하기',
     'consent.mustAgree':                             '필수 항목에 모두 동의해야 게임을 시작할 수 있습니다.',
     'consent.error':                             '동의 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
+
+    // ---------- Account recovery popup ----------
+    'settings.appleRecovery.confirm':                                       '이 Apple 계정은 다른 계정과 연결됨. 다시 탭하여 복구',
+    'settings.appleRecovery.title':                                       '계정을 복구할까요?',
+    'settings.appleRecovery.desc':                                       '이 Apple ID는 이미 다른 게임 계정에 연결되어 있습니다. 확인 시 해당 계정으로 전환되며, 현재 게스트 계정의 데이터(다이아몬드, 진행도)는 유지되지 않습니다.',
+    'settings.appleRecovery.pending':                                       '복구 중...',
+    'settings.appleRecovery.failed':                                       '복구 실패, 다시 시도',
+    'settings.appleRecovery.success':                                       '계정 복구 완료',
+    'settings.googleRecovery.title':                                       '계정을 복구할까요?',
+    'settings.googleRecovery.desc':                                       '이 Google 계정은 이미 다른 게임 계정에 연결되어 있습니다. 확인 시 해당 계정으로 전환되며, 현재 게스트 계정의 데이터(다이아몬드, 진행도)는 유지되지 않습니다.',
+    'settings.googleRecovery.pending':                                       '복구 중...',
+    'settings.googleRecovery.failed':                                       '복구 실패, 다시 시도',
+    'settings.googleRecovery.success':                                       '계정 복구 완료',
 };
