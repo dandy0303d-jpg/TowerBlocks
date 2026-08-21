@@ -26,7 +26,7 @@ export const KO: Record<string, string> = {
     // ---------- Picker ----------
     'picker.title':      '⚡ 마법 아이템을 1개 선택',
     'picker.hint':       '카드를 탭하여 확인 · 색상 = 등급',
-    'picker.refresh':    '🔄 무료 리롤',
+    'picker.refresh':    '🔄 무료 리롤 ({n}/3)',
     'picker.adRefresh':  '🎬 광고 보고 한 번 더',
     'rarity.common':     '일반',
     'rarity.uncommon':   '고급',
@@ -101,7 +101,7 @@ export const KO: Record<string, string> = {
 
     // ---------- Fate piece modal ----------
     'fate.modalTitle':   '운명의 블록',
-    'fate.reroll':       '운명을 바꿔라',
+    'fate.reroll':       '운명을 바꿔라 ({n}/3)',
     'fate.start':        '시작',
     'fate.cellCount':    '{n}칸',
     'fate.endlessSub':   '무한 모드',

@@ -27,8 +27,9 @@ export const EN: Record<string, string> = {
     // ---------- Picker ----------
     'picker.title':      '⚡ Pick a Magic Item',
     'picker.hint':       'Tap to confirm · Colour = Rarity',
-    'picker.refresh':    '🔄 Free Reroll',
+    'picker.refresh':    '🔄 Free Reroll ({n}/3)',
     'picker.adRefresh':  '🎬 Watch Ad to Reroll',
+    'picker.adRefresh.failed': 'Ad unavailable, try again later',
     'rarity.common':     'Common',
     'rarity.uncommon':   'Uncommon',
     'rarity.rare':       'Rare',
@@ -91,7 +92,8 @@ export const EN: Record<string, string> = {
 
     // ---------- Fate piece modal ----------
     'fate.modalTitle':   'Fate Piece',
-    'fate.reroll':       'Reroll Fate',
+    'fate.reroll':       'Reroll Fate ({n}/3)',
+    'fate.reroll.ad':    '🎬 Watch Ad to Reroll',
     'fate.start':        'Start',
     'fate.cellCount':    '{n} cells',
     'fate.endlessSub':   'Endless',
@@ -99,6 +101,7 @@ export const EN: Record<string, string> = {
     'fate.endlessMid':   'Endless · Layer {layer}',
     'fate.subtitle':     '{tag} · {n} cells',
     'fate.hint':         'Reroll: watch an ad to swap for a random fate piece',
+    'fate.reroll.failed':'Ad unavailable, try again later',
 
     // ---------- Collect mode ----------
     'collect.header':    'Collect Goals',
@@ -196,6 +199,7 @@ export const EN: Record<string, string> = {
     'settings.keys.off':     'Off',
     'settings.bgm':          'Music',
     'settings.sfx':          'Sound FX',
+    'settings.haptic':       'Haptics',
     'settings.close':        'Close',
     'audio.off':             'Off',
     'audio.percent':         '{n}%',
@@ -207,11 +211,23 @@ export const EN: Record<string, string> = {
     'settings.account.copyFailed':  'Copy failed',
     'settings.nickname.tooLong':     'Nickname must be at most {n} characters',
     'settings.nickname.title':       'Edit Nickname',
+    'settings.nickname.cooldown':    '{n} day(s) until you can change again',
+    'settings.nickname.cooldownReady':'You can change now (7-day cooldown after)',
     'settings.nickname.placeholder': 'Enter a new nickname',
+    'settings.nickname.profanity':   'Nickname contains prohibited words',
+    'settings.nickname.reserved':    'That nickname is reserved',
+    'settings.nickname.tooShort':    'Nickname too short',
+    'settings.nickname.tooLongServer':'Nickname too long',
+    'settings.nickname.rejected':    'Invalid nickname, try another',
 
     // ---------- Common modal buttons ----------
     'common.confirm':    'Confirm',
     'common.cancel':     'Cancel',
+
+    // ---------- Account banned ----------
+    'banned.title':      'Account Banned',
+    'banned.desc':       'This account has been banned. Reason: {reason}\n\nContact support if you believe this is a mistake.',
+    'banned.ok':         'OK',
 
     // ---------- Account deletion (App Store 5.1.1(v) required) ----------
     'settings.deleteAccount':         'Delete Account',
@@ -221,6 +237,26 @@ export const EN: Record<string, string> = {
     'settings.deleteAccount.failed':  'Delete failed, please retry',
     'settings.tos':     'Terms of Service',
     'settings.privacy': 'Privacy Policy',
+    'settings.deleteAccount':          'Delete Account',
+    'settings.deleteAccount.confirm':  'Tap again to confirm delete',
+    'settings.deleteAccount.pending':  'Deleting...',
+    'settings.deleteAccount.failed':   'Delete failed, try again',
+    'settings.appleRecovery.confirm':  'This Apple ID is linked elsewhere. Tap again to restore',
+    'settings.appleRecovery.title':    'Restore account?',
+    'settings.appleRecovery.desc':     'This Apple ID is already linked to another game account. Confirming will switch to that account. Your current guest data (gems, progress) will NOT be carried over.',
+    'settings.appleRecovery.pending':  'Restoring...',
+    'settings.appleRecovery.failed':   'Restore failed, try again',
+    'settings.appleRecovery.success':  'Account restored',
+    // Bind toasts
+    'settings.bind.success':           'Account linked',
+    'settings.bind.failed':            'Link failed, try again',
+    'settings.bind.cancelled':         'Sign-in cancelled',
+    // Google account recovery
+    'settings.googleRecovery.title':   'Restore account?',
+    'settings.googleRecovery.desc':    'This Google account is already linked to another game account. Confirming will switch to that account. Your current guest data (gems, progress) will NOT be carried over.',
+    'settings.googleRecovery.pending': 'Restoring...',
+    'settings.googleRecovery.failed':  'Restore failed, try again',
+    'settings.googleRecovery.success': 'Account restored',
     // Not-enough-gems popup
     'gems.insufficient': 'Not enough gems\nNeed {need}, have {have}',
     'gems.goTopUp':      'Top Up',

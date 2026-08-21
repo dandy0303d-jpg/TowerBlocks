@@ -27,7 +27,7 @@ export const PT_BR: Record<string, string> = {
     // ---------- Picker ----------
     'picker.title':      '⚡ Escolha 1 item mágico',
     'picker.hint':       'Toque para confirmar · Cor = Raridade',
-    'picker.refresh':    '🔄 Reroll grátis',
+    'picker.refresh':    '🔄 Reroll grátis ({n}/3)',
     'picker.adRefresh':  '🎬 Assista o anúncio e faça reroll',
     'rarity.common':     'Comum',
     'rarity.uncommon':   'Incomum',
@@ -88,7 +88,7 @@ export const PT_BR: Record<string, string> = {
     'shapeshifter.cancel':   'Cancelar',
 
     'fate.modalTitle':   'Peça do Destino',
-    'fate.reroll':       'Reroll do Destino',
+    'fate.reroll':       'Reroll do Destino ({n}/3)',
     'fate.start':        'Começar',
     'fate.cellCount':    '{n} células',
     'fate.endlessSub':   'Infinito',

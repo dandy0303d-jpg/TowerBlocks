@@ -30,8 +30,9 @@ export const ZH: Record<string, string> = {
     // ---------- 道具卡 / Picker ----------
     'picker.title':      '⚡ 选 1 个魔法道具',
     'picker.hint':       '点击卡片确认 · 颜色 = 稀有度',
-    'picker.refresh':    '🔄 免费刷新',
+    'picker.refresh':    '🔄 免费刷新 ({n}/3)',
     'picker.adRefresh':  '🎬 看广告再刷一次',
+    'picker.adRefresh.failed': '广告加载失败，请稍后再试',
     'rarity.common':     '普通',
     'rarity.uncommon':   '少见',
     'rarity.rare':       '稀有',
@@ -94,7 +95,8 @@ export const ZH: Record<string, string> = {
 
     // ---------- 本命方块弹窗 ----------
     'fate.modalTitle':   '本命方块',
-    'fate.reroll':       '逆天改命',
+    'fate.reroll':       '逆天改命 ({n}/3)',
+    'fate.reroll.ad':    '🎬 看广告改命',
     'fate.start':        '直接开始',
     'fate.cellCount':    '共 {n} 格',
     'fate.endlessSub':   '无尽模式',
@@ -102,6 +104,7 @@ export const ZH: Record<string, string> = {
     'fate.endlessMid':   '无尽模式 · {layer} 层',
     'fate.subtitle':     '{tag} · 共 {n} 格',
     'fate.hint':         '逆天改命：观看广告随机换一个本命方块',
+    'fate.reroll.failed':'广告加载失败，请稍后再试',
 
     // ---------- 收集模式 ----------
     'collect.header':    '收集目标',
@@ -200,6 +203,7 @@ export const ZH: Record<string, string> = {
     'settings.keys.off':     '关',
     'settings.bgm':          '背景音乐',
     'settings.sfx':          '音效',
+    'settings.haptic':       '震动',
     'settings.close':        '关闭',
     'audio.off':             '关',
     'audio.percent':         '{n}%',
@@ -212,11 +216,23 @@ export const ZH: Record<string, string> = {
     'settings.account.copyFailed':  '复制失败',
     'settings.nickname.tooLong':     '昵称最多 {n} 个字符',
     'settings.nickname.title':       '修改昵称',
+    'settings.nickname.cooldown':    '距下次可修改还有 {n} 天',
+    'settings.nickname.cooldownReady':'现在可以修改（下次修改需等 7 天）',
     'settings.nickname.placeholder': '输入新昵称',
+    'settings.nickname.profanity':   '昵称含违禁词，请换一个',
+    'settings.nickname.reserved':    '此昵称为系统保留，请换一个',
+    'settings.nickname.tooShort':    '昵称太短',
+    'settings.nickname.tooLongServer':'昵称太长',
+    'settings.nickname.rejected':    '昵称不合法，请换一个',
 
     // ---------- Common modal buttons ----------
     'common.confirm':    '确认',
     'common.cancel':     '取消',
+
+    // ---------- 账号封禁 ----------
+    'banned.title':      '账号已封禁',
+    'banned.desc':       '此账号已被封禁。原因：{reason}\n\n如有疑问请联系客服。',
+    'banned.ok':         '我知道了',
 
     // ---------- 删除账号 (App Store 5.1.1(v) 硬性要求) ----------
     'settings.deleteAccount':         '删除账号',
@@ -227,6 +243,26 @@ export const ZH: Record<string, string> = {
 
     'settings.tos':     '服务条款',
     'settings.privacy': '隐私政策',
+    'settings.deleteAccount':          '删除账号',
+    'settings.deleteAccount.confirm':  '再次点击确认删除',
+    'settings.deleteAccount.pending':  '删除中...',
+    'settings.deleteAccount.failed':   '删除失败，请重试',
+    'settings.appleRecovery.confirm':  '此 Apple 已绑其他账号，再点确认恢复',
+    'settings.appleRecovery.title':    '恢复账号？',
+    'settings.appleRecovery.desc':     '此 Apple ID 已绑定另一个游戏账号。确认后当前游客账号将切换到该已绑定账号，原游客数据（钻石、进度）不会带过去。',
+    'settings.appleRecovery.pending':  '恢复中...',
+    'settings.appleRecovery.failed':   '恢复失败，请重试',
+    'settings.appleRecovery.success':  '账号恢复成功',
+    // 绑定 Toast
+    'settings.bind.success':           '账号已绑定',
+    'settings.bind.failed':            '绑定失败，请重试',
+    'settings.bind.cancelled':         '已取消登录',
+    // Google 账号恢复
+    'settings.googleRecovery.title':   '恢复账号？',
+    'settings.googleRecovery.desc':    '此 Google 账号已绑定另一个游戏账号。确认后当前账号将切换到该已绑定账号，原游客数据（钻石、进度）不会带过去。',
+    'settings.googleRecovery.pending': '恢复中...',
+    'settings.googleRecovery.failed':  '恢复失败，请重试',
+    'settings.googleRecovery.success': '账号恢复成功',
     // 钻石不足弹窗
     'gems.insufficient': '钻石不足\n需要 {need}，当前 {have}',
     'gems.goTopUp':      '去充值',

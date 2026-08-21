@@ -24,7 +24,7 @@ export const DE: Record<string, string> = {
 
     'picker.title':      '⚡ Wähle 1 Zauberitem',
     'picker.hint':       'Tippen zum Bestätigen · Farbe = Seltenheit',
-    'picker.refresh':    '🔄 Kostenloser Reroll',
+    'picker.refresh':    '🔄 Kostenloser Reroll ({n}/3)',
     'picker.adRefresh':  '🎬 Werbung ansehen für Reroll',
     'rarity.common':     'Gewöhnlich',
     'rarity.uncommon':   'Ungewöhnlich',
@@ -84,7 +84,7 @@ export const DE: Record<string, string> = {
     'shapeshifter.cancel':   'Abbrechen',
 
     'fate.modalTitle':   'Schicksalsblock',
-    'fate.reroll':       'Schicksal ändern',
+    'fate.reroll':       'Schicksal ändern ({n}/3)',
     'fate.start':        'Start',
     'fate.cellCount':    '{n} Felder',
     'fate.endlessSub':   'Endlos',

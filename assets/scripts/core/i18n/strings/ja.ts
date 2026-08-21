@@ -31,7 +31,7 @@ export const JA: Record<string, string> = {
     // ---------- アイテムピッカー ----------
     'picker.title':      '⚡ 魔法アイテムを 1 つ選択',
     'picker.hint':       'タップして確定 · 色 = レア度',
-    'picker.refresh':    '🔄 無料リロール',
+    'picker.refresh':    '🔄 無料リロール ({n}/3)',
     'picker.adRefresh':  '🎬 広告視聴でもう一度',
     'rarity.common':     'ノーマル',
     'rarity.uncommon':   'アンコモン',
@@ -95,7 +95,7 @@ export const JA: Record<string, string> = {
 
     // ---------- 運命ブロックダイアログ ----------
     'fate.modalTitle':   '運命のブロック',
-    'fate.reroll':       '運命を変える',
+    'fate.reroll':       '運命を変える ({n}/3)',
     'fate.start':        'スタート',
     'fate.cellCount':    '{n} マス',
     'fate.endlessSub':   'エンドレス',
