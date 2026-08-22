@@ -31,6 +31,7 @@ import { LevelSelectStage3D } from './LevelSelectStage3D';
 import { LeaderboardController } from './LeaderboardController';
 import { TopUpController } from './TopUpController';
 import { LevelProgress } from '../core/LevelProgress';
+import { PlayerProfile } from '../core/PlayerProfile';
 import { t, initFromSystemLang } from '../core/i18n/I18n';
 // Channel boot side-effect — registers StoreKitProvider on iOS.
 // Module load runs before LoadingController.start(), so Providers.purchase
@@ -197,24 +198,49 @@ export class LoadingController extends Component {
     }
 
     private beginBootFrame3(startTs: number): void {
-        console.log('[Loading] beginBoot frame 3 — tower prebuild');
-        try {
-            if (this.levelStage3D) {
-                this.levelStage3D.node.active = true;
-                const startIdx = LevelProgress.currentIdx ?? 0;
-                this.levelStage3D.prebuild(startIdx);
-                console.log(`[Loading] levelStage3D prebuild done (idx=${startIdx})`);
-            } else {
-                console.warn('[Loading] levelStage3D is null — skipping tower prebuild');
+        // Auth pipeline runs BEFORE tower prebuild so the tower is
+        // built at the RIGHT idx first time — otherwise a re-installed
+        // player on level 7 gets a tower prebuilt for level 1, then
+        // the collapse+rebuild fires when they tap 关卡模式.
+        console.log('[Loading] beginBoot frame 3 — auth + profile fetch → tower prebuild');
+        void (async () => {
+            try {
+                await PlayerProfile.ensureRegistered();
+                console.log('[Loading] ensureRegistered done');
+            } catch (e) {
+                console.warn('[Loading] ensureRegistered failed:', (e as Error).message);
             }
-        } catch (err) {
-            console.error('[Loading] levelStage3D prebuild THREW:', err);
-        }
-        this.setProgress(0.3);
-        // Frame 3b: leaderboard preload (500 row Prefab instantiations).
-        // Separate frame so the tower prebuild has its own render slot
-        // and the loading progress bar visibly ticks between them.
-        setTimeout(() => this.beginBootFrame3b(startTs), 16);
+            try {
+                const p = await PlayerProfile.fetchProfile();
+                const clearedCount = p?.bestScores?.level ?? 0;
+                if (clearedCount > 0) {
+                    const serverIdx = clearedCount - 1;
+                    const localIdx = LevelProgress.maxClearedIdx;
+                    if (serverIdx > localIdx) {
+                        LevelProgress.restoreFrom(serverIdx);
+                        console.log(`[Loading] LevelProgress restored ${localIdx} -> ${serverIdx}`);
+                    }
+                }
+                console.log(`[Loading] fetchProfile done — bestScores=${JSON.stringify(p?.bestScores)}`);
+            } catch (e) {
+                console.warn('[Loading] fetchProfile failed:', (e as Error).message);
+            }
+            // Now prebuild with the correct (server-restored) idx.
+            try {
+                if (this.levelStage3D) {
+                    this.levelStage3D.node.active = true;
+                    const startIdx = LevelProgress.currentIdx ?? 0;
+                    this.levelStage3D.prebuild(startIdx);
+                    console.log(`[Loading] levelStage3D prebuild done (idx=${startIdx})`);
+                } else {
+                    console.warn('[Loading] levelStage3D is null — skipping tower prebuild');
+                }
+            } catch (err) {
+                console.error('[Loading] levelStage3D prebuild THREW:', err);
+            }
+            this.setProgress(0.3);
+            setTimeout(() => this.beginBootFrame3b(startTs), 16);
+        })();
     }
 
     private beginBootFrame3b(startTs: number): void {
