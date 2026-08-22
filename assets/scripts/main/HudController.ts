@@ -31,6 +31,7 @@ import { FATE_SHAPES, fateIndexOfShape, pickFateIndex, pickFateIndex4Connected, 
 import { CustomPieceDef, LevelData } from '../core/Types';
 import { getKeysMode, subscribe as subscribeSettings } from '../core/Settings';
 import { BgmManager } from '../audio/BgmManager';
+import { FontManager } from '../core/FontManager';
 import { SoundManager } from '../audio/SoundManager';
 import { t, subscribe as subscribeI18n } from '../core/i18n/I18n';
 import { fetchRefreshCost, purchaseRefresh, RefreshType } from '../core/RefreshApi';
@@ -3403,6 +3404,11 @@ export class HudController extends Component {
         else if (anchor[0] === 1) lab.horizontalAlign = Label.HorizontalAlign.RIGHT;
         else lab.horizontalAlign = Label.HorizontalAlign.CENTER;
         lab.verticalAlign = Label.VerticalAlign.CENTER;
+        // Apply the global TTF font (HarmonyOS Sans Condensed) so runtime-
+        // created labels match authored ones. FontManager.font is null
+        // until the scene's FontManager component's onLoad runs — no-op
+        // in that case, label keeps its default system font.
+        FontManager.applyToLabel(lab);
         return lab;
     }
 
