@@ -331,6 +331,12 @@ export class GameState {
     // ---------- Timing ----------
     dropAccum:   number  = 0;
     dropInterval: number = BASE_DROP_INTERVAL_MS;
+
+    /** DEV-only speed override for testing endless-mode ramping. When
+     *  non-null, per-lock recalculation uses this value instead of the
+     *  cumulative-derived multiplier. Set/cleared by the DEV speed button
+     *  on the HUD (HudController.authoredDebugSpeedButton). */
+    debugSpeedMultOverride: number | null = null;
     isGrounded:  boolean = false;
     lockDelay:   number  = 0;
     lockResets:  number  = 0;
@@ -1410,6 +1416,14 @@ export class GameState {
             // Defer through the FX gate so the modal doesn't pop over
             // still-playing shatter / ribbon FX.
             const cum = this.endlessProgress.cumulative;
+            // Endless speed ramp: every ENDLESS_FATE_MILESTONE (12) layers,
+            // drop speed +0.1× (i.e. dropInterval / (1 + 0.1 × N)), capped at
+            // 8.0× (dropInterval reduced to an eighth). Blind mode also gets
+            // the ramp because its scoring/pace is the same as endless.
+            // Level mode is untouched — it has its own per-level tuning.
+            const naturalMult = Math.min(8.0, 1.0 + Math.floor(cum / ENDLESS_FATE_MILESTONE) * 0.1);
+            const speedMult = this.debugSpeedMultOverride ?? naturalMult;
+            this.dropInterval = BASE_DROP_INTERVAL_MS / speedMult;
             const milestones = cum > 0
                 ? Math.floor((cum - 1) / ENDLESS_FATE_MILESTONE)
                 : 0;
@@ -1918,11 +1932,16 @@ export class GameState {
     getPieceVisualYOffset(): number {
         if (!this.current) return 0;
         if (this.isGrounded) return 0;
-        // Only DOTs (meteor shower fragments) fall smoothly. Regular
-        // tetrominoes keep the classic per-row step so the player's
-        // spatial mental model isn't broken.
-        if (this.current.type !== 'DOT') return 0;
-        const interval = METEOR_DROP_INTERVAL;
+        // Smooth fall for everything: DOTs (meteor shower) use their
+        // dedicated interval; regular tetrominoes interpolate against
+        // the (hourglass-adjusted) grid dropInterval so the piece
+        // glides between rows instead of stepping.
+        let interval: number;
+        if (this.current.type === 'DOT') {
+            interval = METEOR_DROP_INTERVAL;
+        } else {
+            interval = this.hourglass.isActive() ? this.dropInterval * 2 : this.dropInterval;
+        }
         if (interval <= 0) return 0;
         const f = this.dropAccum / interval;
         return f < 0 ? 0 : f > 1 ? 1 : f;
