@@ -44801,7 +44801,10 @@
       "__uuid__": "a6bb1824-8c0d-4b07-af86-2b84466341b6",
       "__expectedType__": "cc.AudioClip"
     },
-    "itemPick": null,
+    "itemPick": {
+      "__uuid__": "f750ac72-4bb2-4cec-b03f-5aa76cb88b4e",
+      "__expectedType__": "cc.AudioClip"
+    },
     "uiClick": {
       "__uuid__": "16f3b93f-c594-4be9-b57e-1ceb07ce00f4",
       "__expectedType__": "cc.AudioClip"
