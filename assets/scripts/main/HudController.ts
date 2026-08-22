@@ -184,6 +184,9 @@ export class HudController extends Component {
     @property({ type: Button, tooltip: '通关按钮（DEV，无尽模式自动隐藏）' })
     authoredDebugWinButton: Button | null = null;
 
+    @property({ type: Button, tooltip: '速度累加按钮（DEV，仅无尽/盲选；1.0→1.1→...→2.0→回1.0）' })
+    authoredDebugSpeedButton: Button | null = null;
+
     @property({ type: Label, tooltip: '层高 Label（右上角）' })
     authoredScoreLabel: Label | null = null;
 
@@ -332,6 +335,14 @@ export class HudController extends Component {
     private nextLabel!:    Label;
     /** Debug "instant win" button — dev-only, visible in level mode. */
     private debugWinButtonNode: Node | null = null;
+    /** Debug speed-bump button — dev-only, endless/blind only. */
+    private debugSpeedButtonNode: Node | null = null;
+    /** Cached Label inside debug speed button (shows current mult). */
+    private debugSpeedLabel: Label | null = null;
+    /** Last multiplier we painted on the debug speed label — cheap
+     *  early-out for per-frame refresh (avoids allocating a new string
+     *  every tick when the value hasn't changed). */
+    private _lastPaintedSpeedMult: number = -1;
     /** Full-screen "已暂停" overlay. Lazily built the first time the
      *  player pauses; destroyed only on scene teardown so re-pausing is
      *  a cheap `active = true`. */
@@ -631,6 +642,13 @@ export class HudController extends Component {
         // nothing changed keeps this from thrashing.
         this.syncPauseUi();
 
+        // Debug speed button — refresh label + visibility per frame.
+        // Cheap: refreshDebugSpeedLabel() early-exits when nothing
+        // changed. Visibility flips as the mode changes (e.g. player
+        // exits endless via portal — should never happen since the
+        // scene tears down, but defensive).
+        this.syncDebugSpeedButton(g);
+
         // Score display was removed (both modes no longer score). The
         // left slot of Row 2 is now mode-dependent:
         //   • Endless — shows 层高 (cumulative full rows = tower height)
@@ -770,6 +788,24 @@ export class HudController extends Component {
             }
         } else {
             log('[HudController] authoredDebugWinButton not wired');
+        }
+
+        // Debug speed — DEV-only. Cycles override 1.0 → 1.1 → ... → 2.0
+        // → null (back to natural cumulative-derived speed). Label
+        // reflects the *effective* current multiplier so testers see
+        // exactly what the game is running at.
+        if (this.authoredDebugSpeedButton) {
+            if (!IS_DEV_BUILD) {
+                this.authoredDebugSpeedButton.node.active = false;
+            } else {
+                this.authoredDebugSpeedButton.node.off('click');
+                this.authoredDebugSpeedButton.node.on('click', () => this.onDebugSpeedClicked(), this);
+                this.debugSpeedButtonNode = this.authoredDebugSpeedButton.node;
+                this.debugSpeedLabel = this.authoredDebugSpeedButton.getComponentInChildren(Label);
+                this.refreshDebugSpeedLabel();
+            }
+        } else {
+            log('[HudController] authoredDebugSpeedButton not wired');
         }
 
         // NEXT preview shape canvas — add a Graphics component if the
@@ -2552,6 +2588,62 @@ export class HudController extends Component {
         this.gameController?.debugForceWin();
     }
 
+    /** DEV speed button — cycles gameState.debugSpeedMultOverride from
+     *  null → 1× → 2× → ... → 8× → null. Each click bumps +1×, and
+     *  hitting the 8× cap wraps back to natural (null) so testers can
+     *  compare with the cumulative-derived speed without restarting. */
+    private onDebugSpeedClicked(): void {
+        const gs = this.gameController?.gameState;
+        if (!gs) return;
+        const cur = gs.debugSpeedMultOverride;
+        let next: number | null;
+        if (cur === null || cur === undefined) {
+            next = 1.0;
+        } else if (cur >= 8.0 - 1e-6) {
+            next = null;   // wrap back to natural
+        } else {
+            next = Math.min(8.0, Math.round(cur + 1.0));
+        }
+        gs.debugSpeedMultOverride = next;
+        // Apply immediately so the current-in-flight piece speeds up
+        // without waiting for the next lock's recalc.
+        if (next !== null) {
+            gs.dropInterval = 800 / next;    // BASE_DROP_INTERVAL_MS
+        }
+        this.refreshDebugSpeedLabel();
+    }
+
+    /** Compute effective speed multiplier and gate button visibility. */
+    private syncDebugSpeedButton(g: any): void {
+        if (!this.debugSpeedButtonNode) return;
+        const showable = IS_DEV_BUILD && (g.mode === 'endless' || g.mode === 'blind');
+        if (this.debugSpeedButtonNode.active !== showable) {
+            this.debugSpeedButtonNode.active = showable;
+        }
+        if (showable) this.refreshDebugSpeedLabel();
+    }
+
+    /** Paint current effective drop-speed multiplier on the DEV button.
+     *  Shows "Speed 1.2×" or "Speed 1.5× (dev)" — the (dev) suffix means
+     *  override is active; without it, we're on the natural cumulative
+     *  ramp. Early-out when the value hasn't changed since last paint. */
+    private refreshDebugSpeedLabel(): void {
+        if (!this.debugSpeedLabel) return;
+        const gs = this.gameController?.gameState;
+        if (!gs) return;
+        const override = gs.debugSpeedMultOverride;
+        const cum = gs.endlessProgress?.cumulative ?? 0;
+        const natural = Math.min(8.0, 1.0 + Math.floor(cum / 12) * 0.1);
+        const effective = override ?? natural;
+        // Key includes override flag so switching to/from override
+        // triggers a repaint even at the same numeric value.
+        const key = effective + (override !== null && override !== undefined ? 0.001 : 0);
+        if (Math.abs(key - this._lastPaintedSpeedMult) < 1e-6) return;
+        this._lastPaintedSpeedMult = key;
+        const suffix = (override !== null && override !== undefined) ? ' (dev)' : '';
+        this.debugSpeedLabel.string = `Speed ${effective.toFixed(1)}×${suffix}`;
+    }
+
     /** Sync the pause button glyph + overlay visibility with the current
      *  gameState.paused value. Called after toggling and also on every
      *  frame's update() so external state changes (e.g. picker code
@@ -2637,6 +2729,12 @@ export class HudController extends Component {
             this.authoredPauseHomeButton.node.off('click');
             this.authoredPauseHomeButton.node.on('click', () => {
                 const gs = this.gameController?.gameState;
+                // Report partial endless/blind progress BEFORE quitting so
+                // the player's tower height still counts toward the
+                // leaderboard even though they didn't play to game-over.
+                // No-op in level mode. Fire-and-forget — network error
+                // just logs; we still exit to the mode-select screen.
+                this.gameController?.submitEndlessHeightIfApplicable('pause-quit');
                 if (gs) gs.paused = false;
                 this.hidePauseOverlay();
                 this.menuController?.showModeSelect();

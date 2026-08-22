@@ -582,16 +582,7 @@ export class GameController extends Component {
                     // ---- Leaderboard submission ----
                     // Endless / blind: submit the tower height reached this run.
                     // Level mode game-over is a FAIL, not a completion — skip.
-                    // Fire-and-forget: any network error just logs; the
-                    // fail popup still opens normally.
-                    const mode = this.gameState?.mode;
-                    if (mode === 'endless' || mode === 'blind') {
-                        const score = this.gameState.endlessProgress.cumulative;
-                        log(`[TowerBlocks] submitting ${mode} score ${score} to leaderboard`);
-                        submitScore(mode, score).catch(err => {
-                            console.warn('[TowerBlocks] leaderboard submit failed:', err.message);
-                        });
-                    }
+                    this.submitEndlessHeightIfApplicable('game-over');
                 },
                 onLevelWin:     ()  => {
                     log('[TowerBlocks] LEVEL WIN (deferred until effects clear)');
@@ -1914,10 +1905,11 @@ export class GameController extends Component {
             const displayRowFor = (this.fallAnimations.size || this.pendingFallMoves.size)
                 ? (r: number, c: number) => this.displayRowForCell(r, c)
                 : undefined;
-            // For DOT pieces (meteor shower fragments) GameState reports a
-            // sub-row fractional offset so the meteor slides smoothly
-            // between grid steps instead of teleporting one row per tick.
-            // Non-DOT pieces get 0 and keep the classic Tetris step feel.
+            // GameState reports a sub-row fractional offset so the piece
+            // glides smoothly between grid steps instead of teleporting
+            // one row per drop tick. Applies to both DOT (meteor) and
+            // regular tetrominoes; snaps back to 0 the instant the piece
+            // grounds so lock-delay UX / ghost alignment stay pixel-exact.
             const pieceYOffset = piece ? this.gameState.getPieceVisualYOffset() : 0;
             // Ghost piece — where the current would land if hard-dropped.
             // Suppress the ghost for DOT meteor fragments (they fall too
@@ -3947,6 +3939,26 @@ export class GameController extends Component {
         // Clear any lingering trapped-hole pulse so the fresh game
         // doesn't paint ghost red cells at old coords.
         this.clearTrappedHoleHighlights();
+    }
+
+    /** Submit the current endless/blind tower height to the leaderboard.
+     *  Called on natural game-over and also when the player quits mid-run
+     *  via the pause overlay's "Home" button so partial progress still
+     *  counts. Server does best-of merging so re-submitting a lower
+     *  height after a higher one is safe. No-op outside endless/blind
+     *  or when height is 0 (nothing to report). Fire-and-forget. */
+    public submitEndlessHeightIfApplicable(reason: 'game-over' | 'pause-quit'): void {
+        const mode = this.gameState?.mode;
+        if (mode !== 'endless' && mode !== 'blind') return;
+        const score = this.gameState?.endlessProgress?.cumulative ?? 0;
+        if (score <= 0) {
+            log(`[TowerBlocks] skip ${mode} submit (${reason}) — height=0`);
+            return;
+        }
+        log(`[TowerBlocks] submitting ${mode} score ${score} to leaderboard (${reason})`);
+        submitScore(mode as 'endless' | 'blind', score).catch(err => {
+            console.warn('[TowerBlocks] leaderboard submit failed:', err.message);
+        });
     }
 
     /** DEBUG-only cheat: instantly complete the currently-loaded level.
