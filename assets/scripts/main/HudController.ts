@@ -378,6 +378,22 @@ export class HudController extends Component {
      *  when the value hasn't changed. */
     private blindLastColumn:    number = -1;
 
+    // ---- Pickup countdown indicators (hourglass / gatling / meteor) ----
+    // Three pixel-cube digit readouts under the NEXT preview box. Same
+    // art as `blindColumnGfx` (cream #fff4c8 blocks with bronze outline)
+    // but stacked in two rows: hourglass on row 1, gatling + meteor
+    // side-by-side on row 2. Each auto-hides when its value is 0 so the
+    // top strip stays clean when no pickups are active.
+    private hourglassCountRoot:  Node | null = null;
+    private hourglassCountGfx:   Graphics | null = null;
+    private lastHourglassSec:    number = -1;
+    private gatlingCountRoot:    Node | null = null;
+    private gatlingCountGfx:     Graphics | null = null;
+    private lastGatlingCount:    number = -1;
+    private meteorCountRoot:     Node | null = null;
+    private meteorCountGfx:      Graphics | null = null;
+    private lastMeteorCount:     number = -1;
+
     // ---- Post-fail reveal prompt (built programmatically) ----
     /** Full-screen tap catcher + bottom label shown right after a
      *  game-over, BEFORE the actual fail popup fires. Gives the player
@@ -649,6 +665,11 @@ export class HudController extends Component {
         // scene tears down, but defensive).
         this.syncDebugSpeedButton(g);
 
+        // Pickup countdown readouts (hourglass / gatling / meteor) under
+        // the NEXT preview. Each cluster hides at 0 and repaints only
+        // when its integer changes.
+        this.syncPickupCountdowns(g);
+
         // Score display was removed (both modes no longer score). The
         // left slot of Row 2 is now mode-dependent:
         //   • Endless — shows 层高 (cumulative full rows = tower height)
@@ -731,6 +752,7 @@ export class HudController extends Component {
         this.buildPicker(root, w, h);
         this.buildFateModal(root, w, h);
         this.buildBlindColumnIndicator(root, w, h);
+        this.buildPickupCountdownIndicators(root, w, h);
         this.buildFailRevealPrompt(root, w, h);
         // "Show Tower" toggle is a DEV-only cheat — it defeats the
         // whole point of Blind mode. Only build it on development
@@ -1028,6 +1050,177 @@ export class HudController extends Component {
                     gfx.stroke();
                 }
             }
+        }
+    }
+
+    /**
+     * Build the pickup countdown readouts (hourglass / gatling / meteor).
+     *
+     *   Row 1 (top): hourglass — remaining seconds, centered under NEXT
+     *   Row 2 (below): gatling (left of center) | meteor (right of center)
+     *
+     * Same pixel-cube digit art as `blindColumnGfx` (see paintBlindColumn).
+     * Each cluster auto-hides when its value is 0 so the top strip
+     * stays clean when no pickup is currently active. Repaint happens
+     * only when the integer value changes (see syncPickupCountdowns).
+     */
+    private buildPickupCountdownIndicators(root: Node, _w: number, _h: number): void {
+        // Parent to the authored NEXT preview box so the readouts
+        // ALWAYS sit directly under it, regardless of where the artist
+        // moves the preview box in the scene. Fall back to the HUD
+        // root if the @property slot wasn't wired.
+        const anchor = this.authoredNextPreviewBox ?? root;
+        const anchorTx = anchor.getComponent(UITransform);
+        // Local Y of the anchor's bottom edge (anchor-relative coords).
+        // If anchor has anchorPoint=(0.5, 0.5), bottom = -height/2.
+        // Adding a small gap so the numbers don't hug the box.
+        const ROW_GAP        = 8;         // gap between preview box and row 1
+        const ROW_INTER_GAP  = 4;         // gap between row 1 and row 2
+        const WRAP_HEIGHT    = 40;        // must match buildPixelCountReadout
+        const bottomY = anchorTx
+            ? -anchorTx.contentSize.height * anchorTx.anchorPoint.y
+            : 0;
+        const row1TopY = bottomY - ROW_GAP;                              // row 1 top edge
+        const row2TopY = row1TopY - WRAP_HEIGHT - ROW_INTER_GAP;         // row 2 top edge
+
+        // Row 1: hourglass, single centered readout under the NEXT box.
+        const { root: hgWrap, gfx: hgGfx } =
+            this.buildPixelCountReadout(anchor, 'HourglassCountdown', 0, row1TopY);
+        this.hourglassCountRoot = hgWrap;
+        this.hourglassCountGfx  = hgGfx;
+
+        // Row 2: gatling left of center | meteor right of center.
+        // Offset ~50px gives enough clearance for 2-digit numbers at
+        // the tighter 6px pixel size without crowding.
+        const COL_OFFSET = 50;
+        const { root: gtWrap, gfx: gtGfx } =
+            this.buildPixelCountReadout(anchor, 'GatlingCountdown', -COL_OFFSET, row2TopY);
+        this.gatlingCountRoot = gtWrap;
+        this.gatlingCountGfx  = gtGfx;
+
+        const { root: mtWrap, gfx: mtGfx } =
+            this.buildPixelCountReadout(anchor, 'MeteorCountdown', +COL_OFFSET, row2TopY);
+        this.meteorCountRoot = mtWrap;
+        this.meteorCountGfx  = mtGfx;
+    }
+
+    /** Factory: one pixel-cube number readout, positioned relative to
+     *  its parent (typically the NEXT preview box). `centerOffsetX` is
+     *  the X offset from the parent's origin; `topY` is the local Y
+     *  where the wrap's TOP edge sits (wrap anchor is 0.5, 1 so the
+     *  wrap position IS its top-center). Returns { root, gfx } so the
+     *  caller can toggle active + repaint. */
+    private buildPixelCountReadout(
+        parent: Node,
+        name: string,
+        centerOffsetX: number,
+        topY: number,
+    ): { root: Node; gfx: Graphics } {
+        const wrap = new Node(name);
+        wrap.parent = parent;
+        wrap.layer  = parent.layer;
+        const wrapTx = wrap.addComponent(UITransform);
+        const WRAP_WIDTH  = 90;
+        const WRAP_HEIGHT = 40;
+        wrapTx.setContentSize(WRAP_WIDTH, WRAP_HEIGHT);
+        wrapTx.setAnchorPoint(0.5, 1);
+        wrap.setPosition(centerOffsetX, topY, 0);
+
+        const gfxNode = new Node(name + 'Gfx');
+        gfxNode.parent = wrap;
+        gfxNode.layer  = wrap.layer;
+        const gfxTx = gfxNode.addComponent(UITransform);
+        gfxTx.setContentSize(WRAP_WIDTH, WRAP_HEIGHT);
+        gfxTx.setAnchorPoint(0.5, 1);
+        gfxNode.setPosition(0, 0, 0);
+        const gfx = gfxNode.addComponent(Graphics);
+
+        wrap.active = false;   // shown by syncPickupCountdowns when > 0
+        return { root: wrap, gfx };
+    }
+
+    /** Paint pixel-cube digits (small size — 6px per pixel, tighter
+     *  than blindColumnGfx's 10px so the row-2 pair fits comfortably).
+     *  Same colors as blind column: cream #fff4c8 fill + bronze outline. */
+    private paintSmallPixelNumber(gfx: Graphics, n: number): void {
+        gfx.clear();
+        const digits = String(Math.max(0, Math.floor(n))).split('');
+        const PX      = 6;
+        const GAP_X   = PX;
+        const digitW  = 3 * PX;
+        const totalW  = digits.length * digitW + Math.max(0, digits.length - 1) * GAP_X;
+        const startX  = -totalW / 2;
+        const TOP_PAD = 6;
+        const startY  = -TOP_PAD;
+        const fill    = new Color(255, 244, 200, 255);
+        const stroke  = new Color(120, 90, 20, 220);
+        for (let d = 0; d < digits.length; d++) {
+            const pattern = BLIND_DIGIT_PIXELS[digits[d]];
+            if (!pattern) continue;
+            const dxOffset = startX + d * (digitW + GAP_X);
+            for (let row = 0; row < pattern.length; row++) {
+                const bits = pattern[row];
+                for (let col = 0; col < bits.length; col++) {
+                    if (bits.charAt(col) !== '1') continue;
+                    const px = dxOffset + col * PX;
+                    const py = startY - row * PX - PX;
+                    gfx.fillColor = fill;
+                    gfx.rect(px, py, PX, PX);
+                    gfx.fill();
+                    gfx.strokeColor = stroke;
+                    gfx.lineWidth = 1;
+                    gfx.rect(px, py, PX, PX);
+                    gfx.stroke();
+                }
+            }
+        }
+    }
+
+    /** Per-frame update: read hourglass / gatling / meteor state, show/
+     *  hide the corresponding readouts, and repaint only when the
+     *  integer value changed. Called from update() so it stays in sync
+     *  with the game clock without wiring hooks into every activation
+     *  path. */
+    private syncPickupCountdowns(g: any): void {
+        // Hourglass — round UP so "3s left" doesn't visually flip to 0
+        // half a frame early. Hide at 0 (inactive).
+        const hgMs  = g.hourglass?.remainingMs?.() ?? 0;
+        const hgSec = hgMs > 0 ? Math.ceil(hgMs / 1000) : 0;
+        if (this.hourglassCountRoot) {
+            const show = hgSec > 0;
+            if (this.hourglassCountRoot.active !== show) this.hourglassCountRoot.active = show;
+            if (show && hgSec !== this.lastHourglassSec) {
+                this.lastHourglassSec = hgSec;
+                if (this.hourglassCountGfx) this.paintSmallPixelNumber(this.hourglassCountGfx, hgSec);
+            }
+            if (!show) this.lastHourglassSec = -1;
+        }
+
+        // Gatling — bullets still to fire + in-flight. Hide at 0.
+        const gtCount = g.gatling?.unresolvedCount?.() ?? 0;
+        if (this.gatlingCountRoot) {
+            const show = gtCount > 0;
+            if (this.gatlingCountRoot.active !== show) this.gatlingCountRoot.active = show;
+            if (show && gtCount !== this.lastGatlingCount) {
+                this.lastGatlingCount = gtCount;
+                if (this.gatlingCountGfx) this.paintSmallPixelNumber(this.gatlingCountGfx, gtCount);
+            }
+            if (!show) this.lastGatlingCount = -1;
+        }
+
+        // Meteor — DOTs still queued in the bag + the live DOT if the
+        // current active piece is a meteor fragment. Hide at 0.
+        const bagPending = g.bag?.meteorRemaining ?? 0;
+        const liveDot    = g.current && g.current.type === 'DOT' ? 1 : 0;
+        const mtCount    = bagPending + liveDot;
+        if (this.meteorCountRoot) {
+            const show = mtCount > 0;
+            if (this.meteorCountRoot.active !== show) this.meteorCountRoot.active = show;
+            if (show && mtCount !== this.lastMeteorCount) {
+                this.lastMeteorCount = mtCount;
+                if (this.meteorCountGfx) this.paintSmallPixelNumber(this.meteorCountGfx, mtCount);
+            }
+            if (!show) this.lastMeteorCount = -1;
         }
     }
 

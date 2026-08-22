@@ -2885,6 +2885,12 @@ export class GameController extends Component {
         // would swallow the whole up-shift.
         const SPAWN_ROWS_ABOVE_VISIBLE_TOP = -1;
         piece.y = visibleTopRow - SPAWN_ROWS_ABOVE_VISIBLE_TOP;
+        // Cache the just-computed spawn Y so other systems (gatling)
+        // can spawn projectiles at the exact same on-screen height as a
+        // freshly-spawned piece (e.g. a meteor DOT). Grabbing the live
+        // `piece.y` later doesn't work because the piece may have
+        // already fallen partway when the item activates.
+        this.gameState.lastPieceSpawnY = piece.y;
         // Spawn-collision fail: if the freshly-positioned piece overlaps
         // any filled cell of the locked tower, the tower has "reached"
         // the spawn point and the run is over. Only applies to endless

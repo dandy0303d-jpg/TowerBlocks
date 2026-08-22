@@ -337,6 +337,14 @@ export class GameState {
      *  cumulative-derived multiplier. Set/cleared by the DEV speed button
      *  on the HUD (HudController.authoredDebugSpeedButton). */
     debugSpeedMultOverride: number | null = null;
+
+    /** Row (piece.y coordinate) where the most recent piece was spawned
+     *  by GameController.spawnNext. Written by GameController immediately
+     *  after computing `visibleTopRow + 1`; read by Gatling.activate so
+     *  bullets can materialise at the exact same on-screen height as a
+     *  meteor DOT (both go through this Y). Default 0 = safe fallback
+     *  for the pre-first-spawn window. */
+    lastPieceSpawnY: number = 0;
     isGrounded:  boolean = false;
     lockDelay:   number  = 0;
     lockResets:  number  = 0;
@@ -1056,7 +1064,9 @@ export class GameState {
                 // Anchor the gatling storm at the column currently
                 // facing the camera so all bullets stream down the
                 // centre of the screen. Tier suffix picks 4 / 8 / 12.
-                this.gatling.activate(this.lastSpawnCenterCol ?? 0, GATLING_TIER_COUNT[key]);
+                // Pass current piece's Y as spawn hint so bullets appear
+                // at the same on-screen height as a meteor DOT would.
+                this.gatling.activate(this.lastSpawnCenterCol ?? 0, GATLING_TIER_COUNT[key], this.lastPieceSpawnY);
                 consumed = true;
                 break;
             }
@@ -1733,7 +1743,13 @@ export class GameState {
                 // camera so all 12 bullets fire straight down the centre
                 // of the screen — and stay there even if the player
                 // rotates the tower mid-storm.
-                this.gatling.activate(this.lastSpawnCenterCol ?? 0);
+                // Pass current piece's Y so bullets spawn at the same
+                // on-screen height as a meteor DOT.
+                this.gatling.activate(
+                    this.lastSpawnCenterCol ?? 0,
+                    undefined,
+                    this.lastPieceSpawnY,
+                );
                 this.hooks.onGatlingActivated?.();
             },
             onBoomTriggered:     (r, c, level, cleared) =>
