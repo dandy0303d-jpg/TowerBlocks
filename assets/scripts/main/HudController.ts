@@ -1065,41 +1065,44 @@ export class HudController extends Component {
      * only when the integer value changes (see syncPickupCountdowns).
      */
     private buildPickupCountdownIndicators(root: Node, _w: number, _h: number): void {
-        // Parent to the authored NEXT preview box so the readouts
-        // ALWAYS sit directly under it, regardless of where the artist
-        // moves the preview box in the scene. Fall back to the HUD
-        // root if the @property slot wasn't wired.
-        const anchor = this.authoredNextPreviewBox ?? root;
-        const anchorTx = anchor.getComponent(UITransform);
-        // Local Y of the anchor's bottom edge (anchor-relative coords).
-        // If anchor has anchorPoint=(0.5, 0.5), bottom = -height/2.
-        // Adding a small gap so the numbers don't hug the box.
-        const ROW_GAP        = 8;         // gap between preview box and row 1
-        const ROW_INTER_GAP  = 4;         // gap between row 1 and row 2
-        const WRAP_HEIGHT    = 40;        // must match buildPixelCountReadout
-        const bottomY = anchorTx
-            ? -anchorTx.contentSize.height * anchorTx.anchorPoint.y
+        // Hourglass sits directly under the authored NEXT preview box
+        // (parented to it so it follows the box wherever the artist
+        // places it in the scene). Falls back to HUD root if the
+        // @property slot wasn't wired.
+        const nextBox = this.authoredNextPreviewBox ?? root;
+        const nextBoxTx = nextBox.getComponent(UITransform);
+        const ROW_GAP = 8;
+        const HG_WRAP_HEIGHT = 40;      // small readout height
+        const bottomY = nextBoxTx
+            ? -nextBoxTx.contentSize.height * nextBoxTx.anchorPoint.y
             : 0;
-        const row1TopY = bottomY - ROW_GAP;                              // row 1 top edge
-        const row2TopY = row1TopY - WRAP_HEIGHT - ROW_INTER_GAP;         // row 2 top edge
+        const hgTopY = bottomY - ROW_GAP;
 
-        // Row 1: hourglass, single centered readout under the NEXT box.
         const { root: hgWrap, gfx: hgGfx } =
-            this.buildPixelCountReadout(anchor, 'HourglassCountdown', 0, row1TopY);
+            this.buildPixelCountReadout(nextBox, 'HourglassCountdown', 0, hgTopY, 90, HG_WRAP_HEIGHT);
         this.hourglassCountRoot = hgWrap;
         this.hourglassCountGfx  = hgGfx;
 
-        // Row 2: gatling left of center | meteor right of center.
-        // Offset ~50px gives enough clearance for 2-digit numbers at
-        // the tighter 6px pixel size without crowding.
-        const COL_OFFSET = 50;
+        // Gatling + Meteor: BIG readouts at the DEAD CENTER of the top
+        // strip (same X + Y as the "piece spawn" area). Both indicators
+        // occupy the SAME spot because they never activate simultan-
+        // eously — gatling storm and meteor rain are mutually exclusive
+        // magic-item flows, and the sync loop only unhides one at a
+        // time. Doubled pixel size (12px vs hourglass's 6px) so they're
+        // easy to read during the frantic storm phase.
+        const BIG_WRAP_WIDTH  = 180;
+        const BIG_WRAP_HEIGHT = 80;
+        const BIG_TOP_PX      = 90;     // matches blindColumn indicator top
+
         const { root: gtWrap, gfx: gtGfx } =
-            this.buildPixelCountReadout(anchor, 'GatlingCountdown', -COL_OFFSET, row2TopY);
+            this.buildTopCenteredReadout(root, 'GatlingCountdown', 0, BIG_TOP_PX,
+                                         BIG_WRAP_WIDTH, BIG_WRAP_HEIGHT);
         this.gatlingCountRoot = gtWrap;
         this.gatlingCountGfx  = gtGfx;
 
         const { root: mtWrap, gfx: mtGfx } =
-            this.buildPixelCountReadout(anchor, 'MeteorCountdown', +COL_OFFSET, row2TopY);
+            this.buildTopCenteredReadout(root, 'MeteorCountdown', 0, BIG_TOP_PX,
+                                         BIG_WRAP_WIDTH, BIG_WRAP_HEIGHT);
         this.meteorCountRoot = mtWrap;
         this.meteorCountGfx  = mtGfx;
     }
@@ -1115,14 +1118,14 @@ export class HudController extends Component {
         name: string,
         centerOffsetX: number,
         topY: number,
+        wrapWidth: number,
+        wrapHeight: number,
     ): { root: Node; gfx: Graphics } {
         const wrap = new Node(name);
         wrap.parent = parent;
         wrap.layer  = parent.layer;
         const wrapTx = wrap.addComponent(UITransform);
-        const WRAP_WIDTH  = 90;
-        const WRAP_HEIGHT = 40;
-        wrapTx.setContentSize(WRAP_WIDTH, WRAP_HEIGHT);
+        wrapTx.setContentSize(wrapWidth, wrapHeight);
         wrapTx.setAnchorPoint(0.5, 1);
         wrap.setPosition(centerOffsetX, topY, 0);
 
@@ -1130,7 +1133,7 @@ export class HudController extends Component {
         gfxNode.parent = wrap;
         gfxNode.layer  = wrap.layer;
         const gfxTx = gfxNode.addComponent(UITransform);
-        gfxTx.setContentSize(WRAP_WIDTH, WRAP_HEIGHT);
+        gfxTx.setContentSize(wrapWidth, wrapHeight);
         gfxTx.setAnchorPoint(0.5, 1);
         gfxNode.setPosition(0, 0, 0);
         const gfx = gfxNode.addComponent(Graphics);
@@ -1139,13 +1142,53 @@ export class HudController extends Component {
         return { root: wrap, gfx };
     }
 
-    /** Paint pixel-cube digits (small size — 6px per pixel, tighter
-     *  than blindColumnGfx's 10px so the row-2 pair fits comfortably).
+    /** Factory: one pixel-cube number readout, Widget-anchored to the
+     *  top of the HUD with a horizontal offset from center. Same
+     *  pattern as blindColumnGfx wrap (top-center anchor, digits paint
+     *  down from y=0). Used for the BIG gatling + meteor readouts at
+     *  the top of the screen. */
+    private buildTopCenteredReadout(
+        parent: Node,
+        name: string,
+        centerOffsetX: number,
+        topPx: number,
+        wrapWidth: number,
+        wrapHeight: number,
+    ): { root: Node; gfx: Graphics } {
+        const wrap = new Node(name);
+        wrap.parent = parent;
+        wrap.layer  = parent.layer;
+        const wrapTx = wrap.addComponent(UITransform);
+        wrapTx.setContentSize(wrapWidth, wrapHeight);
+        wrapTx.setAnchorPoint(0.5, 1);
+
+        const widget = wrap.addComponent(Widget);
+        widget.isAlignTop = true;
+        widget.top = topPx;
+        widget.isAlignHorizontalCenter = true;
+        widget.horizontalCenter = centerOffsetX;
+        widget.alignMode = Widget.AlignMode.ON_WINDOW_RESIZE;
+        widget.updateAlignment();
+
+        const gfxNode = new Node(name + 'Gfx');
+        gfxNode.parent = wrap;
+        gfxNode.layer  = wrap.layer;
+        const gfxTx = gfxNode.addComponent(UITransform);
+        gfxTx.setContentSize(wrapWidth, wrapHeight);
+        gfxTx.setAnchorPoint(0.5, 1);
+        gfxNode.setPosition(0, 0, 0);
+        const gfx = gfxNode.addComponent(Graphics);
+
+        wrap.active = false;
+        return { root: wrap, gfx };
+    }
+
+    /** Paint pixel-cube digits. PX defaults to 6 (small — hourglass);
+     *  pass 12 for the big centered gatling/meteor readouts.
      *  Same colors as blind column: cream #fff4c8 fill + bronze outline. */
-    private paintSmallPixelNumber(gfx: Graphics, n: number): void {
+    private paintSmallPixelNumber(gfx: Graphics, n: number, PX: number = 6): void {
         gfx.clear();
         const digits = String(Math.max(0, Math.floor(n))).split('');
-        const PX      = 6;
         const GAP_X   = PX;
         const digitW  = 3 * PX;
         const totalW  = digits.length * digitW + Math.max(0, digits.length - 1) * GAP_X;
@@ -1197,19 +1240,21 @@ export class HudController extends Component {
         }
 
         // Gatling — bullets still to fire + in-flight. Hide at 0.
+        // Uses PX=12 (2× hourglass) for the big screen-centered readout.
         const gtCount = g.gatling?.unresolvedCount?.() ?? 0;
         if (this.gatlingCountRoot) {
             const show = gtCount > 0;
             if (this.gatlingCountRoot.active !== show) this.gatlingCountRoot.active = show;
             if (show && gtCount !== this.lastGatlingCount) {
                 this.lastGatlingCount = gtCount;
-                if (this.gatlingCountGfx) this.paintSmallPixelNumber(this.gatlingCountGfx, gtCount);
+                if (this.gatlingCountGfx) this.paintSmallPixelNumber(this.gatlingCountGfx, gtCount, 12);
             }
             if (!show) this.lastGatlingCount = -1;
         }
 
         // Meteor — DOTs still queued in the bag + the live DOT if the
         // current active piece is a meteor fragment. Hide at 0.
+        // Uses PX=12 (2× hourglass) for the big screen-centered readout.
         const bagPending = g.bag?.meteorRemaining ?? 0;
         const liveDot    = g.current && g.current.type === 'DOT' ? 1 : 0;
         const mtCount    = bagPending + liveDot;
@@ -1218,7 +1263,7 @@ export class HudController extends Component {
             if (this.meteorCountRoot.active !== show) this.meteorCountRoot.active = show;
             if (show && mtCount !== this.lastMeteorCount) {
                 this.lastMeteorCount = mtCount;
-                if (this.meteorCountGfx) this.paintSmallPixelNumber(this.meteorCountGfx, mtCount);
+                if (this.meteorCountGfx) this.paintSmallPixelNumber(this.meteorCountGfx, mtCount, 12);
             }
             if (!show) this.lastMeteorCount = -1;
         }
