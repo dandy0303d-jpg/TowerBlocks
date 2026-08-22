@@ -59,14 +59,34 @@ export class GatlingState {
 
     constructor(private rng: RandomFn = Math.random) {}
 
+    /** Total unresolved bullets = queued (waiting to spawn) + in-flight
+     *  (falling toward target). Used by the HUD countdown so both the
+     *  first bullet (not yet spawned) and the last bullet (still mid-
+     *  flight) count as "remaining". Zero when the storm is over. */
+    public unresolvedCount(): number {
+        return this.pendingCount + this.falling.length;
+    }
+
+    /** Row coordinate where new bullets materialise. Set by
+     *  `activate()` — the caller passes the CURRENT piece.y so bullets
+     *  spawn at the same on-screen height as a meteor DOT would (both
+     *  enter from `visibleTopRow + 1`, i.e. one row below the camera's
+     *  top edge). Defaults to 0 for safety on boards with no active
+     *  piece. */
+    private spawnY = 0;
+
     /** `anchorCol` should be the column the player is currently
      *  facing — captured by the game state at trigger time.
      *  `count` defaults to `GATLING_TOTAL` (12), used by level-prop
-     *  triggers; magic-item tiers pass 4 / 8 / 12 per tier. */
-    activate(anchorCol: number = 0, count: number = GATLING_TOTAL): void {
+     *  triggers; magic-item tiers pass 4 / 8 / 12 per tier.
+     *  `spawnY` should be the current live piece's row (usually
+     *  visibleTopRow + 1) so bullets appear at the same height as a
+     *  meteor DOT. Defaults to 0. */
+    activate(anchorCol: number = 0, count: number = GATLING_TOTAL, spawnY: number = 0): void {
         this.mode = true;
         this.anchorCol = ((anchorCol % COLS) + COLS) % COLS;
         this.pendingCount += count;
+        this.spawnY = spawnY;
     }
 
     tick(
@@ -112,7 +132,15 @@ export class GatlingState {
             this.pendingCount--;
             this.falling.push({
                 col: liveCol,
-                y:   -3,
+                // Spawn at the same Y as a meteor DOT so both projectiles
+                // enter the play area at the same visual height. Value
+                // comes from `spawnY` captured at activate() — normally
+                // the current piece's row (visibleTopRow + 1 for a mature
+                // board), NOT hardcoded 0 which would place bullets far
+                // above the visible camera window on tall endless boards
+                // (row 0 is the absolute top of the board, not the top
+                // of the camera view — those differ by ~15-20 rows).
+                y:   this.spawnY,
             });
             hooks.onFire?.(liveCol);
         }
