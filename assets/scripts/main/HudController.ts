@@ -34,6 +34,7 @@ import { PlayerProfile } from '../core/PlayerProfile';
 import { CustomPieceDef, LevelData } from '../core/Types';
 import { getKeysMode, subscribe as subscribeSettings } from '../core/Settings';
 import { BgmManager } from '../audio/BgmManager';
+import { SoundManager } from '../audio/SoundManager';
 import { t, subscribe as subscribeI18n } from '../core/i18n/I18n';
 import { fetchRefreshCost, purchaseRefresh, RefreshType, REFRESH_COST_TIERS, MAX_PAID_REFRESHES_PER_MODAL } from '../core/RefreshApi';
 import { IS_DEV_BUILD } from '../core/BuildConfig';
@@ -390,12 +391,15 @@ export class HudController extends Component {
     private hourglassCountRoot:  Node | null = null;
     private hourglassCountGfx:   Graphics | null = null;
     private lastHourglassSec:    number = -1;
+    private hourglassRestPos:    Vec3 = new Vec3(0, 0, 0);
     private gatlingCountRoot:    Node | null = null;
     private gatlingCountGfx:     Graphics | null = null;
     private lastGatlingCount:    number = -1;
+    private gatlingRestPos:      Vec3 = new Vec3(0, 0, 0);
     private meteorCountRoot:     Node | null = null;
     private meteorCountGfx:      Graphics | null = null;
     private lastMeteorCount:     number = -1;
+    private meteorRestPos:       Vec3 = new Vec3(0, 0, 0);
 
     // ---- Post-fail reveal prompt (built programmatically) ----
     /** Full-screen tap catcher + bottom label shown right after a
@@ -1080,16 +1084,20 @@ export class HudController extends Component {
         const nextBox = this.authoredNextPreviewBox ?? root;
         const nextBoxTx = nextBox.getComponent(UITransform);
         const ROW_GAP = 8;
-        const HG_WRAP_HEIGHT = 40;      // small readout height
+        const HG_WRAP_WIDTH  = 180;     // matches gatling/meteor readouts
+        const HG_WRAP_HEIGHT = 80;      // matches gatling/meteor readouts (12px digits)
         const bottomY = nextBoxTx
             ? -nextBoxTx.contentSize.height * nextBoxTx.anchorPoint.y
             : 0;
         const hgTopY = bottomY - ROW_GAP;
 
         const { root: hgWrap, gfx: hgGfx } =
-            this.buildPixelCountReadout(nextBox, 'HourglassCountdown', 0, hgTopY, 90, HG_WRAP_HEIGHT);
+            this.buildPixelCountReadout(nextBox, 'HourglassCountdown', 0, hgTopY, HG_WRAP_WIDTH, HG_WRAP_HEIGHT);
         this.hourglassCountRoot = hgWrap;
         this.hourglassCountGfx  = hgGfx;
+        // Cache rest position for the entrance tween (fly in from the
+        // right at 2× → land here at 1×).
+        this.hourglassRestPos.set(hgWrap.position.x, hgWrap.position.y, hgWrap.position.z);
 
         // Gatling + Meteor: BIG readouts at the DEAD CENTER of the top
         // strip (same X + Y as the "piece spawn" area). Both indicators
@@ -1107,12 +1115,76 @@ export class HudController extends Component {
                                          BIG_WRAP_WIDTH, BIG_WRAP_HEIGHT);
         this.gatlingCountRoot = gtWrap;
         this.gatlingCountGfx  = gtGfx;
+        this.gatlingRestPos.set(gtWrap.position.x, gtWrap.position.y, gtWrap.position.z);
 
         const { root: mtWrap, gfx: mtGfx } =
             this.buildTopCenteredReadout(root, 'MeteorCountdown', 0, BIG_TOP_PX,
                                          BIG_WRAP_WIDTH, BIG_WRAP_HEIGHT);
         this.meteorCountRoot = mtWrap;
         this.meteorCountGfx  = mtGfx;
+        this.meteorRestPos.set(mtWrap.position.x, mtWrap.position.y, mtWrap.position.z);
+    }
+
+    /** Multi-stage entrance tween for a countdown readout:
+     *    Stage 1 (300ms, backOut): pop from scale 0 → 2× at SCREEN
+     *      CENTER. backOut = fast burst with a slight overshoot.
+     *    HOLD (500ms): sits perfectly still at center 2×. Gives the
+     *      player a beat to register which item just fired.
+     *    Stage 2a (250ms, quadOut): travels HALF the distance to the
+     *      rest position, scaling 2× → 1.5×. Fast start, decelerating
+     *      into the middle → "slow middle".
+     *    Stage 2b (250ms, quadIn): travels the SECOND half, scaling
+     *      1.5× → 1×. Slow start (matches 2a end), accelerating out
+     *      → "fast end". Together 2a+2b give the fast → slow → fast
+     *      arc the user asked for (not the default slow → fast → slow
+     *      of quadInOut).
+     *
+     *  All coordinates are computed in the WRAP's parent-local frame so
+     *  the animation looks the same regardless of whether the wrap is
+     *  parented to NextPreviewBox (hourglass) or the HUD root
+     *  (gatling / meteor). */
+    private _playCountdownEntrance(wrap: Node, restPos: Vec3): void {
+        if (!wrap.isValid || !wrap.parent) return;
+        const parentTx = wrap.parent.getComponent(UITransform);
+        // Convert world (0, 0) = screen dead-center into the wrap
+        // parent's local frame. HUD root origin already sits at screen
+        // center (Canvas 750×1334 anchor 0.5,0.5), so for gatling/
+        // meteor this is (0, 0). For hourglass (parented to
+        // NextPreviewBox) it accounts for the box's offset from center.
+        const centerLocal = parentTx
+            ? parentTx.convertToNodeSpaceAR(new Vec3(0, 0, 0))
+            : new Vec3(0, 0, 0);
+        // Midpoint of the center → rest position path. Used as the
+        // "slow middle" waypoint for the two-stage fly-out so we get
+        // the fast → slow → fast velocity curve.
+        const midX = (centerLocal.x + restPos.x) * 0.5;
+        const midY = (centerLocal.y + restPos.y) * 0.5;
+
+        // Kick off at screen center, scale 0 (invisible dot).
+        wrap.setPosition(centerLocal.x, centerLocal.y, restPos.z);
+        wrap.setScale(new Vec3(0, 0, 1));
+
+        tween(wrap)
+            // Stage 1: pop from 0 → 2× at screen center (fast entrance).
+            .to(0.30, {
+                position: new Vec3(centerLocal.x, centerLocal.y, restPos.z),
+                scale:    new Vec3(2, 2, 1),
+            }, { easing: 'backOut' })
+            // HOLD: 500ms of stillness in the middle. Nothing changes.
+            .delay(0.50)
+            // Stage 2a: fast start → slow middle. Half the distance,
+            // scale 2× → 1.5×.
+            .to(0.25, {
+                position: new Vec3(midX, midY, restPos.z),
+                scale:    new Vec3(1.5, 1.5, 1),
+            }, { easing: 'quadOut' })
+            // Stage 2b: slow middle → fast end. Rest of the distance,
+            // scale 1.5× → 1×.
+            .to(0.25, {
+                position: new Vec3(restPos.x, restPos.y, restPos.z),
+                scale:    new Vec3(1, 1, 1),
+            }, { easing: 'quadIn' })
+            .start();
     }
 
     /** Factory: one pixel-cube number readout, positioned relative to
@@ -1233,16 +1305,33 @@ export class HudController extends Component {
      *  with the game clock without wiring hooks into every activation
      *  path. */
     private syncPickupCountdowns(g: any): void {
+        // Only show countdown widgets during ACTIVE play. On level-win /
+        // game-over the underlying state (gatling pendingCount, meteor
+        // bag remaining, hourglass ms) may still be non-zero because the
+        // storm/rain/slowdown hadn't finished when the level ended — but
+        // the run is over, so the countdowns should disappear immediately.
+        const active = !!g.running && !g.gameOver;
+
         // Hourglass — round UP so "3s left" doesn't visually flip to 0
         // half a frame early. Hide at 0 (inactive).
         const hgMs  = g.hourglass?.remainingMs?.() ?? 0;
         const hgSec = hgMs > 0 ? Math.ceil(hgMs / 1000) : 0;
         if (this.hourglassCountRoot) {
-            const show = hgSec > 0;
-            if (this.hourglassCountRoot.active !== show) this.hourglassCountRoot.active = show;
+            const show = active && hgSec > 0;
+            if (this.hourglassCountRoot.active !== show) {
+                this.hourglassCountRoot.active = show;
+                // Ensure the wrap is at its rest position + scale 1×
+                // when re-shown (the fake-label flight in
+                // _flyNumberThenPick left no trace on the real wrap;
+                // reset here defensively in case anything else moved it).
+                if (show) {
+                    this.hourglassCountRoot.setPosition(this.hourglassRestPos);
+                    this.hourglassCountRoot.setScale(new Vec3(1, 1, 1));
+                }
+            }
             if (show && hgSec !== this.lastHourglassSec) {
                 this.lastHourglassSec = hgSec;
-                if (this.hourglassCountGfx) this.paintSmallPixelNumber(this.hourglassCountGfx, hgSec);
+                if (this.hourglassCountGfx) this.paintSmallPixelNumber(this.hourglassCountGfx, hgSec, 12);
             }
             if (!show) this.lastHourglassSec = -1;
         }
@@ -1251,8 +1340,14 @@ export class HudController extends Component {
         // Uses PX=12 (2× hourglass) for the big screen-centered readout.
         const gtCount = g.gatling?.unresolvedCount?.() ?? 0;
         if (this.gatlingCountRoot) {
-            const show = gtCount > 0;
-            if (this.gatlingCountRoot.active !== show) this.gatlingCountRoot.active = show;
+            const show = active && gtCount > 0;
+            if (this.gatlingCountRoot.active !== show) {
+                this.gatlingCountRoot.active = show;
+                if (show) {
+                    this.gatlingCountRoot.setPosition(this.gatlingRestPos);
+                    this.gatlingCountRoot.setScale(new Vec3(1, 1, 1));
+                }
+            }
             if (show && gtCount !== this.lastGatlingCount) {
                 this.lastGatlingCount = gtCount;
                 if (this.gatlingCountGfx) this.paintSmallPixelNumber(this.gatlingCountGfx, gtCount, 12);
@@ -1267,8 +1362,14 @@ export class HudController extends Component {
         const liveDot    = g.current && g.current.type === 'DOT' ? 1 : 0;
         const mtCount    = bagPending + liveDot;
         if (this.meteorCountRoot) {
-            const show = mtCount > 0;
-            if (this.meteorCountRoot.active !== show) this.meteorCountRoot.active = show;
+            const show = active && mtCount > 0;
+            if (this.meteorCountRoot.active !== show) {
+                this.meteorCountRoot.active = show;
+                if (show) {
+                    this.meteorCountRoot.setPosition(this.meteorRestPos);
+                    this.meteorCountRoot.setScale(new Vec3(1, 1, 1));
+                }
+            }
             if (show && mtCount !== this.lastMeteorCount) {
                 this.lastMeteorCount = mtCount;
                 if (this.meteorCountGfx) this.paintSmallPixelNumber(this.meteorCountGfx, mtCount, 12);
@@ -1893,8 +1994,176 @@ export class HudController extends Component {
             console.log('[Picker] key is null, abort');
             return;
         }
+        // Fire the item-pick SFX on every magic-item slot tap — covers
+        // countdown items (hourglass/gatling/meteor) that go through the
+        // flying-number animation AND everything else (chest, excavator,
+        // shapeshifter, rewind) that fires instantly.
+        SoundManager.instance?.play('item_pick');
+        // Hourglass / gatling / meteor get a "flying number" cinematic:
+        // a temp label materialises at screen center at 3× scale, holds,
+        // then flies + shrinks to the countdown's rest position. Only
+        // AFTER it arrives does pickEnergyReward fire — so blocks /
+        // slowdown don't kick in until the number is at rest. Everything
+        // else fires instantly.
+        if (this._isFlyingPickKey(key)) {
+            this._flyNumberThenPick(key);
+            return;
+        }
         const ok = g.pickEnergyReward(key);
         console.log(`[Picker] pickEnergyReward('${key}') returned ${ok}`);
+    }
+
+    /** Item families that get the "big pop → fly to rest" preview
+     *  animation before their effect actually starts. Shapeshifter is
+     *  NOT in this list — its animation happens AFTER the player picks
+     *  a shape from the shapeshifter modal (see onShapeshifterPick),
+     *  where the chosen shape flies from screen center to the piece
+     *  spawn position and then the transform actually fires. */
+    private _isFlyingPickKey(key: MagicItemKey): boolean {
+        return key.startsWith('hourglass')
+            || key.startsWith('gatling')
+            || key.startsWith('meteor');
+    }
+
+    /** Initial countdown value for a given magic-item key — matches what
+     *  the real countdown widget will show on frame 1 after activation.
+     *  Gatling/meteor return bullet/DOT counts; hourglass returns seconds. */
+    private _initialCountFor(key: MagicItemKey): number {
+        if (key === 'gatling1') return 4;
+        if (key === 'gatling2') return 8;
+        if (key === 'gatling3') return 12;
+        if (key === 'meteor1')  return 5;
+        if (key === 'meteor2')  return 10;
+        if (key === 'meteor3')  return 15;
+        if (key === 'hourglass1') return 60;
+        if (key === 'hourglass2') return 120;
+        if (key === 'hourglass3') return 180;
+        return 0;
+    }
+
+    /** Pop the initial countdown number at screen center 3×, hold, then
+     *  fly + shrink to the target countdown widget's rest position.
+     *  Only when it arrives do we call pickEnergyReward so the item's
+     *  actual effect (bullets / meteors / slowdown) starts AFTER the
+     *  number lands. On landing the fake cross-fades into the real
+     *  countdown widget for a seamless handoff. */
+    private _flyNumberThenPick(key: MagicItemKey): void {
+        const g = this.gameController?.gameState;
+        if (!g) return;
+
+        const initial = this._initialCountFor(key);
+        if (initial <= 0) {
+            // Unknown key — just fire immediately.
+            g.pickEnergyReward(key);
+            return;
+        }
+
+        // Pick which countdown widget this belongs to → grab its wrap's
+        // WORLD position (parent + local) so we can convert to root
+        // frame for the temp label's flight target.
+        let targetWrap: Node | null = null;
+        if (key.startsWith('hourglass'))     targetWrap = this.hourglassCountRoot;
+        else if (key.startsWith('gatling'))  targetWrap = this.gatlingCountRoot;
+        else if (key.startsWith('meteor'))   targetWrap = this.meteorCountRoot;
+
+        const rootNode = this.node;
+        const rootTx = rootNode.getComponent(UITransform);
+        let restInRoot = new Vec3(0, 0, 0);
+        if (targetWrap?.parent) {
+            const parentTx = targetWrap.parent.getComponent(UITransform);
+            if (parentTx && rootTx) {
+                const worldPos = parentTx.convertToWorldSpaceAR(targetWrap.position);
+                restInRoot = rootTx.convertToNodeSpaceAR(worldPos);
+            }
+        }
+
+        // Suppress the real countdown widget from popping in during the
+        // fly (it would otherwise appear at rest position the frame
+        // pickEnergyReward fires and cause a double-number). Wrap stays
+        // inactive; sync loop will re-enable it once the item fires.
+        // Since we fire the pick AFTER the animation completes, the
+        // countdown is naturally hidden the whole time — nothing to do.
+
+        // Fire the pick reward via g.pickEnergyReward. We WANT the
+        // picker overlay to close now (visual feedback) but delay the
+        // actual effect. Trick: close the overlay manually + delay the
+        // pick. But pickEnergyReward is what activates the item state,
+        // and there's no way to "close overlay without activating".
+        // Instead: hide the overlay ourselves, delay activation.
+        // Close BOTH picker overlays (authored + programmatic) at the
+        // exact frame the fake number pops at screen center so the modal
+        // doesn't linger under the animation. Use the shared helper —
+        // pickEnergyReward's onEnergyPickerClose hook would do this
+        // eventually but we've delayed pickEnergyReward until after the
+        // fly lands, so we need to close manually here.
+        this.hidePicker();
+
+        // Temp pixel-number readout — parented to HUD root at screen
+        // center, starting at scale 0.
+        const fly = new Node('FlyingCountdownNumber');
+        fly.parent = rootNode;
+        fly.layer  = rootNode.layer;
+        fly.setSiblingIndex(9999);
+        const flyTx = fly.addComponent(UITransform);
+        flyTx.setContentSize(180, 80);
+        flyTx.setAnchorPoint(0.5, 1);
+        fly.setPosition(0, 0, 0);          // screen center
+        fly.setScale(new Vec3(0, 0, 1));   // start invisible
+
+        const gfxNode = new Node('FlyingCountdownGfx');
+        gfxNode.parent = fly;
+        gfxNode.layer  = fly.layer;
+        const gfxTx = gfxNode.addComponent(UITransform);
+        gfxTx.setContentSize(180, 80);
+        gfxTx.setAnchorPoint(0.5, 1);
+        gfxNode.setPosition(0, 0, 0);
+        const gfx = gfxNode.addComponent(Graphics);
+        this.paintSmallPixelNumber(gfx, initial, 12);
+
+        // Midpoint of center → rest for the fast-slow-fast segmentation.
+        const midX = restInRoot.x * 0.5;
+        const midY = restInRoot.y * 0.5;
+
+        tween(fly)
+            // Stage 1: pop from 0 → 3× at screen center (fast entrance).
+            .to(0.30, {
+                position: new Vec3(0, 0, 0),
+                scale:    new Vec3(3, 3, 1),
+            }, { easing: 'backOut' })
+            // HOLD: 500ms perfectly still.
+            .delay(0.50)
+            // Stage 2a: fast start → slow middle.
+            .to(0.25, {
+                position: new Vec3(midX, midY, 0),
+                scale:    new Vec3(2, 2, 1),
+            }, { easing: 'quadOut' })
+            // Stage 2b: slow middle → fast end.
+            .to(0.25, {
+                position: new Vec3(restInRoot.x, restInRoot.y, 0),
+                scale:    new Vec3(1, 1, 1),
+            }, { easing: 'quadIn' })
+            .call(() => {
+                // Fire the pick — item state activates. Real countdown
+                // widget will appear at rest position with the same
+                // number on the next syncPickupCountdowns run.
+                const ok = g.pickEnergyReward(key);
+                console.log(`[Picker] flying number landed, fired '${key}' -> ${ok}`);
+                if (this.gameController?.gameState) {
+                    // Force one immediate sync so the real widget flips
+                    // to active + paints its number THIS frame, before
+                    // we start fading the fake out.
+                    this.syncPickupCountdowns(this.gameController.gameState);
+                }
+                // Cross-fade the fake out over 150ms. Real is already
+                // fully opaque underneath at the same spot → clean
+                // handoff, no blank frame.
+                const flyOp = fly.getComponent(UIOpacity) ?? fly.addComponent(UIOpacity);
+                tween(flyOp)
+                    .to(0.15, { opacity: 0 }, { easing: 'quadOut' })
+                    .call(() => { if (fly.isValid) fly.destroy(); })
+                    .start();
+            })
+            .start();
     }
 
     private onRefreshClicked(): void {
@@ -2906,7 +3175,135 @@ export class HudController extends Component {
     private onShapeshifterPick(type: PieceType): void {
         const apply = this.shapeshifterApply;
         this.hideShapeshifterPicker();
-        apply?.(type);
+        if (!apply) return;
+        // Cinematic: chosen shape pops at screen center 3×, holds, then
+        // flies + shrinks to the piece-spawn Y (top of the play field).
+        // The actual transform (apply(type)) fires when the shape lands,
+        // so the player sees the shape "arrive" before the piece changes.
+        this._flyShapeThenApply(type, apply);
+    }
+
+    /** Fly the chosen tetromino shape from screen center to the piece-
+     *  spawn location, then apply the transform. Timing / easing match
+     *  the countdown-item pop-and-fly (300ms pop → 500ms hold → 250ms
+     *  quadOut → 250ms quadIn → 150ms fade). */
+    private _flyShapeThenApply(type: PieceType, apply: (t: PieceType) => void): void {
+        const rootNode = this.node;
+        // Target = the authored NEXT preview box's on-screen position,
+        // converted to the HUD root's local frame. NEXT is where the
+        // "upcoming piece" preview lives, so having the freshly-picked
+        // shape fly INTO it reads as "this is now your next piece".
+        // Falls back to top-center of screen if the @property slot
+        // isn't wired (defensive).
+        let targetPos = new Vec3(0, 400, 0);
+        const rootTx = rootNode.getComponent(UITransform);
+        if (this.authoredNextPreviewBox?.parent && rootTx) {
+            const parentTx = this.authoredNextPreviewBox.parent.getComponent(UITransform);
+            if (parentTx) {
+                const worldPos = parentTx.convertToWorldSpaceAR(this.authoredNextPreviewBox.position);
+                targetPos = rootTx.convertToNodeSpaceAR(worldPos);
+            }
+        }
+        const midX = targetPos.x * 0.5;
+        const midY = targetPos.y * 0.5;
+
+        // Temp wrap centered on screen, holds the shape-preview gfx.
+        const fly = new Node('FlyingShapeshifterShape');
+        fly.parent = rootNode;
+        fly.layer  = rootNode.layer;
+        fly.setSiblingIndex(9999);
+        const flyTx = fly.addComponent(UITransform);
+        flyTx.setContentSize(180, 180);
+        flyTx.setAnchorPoint(0.5, 0.5);
+        fly.setPosition(0, 0, 0);
+        fly.setScale(new Vec3(0, 0, 1));
+
+        const gfxNode = new Node('FlyingShapeshifterGfx');
+        gfxNode.parent = fly;
+        gfxNode.layer  = fly.layer;
+        const gfxTx = gfxNode.addComponent(UITransform);
+        gfxTx.setContentSize(180, 180);
+        gfxTx.setAnchorPoint(0.5, 0.5);
+        gfxNode.setPosition(0, 0, 0);
+        const gfx = gfxNode.addComponent(Graphics);
+        this._paintTetrominoShape(gfx, type, 180, 180);
+
+        tween(fly)
+            // Stage 1: pop 0 → 0.75× at screen center (fast entrance).
+            // 0.75× = half of the previous 1.5× peak — earlier version
+            // dominated the screen too much for the shape's chunky
+            // silhouette.
+            .to(0.30, {
+                position: new Vec3(0, 0, 0),
+                scale:    new Vec3(0.75, 0.75, 1),
+            }, { easing: 'backOut' })
+            // HOLD 500ms at 0.75×.
+            .delay(0.50)
+            // Stage 2: continuous glide to target while shrinking.
+            // Scale continues to shrink 0.75× → 0.5× so it fits inside
+            // the NEXT preview box slot without spilling out.
+            // `cubicOut` = smooth deceleration into landing, no
+            // mid-flight 0-velocity stutter.
+            .to(0.55, {
+                position: new Vec3(targetPos.x, targetPos.y, 0),
+                scale:    new Vec3(0.5, 0.5, 1),
+            }, { easing: 'cubicOut' })
+            .call(() => {
+                // Apply the transform NOW — the piece changes to this
+                // shape and continues falling (or spawns fresh) from
+                // its current position. The fake stays visible for the
+                // 150ms fade so there's no blank frame at the spawn.
+                apply(type);
+                const flyOp = fly.getComponent(UIOpacity) ?? fly.addComponent(UIOpacity);
+                tween(flyOp)
+                    .to(0.15, { opacity: 0 }, { easing: 'quadOut' })
+                    .call(() => { if (fly.isValid) fly.destroy(); })
+                    .start();
+            })
+            .start();
+    }
+
+    /** Paint one tetromino shape (colored cells for the given type)
+     *  centered inside a `w × h` box. Cell size auto-scales so the
+     *  shape fits with a small margin. Mirrors the visual style of
+     *  the shapeshifter picker slots (see buildShapeshifterSlot). */
+    private _paintTetrominoShape(gfx: Graphics, type: PieceType, w: number, h: number): void {
+        gfx.clear();
+        const shape = SHAPES[type];
+        if (!shape) return;
+        let minR = Infinity, maxR = -Infinity, minC = Infinity, maxC = -Infinity;
+        for (let rr = 0; rr < shape.length; rr++) {
+            for (let cc = 0; cc < shape[rr].length; cc++) {
+                if (shape[rr][cc]) {
+                    if (rr < minR) minR = rr;
+                    if (rr > maxR) maxR = rr;
+                    if (cc < minC) minC = cc;
+                    if (cc > maxC) maxC = cc;
+                }
+            }
+        }
+        if (minR > maxR) return;
+        const rows = maxR - minR + 1;
+        const cols = maxC - minC + 1;
+        const cell = Math.max(3, Math.floor(Math.min(w * 0.85 / cols, h * 0.85 / rows)));
+        const totalW = cell * cols;
+        const totalH = cell * rows;
+        const offX = -totalW / 2;
+        const offY = totalH / 2 - cell;
+        const hex = COLORS[type as CellValue] || '#6dd5ff';
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        gfx.fillColor = new Color(r, g, b, 255);
+        for (let rr = 0; rr < rows; rr++) {
+            for (let cc = 0; cc < cols; cc++) {
+                if (!shape[minR + rr][minC + cc]) continue;
+                const px = offX + cc * cell;
+                const py = offY - rr * cell;
+                gfx.rect(px + 1, py + 1, cell - 2, cell - 2);
+                gfx.fill();
+            }
+        }
     }
 
     private hideShapeshifterPicker(): void {
