@@ -64,8 +64,8 @@ export const LOCK_RESET_LIMIT      = 3;
 // cell) and as a fallback when a magic item doesn't specify a tier.
 // Magic-item tiers 1/2/3 use METEOR_TIER_COUNT (5 / 10 / 15) instead.
 export const METEOR_PIECES         = 10;
-export const METEOR_SPEED_MULT     = 7;
-export const METEOR_DROP_INTERVAL  = BASE_DROP_INTERVAL_MS / METEOR_SPEED_MULT;  // ~114ms / row
+export const METEOR_DROP_INTERVAL  = 67;                                        // ms per row — matches Gatling bullet speed
+export const METEOR_SPEED_MULT     = BASE_DROP_INTERVAL_MS / METEOR_DROP_INTERVAL; // ~11.94×
 
 // -------- Magic items ----------
 // Wrecker (拆迁队) used to be on this list; it was moved to the
