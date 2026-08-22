@@ -43,6 +43,7 @@ import {
 } from '../core/Settings';
 import { SoundManager } from '../audio/SoundManager';
 import { BgmManager } from '../audio/BgmManager';
+import { FontManager } from '../core/FontManager';
 import { LevelProgress } from '../core/LevelProgress';
 import { deletePlayerSelf } from '../core/PlayerApi';
 import { IS_DEV_BUILD } from '../core/BuildConfig';
@@ -2427,6 +2428,10 @@ export class MenuController extends Component {
         lab.color = new Color(245, 245, 255, 255);
         lab.horizontalAlign = Label.HorizontalAlign.CENTER;
         lab.verticalAlign = Label.VerticalAlign.CENTER;
+        // Apply the global TTF font (HarmonyOS Sans Condensed) so
+        // runtime-created labels match authored ones. No-op if the
+        // scene's FontManager component hasn't been wired.
+        FontManager.applyToLabel(lab);
         return lab;
     }
 
