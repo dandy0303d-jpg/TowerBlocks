@@ -458,34 +458,6 @@ export class MenuController extends Component {
             await PlayerProfile.ensureRegistered().catch((e) => {
                 console.warn('[MenuController] ensureRegistered failed:', e);
             });
-
-            // Boot-time profile fetch — AWAITED so the menu doesn't
-            // reveal until the server-authoritative profile has landed.
-            // This kills the race where a re-installed player taps
-            // "关卡模式" faster than the fetch resolves and sees
-            // level 1 despite the server having their cleared-count.
-            // Also seeds LevelProgress from bestScores.level so re-
-            // installs / new devices don't reset every player to 1.
-            try {
-                const p = await PlayerProfile.fetchProfile();
-                const clearedCount = p?.bestScores?.level ?? 0;
-                if (clearedCount > 0) {
-                    // Max-merge with whatever's already in localStorage
-                    // so a player who just cleared a level on this
-                    // device doesn't get bumped BACK if the upload race
-                    // lost. Server-side best-of merging keeps subsequent
-                    // submissions monotone anyway.
-                    const localIdx = LevelProgress.maxClearedIdx;
-                    const serverIdx = clearedCount - 1;
-                    if (serverIdx > localIdx) {
-                        LevelProgress.restoreFrom(serverIdx);
-                        log(`[MenuController] boot restored LevelProgress from server: ${localIdx} -> ${serverIdx}`);
-                    }
-                }
-                log(`[MenuController] boot profile ready — bestScores=${JSON.stringify(p?.bestScores)}`);
-            } catch (err) {
-                console.warn(`[MenuController] boot fetchProfile failed: ${(err as Error)?.message}`);
-            }
             log(`[MenuController] beginBootAfterLoading — uuid=${PlayerProfile.uuid} name=${PlayerProfile.name}`);
 
             // Step 2: consent gate (韩国 PIPA / 게임산업진흥법 요구). Blocks
