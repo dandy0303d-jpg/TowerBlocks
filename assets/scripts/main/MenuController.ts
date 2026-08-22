@@ -477,6 +477,41 @@ export class MenuController extends Component {
                     console.warn(`[MenuController] boot wallet fetch failed (non-ban): ${err?.message}`);
                 }
             });
+
+            // Boot-time profile fetch — AWAITED so the menu doesn't
+            // reveal until the server-authoritative profile has landed.
+            // This kills the race where a player who just re-installed
+            // taps "关卡模式" faster than the fetch resolves and sees
+            // level 1 despite the server having their cleared-count.
+            // Also seeds LevelProgress from bestScores.level so re-
+            // installs / new devices don't reset every player to 1.
+            //
+            // Non-ban network errors don't block boot — menu comes up
+            // with whatever's in localStorage (usually empty on fresh
+            // install; player just re-plays the missing levels).
+            try {
+                const p = await PlayerProfile.fetchProfile();
+                const clearedCount = p?.bestScores?.level ?? 0;
+                if (clearedCount > 0) {
+                    // Max-merge with whatever's already in localStorage
+                    // so a player who just cleared a level on this
+                    // device doesn't get bumped BACK if the upload race
+                    // lost. Server-side best-of merging keeps subsequent
+                    // submissions monotone anyway.
+                    const localIdx = LevelProgress.maxClearedIdx;
+                    const serverIdx = clearedCount - 1;
+                    if (serverIdx > localIdx) {
+                        LevelProgress.restoreFrom(serverIdx);
+                        log(`[MenuController] boot restored LevelProgress from server: ${localIdx} -> ${serverIdx}`);
+                    }
+                }
+                log(`[MenuController] boot profile ready — bestScores=${JSON.stringify(p?.bestScores)}`);
+            } catch (err) {
+                if (!getBannedState()) {
+                    console.warn(`[MenuController] boot fetchProfile failed (non-ban): ${(err as Error)?.message}`);
+                }
+            }
+
             // Ban check — if any auth'd request 403'd above, the
             // handler has fired + modal is up; skip further boot work.
             if (getBannedState()) {
