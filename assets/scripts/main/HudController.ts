@@ -61,12 +61,14 @@ const ITEM_GLYPHS: Record<MagicItemKey, string> = {
     hourglass1:    '⏳',
     hourglass2:    '⏳',
     hourglass3:    '⏳',
-    excavator1:    '⛏',
-    excavator2:    '⛏',
-    excavator3:    '⛏',
-    excavatorTop1: '⛏',
-    excavatorTop2: '⛏',
-    excavatorTop3: '⛏',
+    // 底部消除：↓ + N 横杠（在箭头下方），N = 消除的行数
+    excavator1:    '↓\n━',
+    excavator2:    '↓\n━\n━',
+    excavator3:    '↓\n━\n━\n━',
+    // 顶部消除：N 横杠 + ↑（在箭头上方），N = 消除的行数
+    excavatorTop1: '━\n↑',
+    excavatorTop2: '━\n━\n↑',
+    excavatorTop3: '━\n━\n━\n↑',
     shapeshifter:  '🎲',
     rewind:        '⏪',
     meteor1:       '🌠',
@@ -188,6 +190,37 @@ export class HudController extends Component {
 
     @property({ type: Button, tooltip: '速度累加按钮（DEV，仅无尽/盲选；1.0→1.1→...→2.0→回1.0）' })
     authoredDebugSpeedButton: Button | null = null;
+
+    @property({ type: SpriteFrame, tooltip: '能量条背景图（可选 — 拖 assets/image/energy_bar_bg.png；不拖则程序绘制矢量胶囊）' })
+    authoredEnergyBarBgSprite: SpriteFrame | null = null;
+
+    // ============================================================
+    //  Magic item picker icons + tier stars
+    //  Drag each PNG from assets/image/items/. If any slot is
+    //  unwired, that item falls back to the emoji Label glyph.
+    // ============================================================
+    @property({ type: SpriteFrame, tooltip: '沙漏图标 (hourglass.png)' })
+    itemIconHourglass: SpriteFrame | null = null;
+    @property({ type: SpriteFrame, tooltip: '底部消除 (excavator.png)' })
+    itemIconExcavator: SpriteFrame | null = null;
+    @property({ type: SpriteFrame, tooltip: '顶部消除 (excavatorTop.png)' })
+    itemIconExcavatorTop: SpriteFrame | null = null;
+    @property({ type: SpriteFrame, tooltip: '变形 (shapeshifter.png)' })
+    itemIconShapeshifter: SpriteFrame | null = null;
+    @property({ type: SpriteFrame, tooltip: '回退 (rewind.png)' })
+    itemIconRewind: SpriteFrame | null = null;
+    @property({ type: SpriteFrame, tooltip: '流星雨 (meteor.png)' })
+    itemIconMeteor: SpriteFrame | null = null;
+    @property({ type: SpriteFrame, tooltip: '火箭 (rocket.png)' })
+    itemIconRocket: SpriteFrame | null = null;
+    @property({ type: SpriteFrame, tooltip: '加特林 (gatling.png)' })
+    itemIconGatling: SpriteFrame | null = null;
+    @property({ type: SpriteFrame, tooltip: '灰泥 (mortar.png)' })
+    itemIconMortar: SpriteFrame | null = null;
+    @property({ type: SpriteFrame, tooltip: '空星槽 (star_slot.png)' })
+    itemStarSlot: SpriteFrame | null = null;
+    @property({ type: SpriteFrame, tooltip: '亮星 (star_filled.png)' })
+    itemStarFilled: SpriteFrame | null = null;
 
     @property({ type: Label, tooltip: '层高 Label（右上角）' })
     authoredScoreLabel: Label | null = null;
@@ -433,6 +466,8 @@ export class HudController extends Component {
     private pickerSlotNames: Label[] = [];    // 2 name labels (middle)
     private pickerSlotDescs: Label[] = [];    // 2 description labels (bottom)
     private pickerSlotBadges: Label[] = [];   // 2 rarity-pill labels above the glyph
+    private pickerSlotIcons:  Sprite[] = [];  // 2 icon Sprites — new PNG-based icon replaces the emoji Label
+    private pickerSlotStarFills: Sprite[][] = [];   // 2 × 3: filled-star overlays per slot, toggled by tier
     private pickerSlotKeys: (MagicItemKey | null)[] = [null, null];
     private refreshBtnLabel!: Label;
     private refreshesUsedThisFull = 0;       // resets when picker closes
@@ -904,20 +939,39 @@ export class HudController extends Component {
         widget.updateAlignment();
 
         // Background track (rounded pill, vertical).
+        // Prefer the authored SpriteFrame if wired (assets/image/
+        // energy_bar_bg.png) — matches the Graphics fallback pixel-
+        // for-pixel and lets the art team retouch without touching
+        // code. Falls back to a programmatic Graphics pill so the
+        // scene still works with an unwired @property slot.
         const bg = this.makeNode('EnergyBg', wrap, 0, 0, BAR_THICKNESS, BAR_LENGTH);
-        const bgGfx = bg.addComponent(Graphics);
-        bgGfx.fillColor = new Color(23, 27, 46, 245);   // CARD_INNER
-        bgGfx.roundRect(-BAR_THICKNESS / 2, -BAR_LENGTH / 2, BAR_THICKNESS, BAR_LENGTH, BAR_THICKNESS / 2);
-        bgGfx.fill();
-        bgGfx.strokeColor = new Color(255, 201, 60, 220);   // NEON_GOLD frame
-        bgGfx.lineWidth = 2;
-        bgGfx.roundRect(-BAR_THICKNESS / 2, -BAR_LENGTH / 2, BAR_THICKNESS, BAR_LENGTH, BAR_THICKNESS / 2);
-        bgGfx.stroke();
+        if (this.authoredEnergyBarBgSprite) {
+            const spr = bg.addComponent(Sprite);
+            spr.spriteFrame = this.authoredEnergyBarBgSprite;
+            spr.sizeMode    = Sprite.SizeMode.CUSTOM;
+            spr.type        = Sprite.Type.SIMPLE;
+            // Preserve the exact BAR_THICKNESS × BAR_LENGTH footprint
+            // so the fill on top lines up regardless of the source
+            // PNG's actual pixel dimensions.
+            const bgTx = bg.getComponent(UITransform);
+            if (bgTx) bgTx.setContentSize(BAR_THICKNESS, BAR_LENGTH);
+        } else {
+            const bgGfx = bg.addComponent(Graphics);
+            bgGfx.fillColor = new Color(23, 27, 46, 245);   // CARD_INNER
+            bgGfx.roundRect(-BAR_THICKNESS / 2, -BAR_LENGTH / 2, BAR_THICKNESS, BAR_LENGTH, BAR_THICKNESS / 2);
+            bgGfx.fill();
+            bgGfx.strokeColor = new Color(255, 201, 60, 220);   // NEON_GOLD frame
+            bgGfx.lineWidth = 2;
+            bgGfx.roundRect(-BAR_THICKNESS / 2, -BAR_LENGTH / 2, BAR_THICKNESS, BAR_LENGTH, BAR_THICKNESS / 2);
+            bgGfx.stroke();
+        }
         this.energyBarBg = bg;
 
         // Foreground fill — redrawn per energy change. Grows from the
-        // bottom of the pill upward.
-        const fill = this.makeNode('EnergyFill', wrap, 0, 0, BAR_THICKNESS, BAR_LENGTH);
+        // bottom of the pill upward. Sits inset inside the bg border
+        // (19×410 vs bar 28×420) so the fill doesn't clip through the
+        // gold frame — dimensions match `redrawEnergyFill` below.
+        const fill = this.makeNode('EnergyFill', wrap, 0, 0, 19, 410);
         this.energyBarFill    = fill;
         this.energyBarFillGfx = fill.addComponent(Graphics);
         this.redrawEnergyFill(0);
@@ -933,8 +987,11 @@ export class HudController extends Component {
 
     private redrawEnergyFill(charge: number): void {
         if (!this.energyBarFillGfx) return;
-        const BAR_THICKNESS = 28;
-        const BAR_LENGTH    = 420;
+        // Inset from the 28×420 bg pill — 19 wide × 410 tall leaves
+        // ~4.5px horizontal margin + ~5px vertical margin so the fill
+        // sits cleanly inside the gold frame.
+        const BAR_THICKNESS = 19;
+        const BAR_LENGTH    = 410;
         const ratio = Math.max(0, Math.min(1, charge / ENERGY_FULL_THRESHOLD));
         const fillH = BAR_LENGTH * ratio;
         this.energyBarFillGfx.clear();
@@ -1667,6 +1724,15 @@ export class HudController extends Component {
 
     // ---- Picker overlay ----
     private buildPicker(root: Node, w: number, h: number): void {
+        // If the scene has an authored EnergyPicker wired to the
+        // @property slot, DON'T build a parallel programmatic one —
+        // otherwise we end up with two 'EnergyPicker' nodes fighting
+        // for sibling order / render layer and any icons/stars we
+        // inject may go into the wrong overlay.
+        if (this.authoredEnergyPicker) {
+            console.log('[Picker] authored EnergyPicker detected — skipping programmatic buildPicker');
+            return;
+        }
         const overlay = this.makeNode('EnergyPicker', root, 0, 0, w, h);
         overlay.active = false;
         this.pickerOverlay = overlay;
@@ -1709,9 +1775,48 @@ export class HudController extends Component {
             const badgeLab = this.makeLabel(`Badge_${i}`, badgeBgNode, 0, 0, t('rarity.common'), 18, [0.5, 0.5]);
             badgeLab.color = new Color(240, 245, 255, 255);
 
-            // Glyph (big emoji)
+            // Glyph (big emoji) — kept as fallback for items without a
+            // wired PNG icon. Sprite icon below sits on top of it and
+            // hides it visually when an icon SpriteFrame is available.
             const glyphLab = this.makeLabel(`Glyph_${i}`, slot, 0, 60, '?', 90, [0.5, 0.5]);
             glyphLab.color = new Color(255, 255, 255, 255);
+
+            // Item icon Sprite — same slot position as the glyph, sits
+            // on top. repaintSlot swaps the spriteFrame per item.
+            const iconNode = this.makeNode(`Icon_${i}`, slot, 0, 60, 200, 200);
+            const iconSpr = iconNode.addComponent(Sprite);
+            iconSpr.sizeMode = Sprite.SizeMode.CUSTOM;
+            iconSpr.type     = Sprite.Type.SIMPLE;
+            iconNode.active  = false;   // shown by repaintSlot when a frame is available
+            this.pickerSlotIcons.push(iconSpr);
+
+            // Tier stars — 3 slots (always shown when a key is set) +
+            // 3 fill overlays (toggled by tier). Sits BELOW the icon,
+            // above the description text.
+            const STAR_SIZE = 36;
+            const STAR_GAP  = 8;
+            const STAR_ROW_Y = -75;
+            const totalW = STAR_SIZE * 3 + STAR_GAP * 2;
+            const startX = -totalW / 2 + STAR_SIZE / 2;
+            const slotFills: Sprite[] = [];
+            for (let s = 0; s < 3; s++) {
+                const sx = startX + s * (STAR_SIZE + STAR_GAP);
+                // Empty slot background (always visible).
+                const bg = this.makeNode(`StarSlot_${i}_${s}`, slot, sx, STAR_ROW_Y, STAR_SIZE, STAR_SIZE);
+                const bgSpr = bg.addComponent(Sprite);
+                bgSpr.sizeMode = Sprite.SizeMode.CUSTOM;
+                bgSpr.type     = Sprite.Type.SIMPLE;
+                if (this.itemStarSlot) bgSpr.spriteFrame = this.itemStarSlot;
+                // Filled overlay (toggled per tier).
+                const fill = this.makeNode(`StarFill_${i}_${s}`, slot, sx, STAR_ROW_Y, STAR_SIZE, STAR_SIZE);
+                const fillSpr = fill.addComponent(Sprite);
+                fillSpr.sizeMode = Sprite.SizeMode.CUSTOM;
+                fillSpr.type     = Sprite.Type.SIMPLE;
+                if (this.itemStarFilled) fillSpr.spriteFrame = this.itemStarFilled;
+                fill.active = false;
+                slotFills.push(fillSpr);
+            }
+            this.pickerSlotStarFills.push(slotFills);
 
             // Name
             const nameLab = this.makeLabel(`Name_${i}`, slot, 0, -40, '—', 26, [0.5, 0.5]);
@@ -1822,8 +1927,10 @@ export class HudController extends Component {
                 if (badgeBgNode) badgeBgNode.active = true;
                 this.pickerSlotBadges[i].string = rarityLabel(rarity);
                 this.pickerSlotBadges[i].color  = rgbaToColor(style.badgeText);
-                // Item content
-                this.pickerSlotGlyphs[i].string = ITEM_GLYPHS[key] ?? '?';
+                // Item content — emoji Label glyph (fallback) + new
+                // PNG icon Sprite + tier star fills.
+                this._applyPickerGlyph(this.pickerSlotGlyphs[i], ITEM_GLYPHS[key] ?? '?');
+                this._applyPickerIcon(i, key);
                 this.pickerSlotNames[i].string  = '';   // name removed per request
                 this.pickerSlotDescs[i].string  = itemDesc(key);
             } else {
@@ -1833,9 +1940,172 @@ export class HudController extends Component {
                 this.pickerSlotGlyphs[i].string = '—';
                 this.pickerSlotNames[i].string  = '—';
                 this.pickerSlotDescs[i].string  = '';
+                // Hide the icon Sprite + all tier stars for empty slots.
+                if (this.pickerSlotIcons[i]) this.pickerSlotIcons[i].node.active = false;
+                const fills = this.pickerSlotStarFills[i];
+                if (fills) for (const f of fills) f.node.active = false;
             }
         }
         this.updateRefreshButtonLabel();
+    }
+
+    /** Inject icon Sprite + 3-star tier row as children of `slotNode`
+     *  and register them into pickerSlotIcons / pickerSlotStarFills at
+     *  slot index `i` so `_applyPickerIcon(i, key)` works uniformly for
+     *  both authored and programmatic picker paths. Idempotent —
+     *  guarded by array length checks. */
+    private _injectPickerIconAndStars(slotNode: Node, i: number): void {
+        // Grow arrays sparsely so slot index `i` has a stable position.
+        while (this.pickerSlotIcons.length      <= i) (this.pickerSlotIcons as any).push(undefined);
+        while (this.pickerSlotStarFills.length  <= i) (this.pickerSlotStarFills as any).push(undefined);
+        if (this.pickerSlotIcons[i] && this.pickerSlotStarFills[i]) return;
+
+        // Helper to build a properly-sized sprite child. `makeNode` uses
+        // `contentSize.set()` which doesn't trigger the internal render
+        // update for CUSTOM-mode Sprites — so we call setContentSize
+        // explicitly here to guarantee the quad has a visible extent.
+        const spawnSprite = (name: string, x: number, y: number, w: number, h: number): { node: Node; spr: Sprite } => {
+            const node = new Node(name);
+            node.parent = slotNode;
+            node.layer  = slotNode.layer;
+            const tx = node.addComponent(UITransform);
+            tx.setContentSize(w, h);
+            tx.setAnchorPoint(0.5, 0.5);
+            node.setPosition(x, y, 0);
+            const spr = node.addComponent(Sprite);
+            spr.type     = Sprite.Type.SIMPLE;
+            spr.sizeMode = Sprite.SizeMode.CUSTOM;
+            return { node, spr };
+        };
+
+        // Icon Sprite — upper half of the slot. TRIMMED sizeMode uses
+        // the SpriteFrame's natural (trimmed) size so we don't need
+        // to fight the PNG's own dimensions; controlled position only.
+        const { node: iconNode, spr: iconSpr } = spawnSprite(`AuthoredIcon_${i}`, 0, 40, 130, 130);
+        iconSpr.sizeMode = Sprite.SizeMode.TRIMMED;
+        iconNode.active = false;
+        this.pickerSlotIcons[i] = iconSpr;
+
+        // Tier stars — 3 star slots + 3 fills, positioned below the icon.
+        const STAR_SIZE  = 32;
+        const STAR_GAP   = 6;
+        const STAR_ROW_Y = -47;
+        const totalW = STAR_SIZE * 3 + STAR_GAP * 2;
+        const startX = -totalW / 2 + STAR_SIZE / 2;
+        const fills: Sprite[] = [];
+        for (let s = 0; s < 3; s++) {
+            const sx = startX + s * (STAR_SIZE + STAR_GAP);
+            // Empty slot bg (always shown when a key is set).
+            const bg = spawnSprite(`AuthoredStarSlot_${i}_${s}`, sx, STAR_ROW_Y, STAR_SIZE, STAR_SIZE);
+            if (this.itemStarSlot) bg.spr.spriteFrame = this.itemStarSlot;
+            // Fill overlay (toggled by tier).
+            const fill = spawnSprite(`AuthoredStarFill_${i}_${s}`, sx, STAR_ROW_Y, STAR_SIZE, STAR_SIZE);
+            if (this.itemStarFilled) fill.spr.spriteFrame = this.itemStarFilled;
+            fill.node.active = false;
+            fills.push(fill.spr);
+        }
+        this.pickerSlotStarFills[i] = fills;
+        // Diagnostic: dump what actually got created so we can see if
+        // parent chain / active / positioning is what we expect.
+        const iconTx = iconNode.getComponent(UITransform);
+        console.log(
+            `[Picker/inject] slot ${i}: parent=${slotNode.name} (active=${slotNode.activeInHierarchy}, `
+            + `layer=${slotNode.layer}, `
+            + `children=${slotNode.children.length}) icon pos=(${iconNode.position.x.toFixed(1)},${iconNode.position.y.toFixed(1)}) `
+            + `size=(${iconTx?.contentSize.width},${iconTx?.contentSize.height}) `
+            + `iconLayer=${iconNode.layer} iconActive=${iconNode.active}`
+        );
+    }
+
+    /** Map a MagicItemKey to its base PNG icon SpriteFrame. Returns
+     *  null if the SpriteFrame @property for that family isn't wired
+     *  — caller falls back to the emoji Label glyph. */
+    private _iconForKey(key: MagicItemKey): SpriteFrame | null {
+        if (key.startsWith('hourglass'))     return this.itemIconHourglass;
+        if (key.startsWith('excavatorTop'))  return this.itemIconExcavatorTop;
+        if (key.startsWith('excavator'))     return this.itemIconExcavator;
+        if (key === 'shapeshifter')          return this.itemIconShapeshifter;
+        if (key === 'rewind')                return this.itemIconRewind;
+        if (key.startsWith('meteor'))        return this.itemIconMeteor;
+        if (key.startsWith('rocket'))        return this.itemIconRocket;
+        if (key.startsWith('gatling'))       return this.itemIconGatling;
+        if (key.startsWith('mortar'))        return this.itemIconMortar;
+        return null;
+    }
+
+    /** Return the tier (1-3) for a MagicItemKey. Items with numeric
+     *  suffix use that; mortar uses 5/10/15 → 1/2/3; single-tier items
+     *  (shapeshifter, rewind) return 1. */
+    private _tierForKey(key: MagicItemKey): number {
+        if (key === 'shapeshifter' || key === 'rewind') return 1;
+        if (key === 'mortar5')  return 1;
+        if (key === 'mortar10') return 2;
+        if (key === 'mortar15') return 3;
+        if (key.endsWith('3')) return 3;
+        if (key.endsWith('2')) return 2;
+        if (key.endsWith('1')) return 1;
+        return 1;
+    }
+
+    /** Apply a MagicItemKey to slot `idx`: icon Sprite frame + tier
+     *  star fills + fallback emoji glyph visibility. Hides BOTH the
+     *  programmatic glyph label AND the authored one so the icon
+     *  renders alone (authored path was previously leaving the emoji
+     *  Label on top of the injected Sprite → looked unchanged). */
+    private _applyPickerIcon(idx: number, key: MagicItemKey): void {
+        const iconSpr = this.pickerSlotIcons[idx];
+        const glyphLabProg  = this.pickerSlotGlyphs[idx];
+        const glyphLabAuth  = this.authoredPickerSlotGlyphLabels[idx];
+        const frame = this._iconForKey(key);
+        if (iconSpr && frame) {
+            iconSpr.spriteFrame = frame;
+            iconSpr.node.active = true;
+            iconSpr.node.setSiblingIndex(9999);   // render on top of sibling labels
+            const iTx = iconSpr.node.getComponent(UITransform);
+            console.log(`[Picker/apply] slot ${idx} key=${key}: iconActive=${iconSpr.node.activeInHierarchy} `
+                + `pos=(${iconSpr.node.position.x},${iconSpr.node.position.y}) `
+                + `size=(${iTx?.contentSize.width},${iTx?.contentSize.height}) `
+                + `frame=${iconSpr.spriteFrame?.name ?? 'NULL'} `
+                + `parent=${iconSpr.node.parent?.name}`);
+            // Hide BOTH emoji fallbacks so nothing renders behind/over
+            // the icon (icon PNGs typically have transparent backgrounds).
+            if (glyphLabProg) glyphLabProg.node.active = false;
+            if (glyphLabAuth) glyphLabAuth.node.active = false;
+        } else {
+            // No icon wired → fall back to the emoji Label glyph.
+            if (iconSpr) iconSpr.node.active = false;
+            if (glyphLabProg) glyphLabProg.node.active = true;
+            if (glyphLabAuth) glyphLabAuth.node.active = true;
+        }
+        // Tier stars: fill the first `tier` slots, hide the rest.
+        const tier = this._tierForKey(key);
+        const fills = this.pickerSlotStarFills[idx];
+        if (fills) {
+            for (let s = 0; s < fills.length; s++) {
+                fills[s].node.active = s < tier;
+            }
+        }
+    }
+
+    /** Set the picker-slot glyph string and auto-shrink the font when
+     *  the text has multiple lines (excavator variants are ↓/↑ + N
+     *  horizontal bars stacked vertically; a full 90pt fontSize per
+     *  line would overflow the slot). Base size 90pt for single-line
+     *  emoji glyphs, scaled down proportionally by line count so the
+     *  total visual height stays roughly the same regardless of tier. */
+    private _applyPickerGlyph(label: Label, glyph: string): void {
+        label.string = glyph;
+        const lines = glyph.split('\n').length;
+        // Line spacing 1.05 = tight so bars visually connect. Base
+        // fontSize 90; halve at 2 lines, third at 3 lines, quarter at
+        // 4 lines — keeps total height ≤ single-emoji glyph.
+        let fs: number;
+        if (lines <= 1)      fs = 90;
+        else if (lines === 2) fs = 56;
+        else if (lines === 3) fs = 42;
+        else                  fs = 34;   // 4+ lines
+        label.fontSize = fs;
+        label.lineHeight = Math.round(fs * 1.05);
     }
 
     private hidePicker(): void {
@@ -1865,12 +2135,15 @@ export class HudController extends Component {
      *  so slot-click routing already works without duplicating fields. */
     private wireAuthoredPicker(): void {
         if (this._pickerAuthoredWired) return;
-        // Slot buttons.
+        // Slot buttons + inject icon/star children lazily on first show.
+        // The scene has authored bg + labels but no PNG icon or tier stars
+        // — we build those at runtime so no editor rewiring is needed.
         for (let i = 0; i < this.authoredPickerSlotButtons.length; i++) {
             const btn = this.authoredPickerSlotButtons[i];
             if (!btn) continue;
             btn.node.off('click');
             btn.node.on('click', () => this.onSlotClicked(i), this);
+            this._injectPickerIconAndStars(btn.node, i);
         }
         // Refresh button.
         if (this.authoredPickerRefreshButton) {
@@ -1892,6 +2165,11 @@ export class HudController extends Component {
         const overlay = this.authoredEnergyPicker;
         if (!overlay) return;
         this.wireAuthoredPicker();
+        console.log(`[Picker] showAuthoredPicker: slot buttons wired=${this.authoredPickerSlotButtons.length}, `
+            + `icons registered=${this.pickerSlotIcons.filter(x => !!x).length}, `
+            + `itemIconHourglass wired=${!!this.itemIconHourglass}, `
+            + `itemStarSlot wired=${!!this.itemStarSlot}, `
+            + `itemStarFilled wired=${!!this.itemStarFilled}`);
         // Fetch + paint the paid-refresh cost every time the picker
         // opens (server may have rebalanced).
         this.refreshPaidRefreshLabel('magic');
@@ -1927,7 +2205,9 @@ export class HudController extends Component {
                 badgeLab.string = rarityLabel(rarity);
                 badgeLab.color  = rgbaToColor(style.badgeText);
             }
-            if (glyphLab) glyphLab.string = ITEM_GLYPHS[key] ?? '?';
+            if (glyphLab) this._applyPickerGlyph(glyphLab, ITEM_GLYPHS[key] ?? '?');
+            // PNG icon + tier stars (injected as children in wireAuthoredPicker).
+            this._applyPickerIcon(i, key);
             // Name label removed per request — clear + hide so any
             // authored NameLabel node stays invisible without needing
             // scene-level deletion.
@@ -1937,13 +2217,11 @@ export class HudController extends Component {
             }
             if (descLab) {
                 descLab.string = itemDesc(key);
-                // Safety net: force the label into wrap-text mode so
-                // long descriptions (e.g. "5 滴色浆往下滴，填满悬空空格")
-                // don't spill past the card. No-op if the editor
-                // already configured these — Cocos skips redundant sets.
-                descLab.enableWrapText = true;
-                descLab.overflow = Label.Overflow.RESIZE_HEIGHT;
-                descLab.horizontalAlign = Label.HorizontalAlign.CENTER;
+                // Honor whatever overflow mode the scene author set
+                // (typically SHRINK so text auto-scales to fit the
+                // fixed slot box). Previously we hard-forced
+                // RESIZE_HEIGHT which overrode the author's choice
+                // every open — removed.
             }
         }
         this.updateRefreshButtonLabel();

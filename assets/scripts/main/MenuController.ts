@@ -27,6 +27,7 @@ import { ensureDimBackdrop } from './UiHelpers';
 import { BackgroundController } from './BackgroundController';
 import { TowerBaseMist } from './TowerBaseMist';
 import { BackgroundCubes } from './BackgroundCubes';
+import { TwinkleStars } from './TwinkleStars';
 import { LevelSelectStage3D } from './LevelSelectStage3D';
 import { LeaderboardController } from './LeaderboardController';
 import { TopUpController } from './TopUpController';
@@ -89,6 +90,9 @@ export class MenuController extends Component {
      *  tower — adds depth and a "wider cosmos" feel. */
     @property(BackgroundCubes)
     backgroundCubes: BackgroundCubes | null = null;
+
+    @property({ type: TwinkleStars, tooltip: '关卡选择画面后方的彩色星星（仅在关卡选择显示）' })
+    twinkleStars: TwinkleStars | null = null;
 
     /** New 3D level-select stage. When wired, `showLevelSelect` uses
      *  the 3D tower stack instead of the old 2D scroll list. Leave
@@ -601,6 +605,8 @@ export class MenuController extends Component {
         }
         if (this.mainCamera3D) this.mainCamera3D.active = true;
         this.setGameplayVisible(false);
+        // Twinkle stars are level-select-only decor — hide here.
+        if (this.twinkleStars) this.twinkleStars.setVisible(false);
         if (this.gameController?.gameState) {
             this.gameController.gameState.running = false;
         }
@@ -627,6 +633,8 @@ export class MenuController extends Component {
         // the level-select stage owns the frame.
         if (this.mainCamera3D) this.mainCamera3D.active = false;
         this.setGameplayVisible(false);
+        // Twinkle stars belong to the level-select scenery only.
+        if (this.twinkleStars) this.twinkleStars.setVisible(true);
         this.levelStage3D.showForLevel(
             LevelProgress.currentIdx,
             (idx: number) => this.enterLevelFromStage3D(idx),
@@ -1076,6 +1084,10 @@ export class MenuController extends Component {
         // (to re-enable) doesn't need editor scene surgery.
         if (this.towerBaseMist) this.towerBaseMist.setVisible(false);
         if (this.backgroundCubes) this.backgroundCubes.setVisible(on);
+        // Twinkle stars only belong to the level-select screen, so
+        // hide them any time gameplay comes up. showLevelSelect()
+        // turns them back on explicitly.
+        if (on && this.twinkleStars) this.twinkleStars.setVisible(false);
     }
 
     // ============================================================
