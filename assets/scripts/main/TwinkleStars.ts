@@ -114,11 +114,25 @@ export class TwinkleStars extends Component {
 
     onLoad(): void {
         this.build();
-        log(`[TwinkleStars] onLoad — spawned ${this.stars.length} stars`);
+        // Hidden by default — only the level-select screen turns it on.
+        // MenuController flips visibility via `setVisible(on)`.
+        if (this.root) this.root.active = false;
+        log(`[TwinkleStars] onLoad — spawned ${this.stars.length} stars (hidden)`);
+    }
+
+    /** Toggle the whole star cloud. When off, no nodes render and the
+     *  per-frame update() early-outs (root.active gate below). Called
+     *  by MenuController on level-select show/hide + on gameplay
+     *  transitions. */
+    public setVisible(on: boolean): void {
+        if (this.root) this.root.active = on;
     }
 
     update(dt: number): void {
         if (this.stars.length === 0) return;
+        // Skip the whole loop when hidden — no need to burn cycles on
+        // sin() + setProperty for invisible stars.
+        if (this.root && !this.root.active) return;
         this.elapsed += dt;
         for (const s of this.stars) {
             s.age += dt;
