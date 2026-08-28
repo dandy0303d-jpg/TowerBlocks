@@ -73,10 +73,12 @@ export const TUTORIAL_STEPS: TutorialStep[] = [
         gestureType: 'swipe-hold',
         hintKey:     'tutorial.hint.swipeHold',
         hand: {
-            // Slower horizontal swipe + long hold to signal continuous rotation.
-            start:  { x: 0.75, y: 0.55 },
-            end:    { x: 0.45, y: 0.55 },
-            holdMs: 1200,
+            // Fast horizontal FLING — hand slides quickly across the
+            // screen and releases (no hold). Matches the new control
+            // scheme where a fast swipe + release makes the tower
+            // spin with inertia. Longer travel emphasises the flick.
+            start:  { x: 0.80, y: 0.55 },
+            end:    { x: 0.30, y: 0.55 },
         },
     },
     {

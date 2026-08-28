@@ -116,8 +116,8 @@ export const PT_BR: Record<string, string> = {
     'debug.forceWin':    'Vencer',
 
     'tutorial.hint.tap':          'Toque para mudar a forma',
-    'tutorial.hint.swipeRelease': 'Deslize horizontal e solte para girar',
-    'tutorial.hint.swipeHold':    'Deslize e segure para girar contínuo',
+    'tutorial.hint.swipeRelease': 'Arraste o dedo, a torre gira coluna a coluna',
+    'tutorial.hint.swipeHold':    'Deslize rápido e solte — a torre gira por inércia',
     'tutorial.hint.swipeDown':    'Deslize para baixo para cair rápido',
     'tutorial.skip':              'Pular',
 
@@ -156,7 +156,7 @@ export const PT_BR: Record<string, string> = {
 
     'result.gameOver':   'Fim de jogo',
     'result.levelFail':  'Fase falhou',
-    'result.fail.hole':  'Buraco selado',
+    'result.fail.hole':  'Espaço irreversível formado',
     'result.fail.tall':  'Torre muito alta',
     'result.win':        'Completo ✓',
     'result.retry':      'Tentar novamente',
@@ -179,6 +179,13 @@ export const PT_BR: Record<string, string> = {
     'settings.keys.off':     'Desligado',
     'settings.bgm':          'Música',
     'settings.sfx':          'Efeitos',
+    'settings.haptic':       'Vibração',
+    'settings.controls':       'Controles',
+    'controls.title':          'Escolher esquema de controle',
+    'controls.legacy':         'Clássico (deslizar + segurar)',
+    'controls.dragFling':      'Arrastar + inércia',
+    'controls.buttons':        'Botões na tela',
+    'controls.close':          'Fechar',
     'settings.close':        'Fechar',
     'audio.off':             'Off',
     'audio.percent':         '{n}%',
@@ -234,4 +241,9 @@ export const PT_BR: Record<string, string> = {
     'settings.googleRecovery.pending':                                       'Restaurando...',
     'settings.googleRecovery.failed':                                       'Falha na restauração, tente novamente',
     'settings.googleRecovery.success':                                       'Conta restaurada',
+    // ---- Progressive unlock tips ----
+    'lock.endless':      'Complete {n} fases para desbloquear o Modo Infinito',
+    'lock.blind':        'Alcance {n} camadas no Modo Infinito para desbloquear o Modo Cego',
+    'lock.leaderboard':  'Alcance {n} camadas no Modo Infinito para desbloquear o Ranking',
+    'level.next':        'Próxima fase',
 };

@@ -55,6 +55,13 @@ const SWIPE_MIN_TRAVEL_PX   = 55;
 const SWIPE_HOLD_MIN_MS     = 400;
 const SWIPE_HOLD_MIN_DELTA  = 40;
 const SWIPE_DOWN_MIN_PX     = 80;
+// Fling threshold — new "swipe fast + release → tower spins with
+// inertia" control scheme. Any horizontal swipe with velocity ≥
+// this value at release counts as a fling and satisfies the
+// `swipe-hold` tutorial step (which was the old "hold to spin
+// continuously" gesture). px/ms. 0.5 px/ms = 500 px/s (roughly
+// half a screen width per second — a clear "flick" not a drag).
+const FLING_MIN_VEL_PX_PER_MS = 0.5;
 
 /** Scatter animation duration (seconds) — matches level-win scatter. */
 const SCATTER_DURATION_SEC  = 1.5;
@@ -367,9 +374,17 @@ export class TutorialController extends Component {
                 return e ? this.handFx.demoSwipeRelease(s.x, s.y, e.x, e.y)
                          : this.handFx.demoTap(s.x, s.y);
             case 'swipe-hold':
-                return (e && step.hand.holdMs)
-                    ? this.handFx.demoSwipeHold(s.x, s.y, e.x, e.y, step.hand.holdMs)
-                    : this.handFx.demoTap(s.x, s.y);
+                // Under the new control scheme this step means FLING
+                // (swipe fast + release → inertia spin), not "hold to
+                // spin continuously". If holdMs is set, keep the old
+                // hold-and-drag animation for backward compat; otherwise
+                // render a fast swipe-release to visually match the
+                // flick + inertia player behaviour.
+                if (e && step.hand.holdMs) {
+                    return this.handFx.demoSwipeHold(s.x, s.y, e.x, e.y, step.hand.holdMs);
+                }
+                return e ? this.handFx.demoSwipeRelease(s.x, s.y, e.x, e.y)
+                         : this.handFx.demoTap(s.x, s.y);
             case 'swipe-down':
                 return e ? this.handFx.demoSwipeDown(s.x, s.y, e.x, e.y)
                          : this.handFx.demoTap(s.x, s.y);
@@ -471,6 +486,24 @@ export class TutorialController extends Component {
         // UI y grows UP → dy < 0 means the finger moved DOWN on screen.
         if (absY >= SWIPE_DOWN_MIN_PX && absY > absX && dy < 0) {
             this.detectAndMaybeAdvance('swipe-down');
+            return;
+        }
+        // Fling (new control scheme): fast horizontal release. Counts
+        // as `swipe-hold` for tutorial purposes since the old "hold to
+        // spin" gesture was replaced by "flick + release → inertia
+        // spin" in the drag/fling rotation rework. Only routed to the
+        // swipe-hold step; if the current step is swipe-release, the
+        // gesture falls through to the plain-swipe branch below (a
+        // fling is also a valid swipe-release).
+        const velPxPerMs = dt > 0 ? absX / dt : 0;
+        const isFling = !wasHold
+                     && absX >= SWIPE_MIN_TRAVEL_PX
+                     && absX > absY
+                     && velPxPerMs >= FLING_MIN_VEL_PX_PER_MS;
+        if (isFling
+            && this.stepIdx < TUTORIAL_STEPS.length
+            && TUTORIAL_STEPS[this.stepIdx].gestureType === 'swipe-hold') {
+            this.detectAndMaybeAdvance('swipe-hold');
             return;
         }
         // Swipe-release: horizontal travel dominates + reached threshold.

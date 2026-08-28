@@ -132,8 +132,8 @@ export const ZH: Record<string, string> = {
 
     // ---------- 新手引导 ----------
     'tutorial.hint.tap':          '点击屏幕，方块会变形',
-    'tutorial.hint.swipeRelease': '横向滑动松手，塔转一格',
-    'tutorial.hint.swipeHold':    '横向滑动按住不松，塔连续转',
+    'tutorial.hint.swipeRelease': '拖动手指，塔一格一格跟',
+    'tutorial.hint.swipeHold':    '快速滑动松手，塔靠惯性连续转',
     'tutorial.hint.swipeDown':    '向下滑动，方块直接落底',
     'tutorial.skip':              '跳过',
 
@@ -176,7 +176,7 @@ export const ZH: Record<string, string> = {
     // ---------- 结果弹窗 ----------
     'result.gameOver':   '游戏结束',
     'result.levelFail':  '关卡失败',
-    'result.fail.hole':  '漏洞被封死',
+    'result.fail.hole':  '形成了不可逆转的空格',
     'result.fail.tall':  '塔太高',
     'result.win':        '过关 ✓',
     'result.retry':      '重试',
@@ -204,6 +204,12 @@ export const ZH: Record<string, string> = {
     'settings.bgm':          '背景音乐',
     'settings.sfx':          '音效',
     'settings.haptic':       '震动',
+    'settings.controls':       '操作方式',
+    'controls.title':          '选择操作方式',
+    'controls.legacy':         '经典（滑动 + 长按）',
+    'controls.dragFling':      '拖动 + 惯性甩塔',
+    'controls.buttons':        '按钮模式',
+    'controls.close':          '关闭',
     'settings.close':        '关闭',
     'audio.off':             '关',
     'audio.percent':         '{n}%',
@@ -281,4 +287,9 @@ export const ZH: Record<string, string> = {
     'consent.start':                             '同意并开始',
     'consent.mustAgree':                             '必须同意所有必选项才能开始游戏。',
     'consent.error':                             '同意记录失败，请稍后重试。',
+    // ---- Progressive unlock tips ----
+    'lock.endless':      '通过 {n} 关后解锁无尽模式',
+    'lock.blind':        '无尽模式达到 {n} 层后解锁闭眼模式',
+    'lock.leaderboard':  '无尽模式达到 {n} 层后解锁排行榜',
+    'level.next':        '下一关',
 };

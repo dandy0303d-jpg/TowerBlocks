@@ -112,8 +112,8 @@ export const DE: Record<string, string> = {
     'debug.forceWin':    'Gewinnen',
 
     'tutorial.hint.tap':          'Tippen um Form zu ändern',
-    'tutorial.hint.swipeRelease': 'Horizontal wischen und loslassen zum Drehen',
-    'tutorial.hint.swipeHold':    'Wischen und halten für Dauer-Rotation',
+    'tutorial.hint.swipeRelease': 'Finger ziehen, der Turm dreht sich Spalte für Spalte',
+    'tutorial.hint.swipeHold':    'Schnell wischen und loslassen — Turm dreht sich durch Trägheit',
     'tutorial.hint.swipeDown':    'Nach unten wischen für Sofort-Fall',
     'tutorial.skip':              'Überspringen',
 
@@ -152,7 +152,7 @@ export const DE: Record<string, string> = {
 
     'result.gameOver':   'Spiel vorbei',
     'result.levelFail':  'Level fehlgeschlagen',
-    'result.fail.hole':  'Loch versiegelt',
+    'result.fail.hole':  'Unumkehrbare Lücke entstanden',
     'result.fail.tall':  'Turm zu hoch',
     'result.win':        'Geschafft ✓',
     'result.retry':      'Erneut',
@@ -175,6 +175,13 @@ export const DE: Record<string, string> = {
     'settings.keys.off':     'Aus',
     'settings.bgm':          'Musik',
     'settings.sfx':          'Sound',
+    'settings.haptic':       'Vibration',
+    'settings.controls':       'Steuerung',
+    'controls.title':          'Steuerung wählen',
+    'controls.legacy':         'Klassisch (Wischen + Halten)',
+    'controls.dragFling':      'Ziehen + Schwung',
+    'controls.buttons':        'Bildschirm-Tasten',
+    'controls.close':          'Schließen',
     'settings.close':        'Schließen',
     'audio.off':             'Aus',
     'audio.percent':         '{n}%',
@@ -230,4 +237,9 @@ export const DE: Record<string, string> = {
     'settings.googleRecovery.pending':                                       'Wird wiederhergestellt...',
     'settings.googleRecovery.failed':                                       'Wiederherstellung fehlgeschlagen, bitte erneut versuchen',
     'settings.googleRecovery.success':                                       'Konto wiederhergestellt',
+    // ---- Progressive unlock tips ----
+    'lock.endless':      'Schaffe {n} Level, um den Endlos-Modus freizuschalten',
+    'lock.blind':        'Erreiche {n} Ebenen im Endlos-Modus, um den Blind-Modus freizuschalten',
+    'lock.leaderboard':  'Erreiche {n} Ebenen im Endlos-Modus, um die Rangliste freizuschalten',
+    'level.next':        'Nächstes Level',
 };

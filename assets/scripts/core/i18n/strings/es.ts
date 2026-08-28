@@ -126,8 +126,8 @@ export const ES: Record<string, string> = {
 
     // ---------- Tutorial ----------
     'tutorial.hint.tap':          'Toca para cambiar la forma',
-    'tutorial.hint.swipeRelease': 'Desliza horizontal y suelta para rotar',
-    'tutorial.hint.swipeHold':    'Desliza y mantén para rotar continuo',
+    'tutorial.hint.swipeRelease': 'Arrastra el dedo, la torre gira columna a columna',
+    'tutorial.hint.swipeHold':    'Deslizamiento rápido y suelta — la torre gira por inercia',
     'tutorial.hint.swipeDown':    'Desliza abajo para caer directo',
     'tutorial.skip':              'Omitir',
 
@@ -170,7 +170,7 @@ export const ES: Record<string, string> = {
     // ---------- Resultado ----------
     'result.gameOver':   'Fin del juego',
     'result.levelFail':  'Nivel fallido',
-    'result.fail.hole':  'Hueco sellado',
+    'result.fail.hole':  'Se formó un hueco irreversible',
     'result.fail.tall':  'Torre demasiado alta',
     'result.win':        '¡Completado! ✓',
     'result.retry':      'Reintentar',
@@ -195,6 +195,13 @@ export const ES: Record<string, string> = {
     'settings.keys.off':     'Off',
     'settings.bgm':          'Música',
     'settings.sfx':          'Efectos',
+    'settings.haptic':       'Vibración',
+    'settings.controls':       'Controles',
+    'controls.title':          'Elegir esquema de control',
+    'controls.legacy':         'Clásico (deslizar + mantener)',
+    'controls.dragFling':      'Arrastrar + inercia',
+    'controls.buttons':        'Botones en pantalla',
+    'controls.close':          'Cerrar',
     'settings.close':        'Cerrar',
     'audio.off':             'Off',
     'audio.percent':         '{n}%',
@@ -250,4 +257,9 @@ export const ES: Record<string, string> = {
     'settings.googleRecovery.pending':                                       'Restaurando...',
     'settings.googleRecovery.failed':                                       'Falló la restauración, inténtalo de nuevo',
     'settings.googleRecovery.success':                                       'Cuenta restaurada',
+    // ---- Progressive unlock tips ----
+    'lock.endless':      'Supera {n} niveles para desbloquear el Modo Infinito',
+    'lock.blind':        'Alcanza {n} capas en Modo Infinito para desbloquear el Modo Ciego',
+    'lock.leaderboard':  'Alcanza {n} capas en Modo Infinito para desbloquear la Clasificación',
+    'level.next':        'Siguiente nivel',
 };

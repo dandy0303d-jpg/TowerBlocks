@@ -34,6 +34,7 @@ import {
     ROCKET_TIER_COUNT,
     HOURGLASS_DURATIONS_MS,
     ENDLESS_FATE_MILESTONE,
+    WRECKER_TARGETS,
 } from './Constants';
 import {
     BoardState,
@@ -389,6 +390,15 @@ export class GameState {
      *  discarded — every wrecker pick fires a level-1 blast on the
      *  captured axis. */
     private wreckerBombComboCache: Map<string, 'row' | 'col'> = new Map();
+    /** Wrecker × wrecker adjacency combo cache. Two (or more) adjacent
+     *  wreckers stack their pick pools into ONE bigger sweep instead of
+     *  firing separately: the "leader" (the wrecker with the lexically-
+     *  smallest key in a connected 4-neighbour cluster) picks
+     *  `WRECKER_TARGETS × clusterSize` cells, everyone else in the
+     *  cluster is marked "passive" and picks 0. This guarantees a
+     *  visible 20-cell demolition for a pair without double-counting
+     *  overlapping candidate pools. Keyed by `${r}-${c}`. */
+    private wreckerAdjacencyPickCountCache: Map<string, number> = new Map();
     /** Wrecker activations that picked their cells but haven't committed
      *  the clear yet. Filled by `triggerWreckerFromBoard` (phase 1) and
      *  drained by `commitPendingWreckerPlans` (phase 2) after the renderer
@@ -2111,8 +2121,15 @@ export class GameState {
         const key = `${triggerR}-${triggerC}`;
         const cachedBoomLevel = this.wreckerBoomComboCache.get(key) ?? 0;
         const cachedBombAxis  = this.wreckerBombComboCache.get(key) ?? null;
+        // Wrecker×wrecker adjacency combo: leader picks 2×/3×/…, passives
+        // pick 0. Fallback to the default single-wrecker pool when this
+        // wrecker had no wrecker neighbour at snapshot time.
+        const pickCount = this.wreckerAdjacencyPickCountCache.has(key)
+            ? this.wreckerAdjacencyPickCountCache.get(key)!
+            : WRECKER_TARGETS;
         const plan = pickWreckerPlan(
-            this.state, this.rng, triggerR, triggerC, cachedBoomLevel, cachedBombAxis,
+            this.state, this.rng, triggerR, triggerC,
+            cachedBoomLevel, cachedBombAxis, pickCount,
         );
         if (!plan) {
             this.hooks.onWreckerActivated?.();
@@ -2154,11 +2171,13 @@ export class GameState {
     private captureWreckerBoomCombos(): void {
         this.wreckerBoomComboCache.clear();
         this.wreckerBombComboCache.clear();
+        this.wreckerAdjacencyPickCountCache.clear();
         const wreckers = this.state.boardWreckers;
         const booms = this.state.boardBooms;
         const bombs = this.state.boardBombs;
         if (!wreckers) return;
         const H = this.state.board.length;
+        // First pass: bomb/boom adjacency (unchanged behaviour).
         for (let r = 0; r < H; r++) {
             if (!wreckers[r]) continue;
             for (let c = 0; c < COLS; c++) {
@@ -2188,6 +2207,51 @@ export class GameState {
                 const key = `${r}-${c}`;
                 if (bestBoom) this.wreckerBoomComboCache.set(key, bestBoom);
                 if (bombAxis) this.wreckerBombComboCache.set(key, bombAxis);
+            }
+        }
+        // Second pass: wrecker×wrecker cluster combo. BFS every 4-connected
+        // component. The lexically-smallest wrecker in each component
+        // becomes the "leader" and picks WRECKER_TARGETS × clusterSize
+        // cells; the rest are marked "passive" (pickCount = 0). Standalone
+        // wreckers (cluster of size 1) still map to WRECKER_TARGETS.
+        const visited = new Set<string>();
+        for (let r = 0; r < H; r++) {
+            if (!wreckers[r]) continue;
+            for (let c = 0; c < COLS; c++) {
+                if (!wreckers[r][c]) continue;
+                const startKey = `${r}-${c}`;
+                if (visited.has(startKey)) continue;
+                // BFS this connected component.
+                const cluster: string[] = [];
+                const queue: Array<[number, number]> = [[r, c]];
+                visited.add(startKey);
+                while (queue.length) {
+                    const [cr, cc] = queue.shift()!;
+                    cluster.push(`${cr}-${cc}`);
+                    const nbrs: Array<[number, number]> = [
+                        [cr - 1, cc],
+                        [cr + 1, cc],
+                        [cr, (cc - 1 + COLS) % COLS],
+                        [cr, (cc + 1) % COLS],
+                    ];
+                    for (const [nr, nc] of nbrs) {
+                        if (nr < 0 || nr >= H) continue;
+                        if (!wreckers[nr] || !wreckers[nr][nc]) continue;
+                        const nk = `${nr}-${nc}`;
+                        if (visited.has(nk)) continue;
+                        visited.add(nk);
+                        queue.push([nr, nc]);
+                    }
+                }
+                // Elect a leader — smallest key wins deterministically.
+                cluster.sort();
+                const leaderKey = cluster[0];
+                const leaderPickCount = WRECKER_TARGETS * cluster.length;
+                for (const k of cluster) {
+                    this.wreckerAdjacencyPickCountCache.set(
+                        k, k === leaderKey ? leaderPickCount : 0,
+                    );
+                }
             }
         }
     }
