@@ -1,4 +1,4 @@
 /* Português (Brasil) - Brazilian Portuguese */
-CFBundleDisplayName = "Torre de Blocos";
-CFBundleName = "Torre de Blocos";
+CFBundleDisplayName = "Torre de Empilhar";
+CFBundleName = "Torre de Empilhar";
 NSUserTrackingUsageDescription = "Permita-nos usar um identificador anônimo para exibir anúncios mais relevantes. Isto não afeta o jogo.";
