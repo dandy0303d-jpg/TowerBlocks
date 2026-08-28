@@ -129,8 +129,8 @@ export const EN: Record<string, string> = {
 
     // ---------- Tutorial ----------
     'tutorial.hint.tap':          'Tap to morph the piece',
-    'tutorial.hint.swipeRelease': 'Swipe horizontally and release to rotate one column',
-    'tutorial.hint.swipeHold':    'Swipe and hold to keep rotating',
+    'tutorial.hint.swipeRelease': 'Drag to rotate the tower one step',
+    'tutorial.hint.swipeHold':    'Flick and release — the tower spins with inertia',
     'tutorial.hint.swipeDown':    'Swipe down to hard-drop',
     'tutorial.skip':              'Skip',
 
@@ -173,7 +173,7 @@ export const EN: Record<string, string> = {
     // ---------- Result modals ----------
     'result.gameOver':   'Game Over',
     'result.levelFail':  'Level Failed',
-    'result.fail.hole':  'Trapped hole sealed',
+    'result.fail.hole':  'Irreversible gap formed',
     'result.fail.tall':  'Tower too tall',
     'result.win':        'Cleared ✓',
     'result.retry':      'Retry',
@@ -200,6 +200,12 @@ export const EN: Record<string, string> = {
     'settings.bgm':          'Music',
     'settings.sfx':          'Sound FX',
     'settings.haptic':       'Haptics',
+    'settings.controls':       'Controls',
+    'controls.title':          'Choose control scheme',
+    'controls.legacy':         'Classic (swipe + hold)',
+    'controls.dragFling':      'Drag + Flick',
+    'controls.buttons':        'On-screen buttons',
+    'controls.close':          'Close',
     'settings.close':        'Close',
     'audio.off':             'Off',
     'audio.percent':         '{n}%',
@@ -275,4 +281,9 @@ export const EN: Record<string, string> = {
     'consent.start':                             'Agree & Start',
     'consent.mustAgree':                             'You must agree to all required items to start the game.',
     'consent.error':                             'Failed to record your agreement. Please try again.',
+    // ---- Progressive unlock tips ----
+    'lock.endless':      'Clear {n} levels to unlock Endless mode',
+    'lock.blind':        'Reach {n} layers in Endless to unlock Blind mode',
+    'lock.leaderboard':  'Reach {n} layers in Endless to unlock Leaderboard',
+    'level.next':        'Next Level',
 };

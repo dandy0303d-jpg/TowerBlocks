@@ -111,8 +111,8 @@ export const RU: Record<string, string> = {
     'debug.forceWin':    'Победа',
 
     'tutorial.hint.tap':          'Нажми чтобы изменить форму',
-    'tutorial.hint.swipeRelease': 'Свайп горизонтально и отпусти для поворота',
-    'tutorial.hint.swipeHold':    'Свайп и удерживай для непрерывного поворота',
+    'tutorial.hint.swipeRelease': 'Проведи пальцем — башня повернётся на одну колонку',
+    'tutorial.hint.swipeHold':    'Быстрый свайп и отпусти — башня крутится по инерции',
     'tutorial.hint.swipeDown':    'Свайп вниз для быстрого падения',
     'tutorial.skip':              'Пропустить',
 
@@ -151,7 +151,7 @@ export const RU: Record<string, string> = {
 
     'result.gameOver':   'Игра окончена',
     'result.levelFail':  'Уровень провален',
-    'result.fail.hole':  'Дыра заблокирована',
+    'result.fail.hole':  'Образовался необратимый пробел',
     'result.fail.tall':  'Башня слишком высокая',
     'result.win':        'Пройдено ✓',
     'result.retry':      'Заново',
@@ -174,6 +174,13 @@ export const RU: Record<string, string> = {
     'settings.keys.off':     'Выкл',
     'settings.bgm':          'Музыка',
     'settings.sfx':          'Звук',
+    'settings.haptic':       'Вибрация',
+    'settings.controls':       'Управление',
+    'controls.title':          'Выбор управления',
+    'controls.legacy':         'Классика (свайп + удержание)',
+    'controls.dragFling':      'Перетаскивание + инерция',
+    'controls.buttons':        'Экранные кнопки',
+    'controls.close':          'Закрыть',
     'settings.close':        'Закрыть',
     'audio.off':             'Выкл',
     'audio.percent':         '{n}%',
@@ -229,4 +236,9 @@ export const RU: Record<string, string> = {
     'settings.googleRecovery.pending':                                       'Восстановление...',
     'settings.googleRecovery.failed':                                       'Ошибка восстановления, попробуйте ещё раз',
     'settings.googleRecovery.success':                                       'Аккаунт восстановлен',
+    // ---- Progressive unlock tips ----
+    'lock.endless':      'Пройди {n} уровней, чтобы открыть Бесконечный режим',
+    'lock.blind':        'Достигни {n} слоёв в Бесконечном режиме, чтобы открыть Слепой режим',
+    'lock.leaderboard':  'Достигни {n} слоёв в Бесконечном режиме, чтобы открыть Рейтинг',
+    'level.next':        'Следующий уровень',
 };

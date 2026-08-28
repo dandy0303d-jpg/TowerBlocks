@@ -130,8 +130,8 @@ export const JA: Record<string, string> = {
 
     // ---------- チュートリアル ----------
     'tutorial.hint.tap':          'タップでブロック変形',
-    'tutorial.hint.swipeRelease': '横スワイプ後放すと 1 段回転',
-    'tutorial.hint.swipeHold':    '横スワイプ長押しで連続回転',
+    'tutorial.hint.swipeRelease': '指をドラッグ、タワーが1マスずつ回転',
+    'tutorial.hint.swipeHold':    '素早くスワイプして離す、タワーが慣性で回転',
     'tutorial.hint.swipeDown':    '下スワイプで即落下',
     'tutorial.skip':              'スキップ',
 
@@ -174,7 +174,7 @@ export const JA: Record<string, string> = {
     // ---------- 結果ダイアログ ----------
     'result.gameOver':   'ゲームオーバー',
     'result.levelFail':  'ステージ失敗',
-    'result.fail.hole':  '穴が塞がれました',
+    'result.fail.hole':  '戻せない空きマスが発生',
     'result.fail.tall':  'タワーが高すぎます',
     'result.win':        'クリア ✓',
     'result.retry':      'リトライ',
@@ -199,6 +199,13 @@ export const JA: Record<string, string> = {
     'settings.keys.off':     'オフ',
     'settings.bgm':          'BGM',
     'settings.sfx':          '効果音',
+    'settings.haptic':       '振動',
+    'settings.controls':       '操作方法',
+    'controls.title':          '操作方法を選択',
+    'controls.legacy':         'クラシック（スワイプ+長押し）',
+    'controls.dragFling':      'ドラッグ+フリック',
+    'controls.buttons':        'ボタン操作',
+    'controls.close':          '閉じる',
     'settings.close':        '閉じる',
     'audio.off':             'オフ',
     'audio.percent':         '{n}%',
@@ -256,4 +263,9 @@ export const JA: Record<string, string> = {
     'settings.googleRecovery.pending':                                       '復元中...',
     'settings.googleRecovery.failed':                                       '復元失敗、再試行してください',
     'settings.googleRecovery.success':                                       'アカウントを復元しました',
+    // ---- Progressive unlock tips ----
+    'lock.endless':      '{n} ステージクリアでエンドレスモード解放',
+    'lock.blind':        'エンドレスで {n} 層達成でブラインドモード解放',
+    'lock.leaderboard':  'エンドレスで {n} 層達成でランキング解放',
+    'level.next':        '次のステージ',
 };

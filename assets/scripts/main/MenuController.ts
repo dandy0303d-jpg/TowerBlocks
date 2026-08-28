@@ -41,8 +41,11 @@ import { t, cycleLang, getLang, subscribe as subscribeLang } from '../core/i18n/
 import {
     getBgmVolume,   setBgmVolume,   cycleBgmVolume,
     getSfxVolume,   setSfxVolume,   cycleSfxVolume,
+    getHapticMode,  setHapticMode,
+    getControlMode, setControlMode, ControlMode,
 } from '../core/Settings';
 import { SoundManager } from '../audio/SoundManager';
+import { HapticsManager } from '../audio/HapticsManager';
 import { BgmManager } from '../audio/BgmManager';
 import { FontManager } from '../core/FontManager';
 import { LevelProgress } from '../core/LevelProgress';
@@ -151,6 +154,16 @@ export class MenuController extends Component {
     @property({ type: Button, tooltip: '排行榜按钮（占位，尚未接入后端）' })
     modeBtnLeaderboard: Button | null = null;
 
+    // ---- Locked-state (gray) sprites ----
+    // Endless button uses label-only graying (unlocks quickly at level 10),
+    // so no sprite swap for it. Blind + Leaderboard stay locked until
+    // 100 endless layers, so they get authored gray art via these slots.
+    @property({ type: SpriteFrame, tooltip: '闭眼模式按钮 — 锁定态灰色图（拖 SpriteFrame 进来；留空则不换图）' })
+    authoredBlindLockedSprite: SpriteFrame | null = null;
+
+    @property({ type: SpriteFrame, tooltip: '排行榜按钮 — 锁定态灰色图（拖 SpriteFrame 进来；留空则不换图）' })
+    authoredLeaderboardLockedSprite: SpriteFrame | null = null;
+
     @property({ type: LeaderboardController, tooltip: '排行榜面板控制器（拖场景里挂了 LeaderboardController 的节点进来）' })
     leaderboardController: LeaderboardController | null = null;
 
@@ -162,6 +175,21 @@ export class MenuController extends Component {
 
     @property({ type: Button, tooltip: '重置进度按钮（DEV）' })
     modeBtnResetProgress: Button | null = null;
+
+    // ---- Progressive unlock system ----
+    /** Cached endless-mode best cumulative layers. Restored from
+     *  localStorage on boot, updated from server bestScores + after
+     *  each endless run. Used to gate the Blind mode + Leaderboard
+     *  buttons (unlock at 100 layers). */
+    private _endlessBestLayers: number = 0;
+    /** localStorage key for the endless-best cache. Layers count is
+     *  server-authoritative; this local copy just prevents flashes
+     *  of the locked state on first frame after boot / reinstall. */
+    private static readonly ENDLESS_BEST_KEY = 'cb.endlessBestLayers';
+    /** Number of Level-mode clears needed to unlock Endless mode. */
+    private static readonly ENDLESS_UNLOCK_LEVEL_COUNT = 10;
+    /** Endless best-height needed to unlock Blind mode + Leaderboard. */
+    private static readonly BLIND_UNLOCK_ENDLESS_LAYERS = 100;
 
     @property({ type: Button, tooltip: '设置按钮' })
     modeBtnSettings: Button | null = null;
@@ -256,6 +284,47 @@ export class MenuController extends Component {
     @property({ type: Toggle, tooltip: '苹果已绑定开关（isChecked 反映当前是否绑定；切换事件暂时只 log）— 可空' })
     authoredSettingsAppleToggle: Toggle | null = null;
 
+    // ---- 触觉反馈开关 ----
+    @property({ type: Toggle, tooltip: '震动开关（跨平台触觉反馈，isChecked = 开）— 可空，未拖场景 Toggle 时默认永远开启' })
+    authoredSettingsHapticToggle: Toggle | null = null;
+
+    @property({ type: Label, tooltip: '震动行左侧的"震动" i18n 标签，可空' })
+    authoredSettingsHapticLabel: Label | null = null;
+
+    // ---- 操作方式：设置面板行 + 弹窗选择 ----
+    @property({ type: Button, tooltip: '"操作方式"按钮 — 点击弹出操作方式选择弹窗。可空' })
+    authoredSettingsControlsButton: Button | null = null;
+
+    @property({ type: Label, tooltip: '"操作方式"按钮内部 Label（走 i18n settings.controls）。可空' })
+    authoredSettingsControlsLabel: Label | null = null;
+
+    @property({ type: Node, tooltip: '操作方式选择弹窗根节点（含 dim 遮罩 + 卡片 + 3 个 Toggle + 关闭按钮，默认 active=false）— 可空' })
+    authoredControlsPanel: Node | null = null;
+
+    @property({ type: Label, tooltip: '操作方式弹窗标题 Label（走 i18n controls.title）— 可空' })
+    authoredControlsTitleLabel: Label | null = null;
+
+    @property({ type: Toggle, tooltip: '操作方式弹窗中的"经典模式" Toggle — 可空' })
+    authoredControlsLegacyToggle: Toggle | null = null;
+
+    @property({ type: Label, tooltip: '"经典模式"行 Label（走 i18n controls.legacy）— 可空' })
+    authoredControlsLegacyLabel: Label | null = null;
+
+    @property({ type: Toggle, tooltip: '操作方式弹窗中的"拖动+惯性" Toggle — 可空' })
+    authoredControlsDragFlingToggle: Toggle | null = null;
+
+    @property({ type: Label, tooltip: '"拖动+惯性"行 Label（走 i18n controls.dragFling）— 可空' })
+    authoredControlsDragFlingLabel: Label | null = null;
+
+    @property({ type: Toggle, tooltip: '操作方式弹窗中的"按钮模式" Toggle — 可空' })
+    authoredControlsButtonsToggle: Toggle | null = null;
+
+    @property({ type: Label, tooltip: '"按钮模式"行 Label（走 i18n controls.buttons）— 可空' })
+    authoredControlsButtonsLabel: Label | null = null;
+
+    @property({ type: Button, tooltip: '操作方式弹窗关闭按钮 — 可空' })
+    authoredControlsCloseButton: Button | null = null;
+
     // ---- 钻石不足弹窗 ----
     @property({ type: Node, tooltip: '"钻石不足"弹窗根节点（含 dim + 卡片 + 消息 + 去充值/取消 两个按钮）— 默认 active=false' })
     authoredInsufficientGemsPanel: Node | null = null;
@@ -311,6 +380,13 @@ export class MenuController extends Component {
 
     @property({ type: Label, tooltip: 'Toast 内部 Label（脚本写内容；可空，会自动从 Toast 节点里找）— 可空' })
     authoredSettingsToastLabel: Label | null = null;
+
+    // ---- 解锁提示 Toast（点击"无尽/闭眼/排行榜"锁定按钮时弹出）----
+    @property({ type: Node, tooltip: '解锁提示 Toast 根节点（含背景 + 内部 Label；默认 active=false；脚本会 tween 淡入淡出）— 可空。留空则自动生成一个简易 toast' })
+    authoredLockToastNode: Node | null = null;
+
+    @property({ type: Label, tooltip: '解锁 Toast 内部 Label（脚本写内容；可空，会自动从 Toast 节点里找）— 可空' })
+    authoredLockToastLabel: Label | null = null;
 
     @property({ type: Button, tooltip: '"服务条款 / Terms of Service" 按钮 — 点击 → 用系统浏览器打开服务器 /legal/tos 页面。可空' })
     authoredSettingsTosButton: Button | null = null;
@@ -510,7 +586,18 @@ export class MenuController extends Component {
                         log(`[MenuController] boot restored LevelProgress from server: ${localIdx} -> ${serverIdx}`);
                     }
                 }
+                // Endless best-layers: cache locally so the Blind-mode
+                // / Leaderboard unlock check doesn't need a server call
+                // every menu open. Max-merge with local (same reason
+                // as LevelProgress above).
+                const serverEndless = p?.bestScores?.endless ?? 0;
+                if (serverEndless > this._endlessBestLayers) {
+                    this._endlessBestLayers = serverEndless;
+                    this._persistEndlessBest();
+                }
                 log(`[MenuController] boot profile ready — bestScores=${JSON.stringify(p?.bestScores)}`);
+                // Repaint mode buttons in case unlock state changed.
+                this._refreshModeButtonLocks();
             } catch (err) {
                 if (!getBannedState()) {
                     console.warn(`[MenuController] boot fetchProfile failed (non-ban): ${(err as Error)?.message}`);
@@ -544,8 +631,13 @@ export class MenuController extends Component {
             this.setGameplayVisible(true);
             if (this.modeSelectPanel) this.modeSelectPanel.active = false;
             this.tutorialController!.show(() => {
-                log('[MenuController] tutorial done — showing main menu');
-                this.showModeSelect();
+                // After the tutorial, drop the player straight into
+                // level 1 instead of the main menu — they've just been
+                // taught the controls, so the natural next beat is a
+                // real level to try them on. The main menu is reachable
+                // via the in-game Home button.
+                log('[MenuController] tutorial done — entering level 1');
+                this.startLevel(0);
             });
         })();
     }
@@ -585,6 +677,9 @@ export class MenuController extends Component {
     // ============================================================
     public showModeSelect(): void {
         this.modeSelectPanel.active  = true;
+        // Reflect any progress that happened between the last time
+        // this panel was visible and now (level clear, endless best).
+        this._refreshModeButtonLocks();
         // Hide the 3D level-select stage. NOTE: we intentionally do NOT
         // call `teardown()` here — that would destroy the ~2000+ cube
         // nodes and rebuild them on the next `showLevelSelect()`, which
@@ -865,28 +960,43 @@ export class MenuController extends Component {
                        : reason === 2 ? t('result.fail.tall')
                        : '';
         this.buildResultPanel(title, subtitle, this.makeFailButtons());
+        // Endless/blind: record the just-ended run's cumulative height
+        // so the Blind mode + Leaderboard unlock state updates the
+        // instant the player crosses 100 layers, without needing a
+        // server round-trip on next boot.
+        if (!isLevel) {
+            const layers = this.gameController?.gameState?.endlessProgress?.cumulative ?? 0;
+            this._recordEndlessRun(layers);
+        }
     }
 
     /** Level cleared. */
     public showLevelWin(): void {
-        // Level-mode wins skip the result popup entirely. Hide the HUD
-        // FIRST so the scatter animation plays over a clean scene (no
-        // pause button / energy bar hanging around while the cubes
-        // fly away), THEN play scatter, THEN jump back to the 3D
-        // level-select stage.
-        if (this.currentLevelIdx >= 0) {
+        // Level-mode wins skip the result popup entirely.
+        //
+        // Post-clear sequence (per design):
+        //   1. Kick the scatter animation on the current tower.
+        //   2. SIMULTANEOUSLY pop the fate-preview overlay showing
+        //      "下一关" + the next level's fate cube, matching the
+        //      styling of the level-select "剩余关卡" counter.
+        //   3. Hold the overlay for ~1s after scatter finishes.
+        //   4. Assemble the next level (same fly-in effect as entering
+        //      from the level-select stage).
+        // If this was the final level, fall back to level-select so
+        // the player sees the "game complete" state instead of trying
+        // to load a nonexistent level.
+        if (this.currentLevelIdx < 0) return; // endless never triggers this
+        const totalLevels = (this.gameController as any)?.flatLevels?.length ?? 0;
+        const nextIdx = this.currentLevelIdx + 1;
+        const hasNext = nextIdx < totalLevels;
+
+        // ---- Game-complete path: no next level. Old-style scatter → level select. ----
+        if (!hasNext) {
             if (this.hudController) this.hudController.setHudVisible(false);
             const gotoSelect = () => {
+                SoundManager.instance?.play('level_win');
                 this.showLevelSelect();
                 this.setGameplayVisible(false);
-                // Play the "level cleared" SFX HERE — not at the
-                // moment of onLevelWin, because line_clear + shatter
-                // were still ringing then and would drown it out.
-                // Firing at the level-select transition guarantees the
-                // player hears it clearly on a quiet scene. Only in
-                // the post-win path, so entering level-select from
-                // the main menu stays silent.
-                SoundManager.instance?.play('level_win');
             };
             if (this.gameController
                 && typeof this.gameController.playLevelScatter === 'function') {
@@ -896,7 +1006,66 @@ export class MenuController extends Component {
             }
             return;
         }
-        // Endless never triggers onLevelWin — nothing to do.
+
+        // ---- Between-level path: strict sequential timeline ----
+        //   1. Play level_win SFX
+        //   2. Scatter animation (wait for full completion)
+        //   3. Show fate preview popup for the next level
+        //   4. Popup holds 1 second
+        //   5. Popup dismisses → assemble next level's tower
+        // Step 1: stop level BGM immediately on clear (before scatter),
+        //         and play level_win SFX. BGM resumes on preview close
+        //         so the assembly beat has music under it.
+        BgmManager.instance?.stop();
+        SoundManager.instance?.play('level_win');
+
+        const holdMs = 2000; // fate preview visible time — long enough to
+                             // read '下一关' + inspect the shape
+
+        // Resolve HUD + next level payload up front (used in step 3).
+        const hud: any = this.hudController as any;
+        const flatLevels = (this.gameController as any)?.flatLevels as Array<any> | undefined;
+        const nextRawLvl = flatLevels && flatLevels[nextIdx];
+
+        const advance = () => {
+            // Step 5: fate popup just closed → restart level BGM and hand
+            // off to the same entry point the level-select stage uses,
+            // so the assembly animation + camera swap match exactly with
+            // what the player sees on first entry.
+            //   doEnterLevel → setGameplayVisible(true) → re-shows
+            //   boardRoot3D, then plays the assembly fly-in.
+            BgmManager.instance?.play('level');
+            this.currentLevelIdx = nextIdx;
+            this.doEnterLevel(nextIdx);
+        };
+
+        const showPreview = () => {
+            // Hide the empty 3D board so the fate popup sits on a clean
+            // backdrop — leaving the (now-empty) tower visible pulled
+            // the eye away from the next-level cube. HUD stays up so
+            // the fate overlay can render.
+            if (this.boardRoot3D) this.boardRoot3D.active = false;
+            // Play the scatter SFX at the moment the fate popup appears
+            // (per design — audio lines up with the popup pop-in beat,
+            // not the earlier scatter visual).
+            SoundManager.instance?.play('level_scatter');
+            // Step 3+4: pop the fate preview modal; onDone (after holdMs)
+            // triggers assembly.
+            if (hud && typeof hud.showFatePreview === 'function' && nextRawLvl) {
+                hud.showFatePreview(nextRawLvl, advance, holdMs, t('level.next'));
+            } else {
+                this.scheduleOnce(advance, holdMs / 1000);
+            }
+        };
+
+        // Step 2: scatter animation (SFX moved to popup pop-in above).
+        //         Preview pops only once scatter fully completes.
+        if (this.gameController
+            && typeof this.gameController.playLevelScatter === 'function') {
+            this.gameController.playLevelScatter(this.exitLevelScatterSec, showPreview);
+        } else {
+            showPreview();
+        }
     }
 
     private makeFailButtons(): Array<{ label: string; action: () => void }> {
@@ -1051,10 +1220,19 @@ export class MenuController extends Component {
             const lab = btn.getComponentInChildren(Label);
             if (lab && key) this.trackI18nLabel(lab, key);
         };
-        bindBtn(this.modeBtnEndless,       'menu.endless',     () => this.enterEndless());
+        bindBtn(this.modeBtnEndless,       'menu.endless', () => {
+            if (this._isEndlessUnlocked()) this.enterEndless();
+            else this._showLockToast(t('lock.endless', { n: MenuController.ENDLESS_UNLOCK_LEVEL_COUNT }));
+        });
         bindBtn(this.modeBtnLevel,         'menu.levels',      () => this.showLevelSelect());
-        bindBtn(this.modeBtnBlind,         'menu.blind',       () => this.enterBlindMode());
-        bindBtn(this.modeBtnLeaderboard,   'menu.leaderboard', () => this.onLeaderboardClicked());
+        bindBtn(this.modeBtnBlind,         'menu.blind', () => {
+            if (this._isBlindOrLbUnlocked()) this.enterBlindMode();
+            else this._showLockToast(t('lock.blind', { n: MenuController.BLIND_UNLOCK_ENDLESS_LAYERS }));
+        });
+        bindBtn(this.modeBtnLeaderboard,   'menu.leaderboard', () => {
+            if (this._isBlindOrLbUnlocked()) this.onLeaderboardClicked();
+            else this._showLockToast(t('lock.leaderboard', { n: MenuController.BLIND_UNLOCK_ENDLESS_LAYERS }));
+        });
         bindBtn(this.modeBtnSettings,      'settings.button',  () => this.openSettingsPanel());
         // Reset progress button: DEV-only. Hidden in release builds so
         // players can't nuke their own save by accident (and to keep
@@ -1065,6 +1243,158 @@ export class MenuController extends Component {
         } else if (this.modeBtnResetProgress) {
             this.modeBtnResetProgress.node.active = false;
         }
+        // Initial paint of lock state — showModeSelect will refresh on
+        // subsequent shows as progress changes.
+        this._loadEndlessBestFromStorage();
+        this._refreshModeButtonLocks();
+    }
+
+    // ============================================================
+    //  Progressive-unlock helpers
+    //  Endless mode gated behind 10 Level clears.
+    //  Blind mode + Leaderboard gated behind 100 endless layers.
+    // ============================================================
+
+    private _isEndlessUnlocked(): boolean {
+        return LevelProgress.maxClearedIdx >= (MenuController.ENDLESS_UNLOCK_LEVEL_COUNT - 1);
+    }
+
+    private _isBlindOrLbUnlocked(): boolean {
+        return this._endlessBestLayers >= MenuController.BLIND_UNLOCK_ENDLESS_LAYERS;
+    }
+
+    private _loadEndlessBestFromStorage(): void {
+        try {
+            const raw = sys.localStorage?.getItem(MenuController.ENDLESS_BEST_KEY);
+            const n = raw ? parseInt(raw, 10) : 0;
+            if (Number.isFinite(n) && n > this._endlessBestLayers) {
+                this._endlessBestLayers = n;
+            }
+        } catch { /* localStorage denied — memory-only */ }
+    }
+
+    private _persistEndlessBest(): void {
+        try {
+            sys.localStorage?.setItem(MenuController.ENDLESS_BEST_KEY, String(this._endlessBestLayers));
+        } catch { /* ignore */ }
+    }
+
+    /** Called from showGameOver right after an endless/blind run so a
+     *  fresh personal best updates the unlock state immediately,
+     *  without waiting for the next fetchProfile round-trip. */
+    private _recordEndlessRun(layers: number): void {
+        if (!Number.isFinite(layers) || layers <= 0) return;
+        if (layers <= this._endlessBestLayers) return;
+        this._endlessBestLayers = layers;
+        this._persistEndlessBest();
+        this._refreshModeButtonLocks();
+    }
+
+    /** Repaint mode-select buttons + labels to reflect current unlock
+     *  state. Locked buttons stay clickable (so we can show a tip)
+     *  but their sprite + label are dimmed. */
+    /** Cache of each button's original (unlocked) SpriteFrame — captured
+     *  the first time we see the button, so swapping to the gray locked
+     *  sprite and later restoring the original never loses the reference. */
+    private _btnOriginalSprite: Map<Button, SpriteFrame | null> = new Map();
+
+    private _refreshModeButtonLocks(): void {
+        // Sprite tinting is intentionally NOT touched — scene author supplies
+        // pre-baked gray art. When locked, the Sprite's spriteFrame is
+        // swapped to `authoredXxxLockedSprite`; when unlocked, restored
+        // from the cached original. Label color still dims for extra clarity.
+        const paintLock = (btn: Button | null, unlocked: boolean, lockedSpr: SpriteFrame | null): void => {
+            if (!btn) return;
+            const spr = btn.getComponent(Sprite);
+            if (spr) {
+                // Capture original once (before we ever overwrite it).
+                if (!this._btnOriginalSprite.has(btn)) {
+                    this._btnOriginalSprite.set(btn, spr.spriteFrame);
+                }
+                const orig = this._btnOriginalSprite.get(btn) ?? null;
+                const next = unlocked ? orig : (lockedSpr ?? orig);
+                if (spr.spriteFrame !== next) spr.spriteFrame = next;
+            }
+            const lab = btn.getComponentInChildren(Label);
+            if (lab) lab.color = unlocked
+                ? new Color(255, 255, 255, 255)
+                : new Color(160, 160, 160, 255);
+        };
+        // Endless: label-only graying (unlocks at 10 levels, no gray art slot).
+        paintLock(this.modeBtnEndless,     this._isEndlessUnlocked(),     null);
+        paintLock(this.modeBtnBlind,       this._isBlindOrLbUnlocked(),   this.authoredBlindLockedSprite);
+        paintLock(this.modeBtnLeaderboard, this._isBlindOrLbUnlocked(),   this.authoredLeaderboardLockedSprite);
+    }
+
+    /** Show the lock-tip toast. If the scene author wired
+     *  `authoredLockToastNode` (drag a Toast prefab into the inspector
+     *  slot), that node is re-used — script sets the label text, forces
+     *  active=true, and fades it out. Otherwise falls back to a
+     *  self-built floating label so the tip is never invisible. */
+    private _showLockToast(text: string): void {
+        console.log('[Lock] ' + text);
+        // ---- Preferred path: use the authored Toast node ----
+        const authored = this.authoredLockToastNode;
+        if (authored && authored.isValid) {
+            // Write label text.
+            let lab = this.authoredLockToastLabel;
+            if (!lab) lab = authored.getComponentInChildren(Label);
+            if (lab) lab.string = text;
+            // Re-parent to Canvas root so the toast stays visible even if
+            // the authored panel it lives under gets deactivated mid-game.
+            if (authored.parent !== this.node) {
+                authored.parent = this.node;
+                authored.layer = this.node.layer;
+            }
+            authored.setSiblingIndex(9999);
+            authored.active = true;
+            // Fade in → hold → fade out via a UIOpacity component.
+            let op = authored.getComponent(UIOpacity);
+            if (!op) op = authored.addComponent(UIOpacity);
+            op.opacity = 0;
+            tween<UIOpacity>(op)
+                .to(0.15, { opacity: 255 })
+                .delay(1.6)
+                .to(0.3, { opacity: 0 })
+                .call(() => { if (authored && authored.isValid) authored.active = false; })
+                .start();
+            return;
+        }
+        // ---- Fallback: build an ad-hoc floating toast ----
+        const parent = this.node;
+        if (!parent) { console.log(`[Lock] ${text}`); return; }
+        const n = new Node('LockToast');
+        n.parent = parent;
+        n.layer  = parent.layer;
+        const tx = n.addComponent(UITransform);
+        tx.setContentSize(500, 60);
+        tx.setAnchorPoint(0.5, 0.5);
+        n.setPosition(0, -400, 0);
+        n.setSiblingIndex(9999);
+        const gfx = n.addComponent(Graphics);
+        gfx.fillColor = new Color(0, 0, 0, 200);
+        gfx.roundRect(-250, -30, 500, 60, 10);
+        gfx.fill();
+        const labNode = new Node('Label');
+        labNode.parent = n;
+        labNode.layer  = n.layer;
+        const labTx = labNode.addComponent(UITransform);
+        labTx.setContentSize(480, 60);
+        labTx.setAnchorPoint(0.5, 0.5);
+        const lab = labNode.addComponent(Label);
+        lab.string   = text;
+        lab.fontSize = 22;
+        lab.color    = new Color(255, 255, 255, 255);
+        lab.horizontalAlign = Label.HorizontalAlign.CENTER;
+        lab.verticalAlign   = Label.VerticalAlign.CENTER;
+        const op = n.addComponent(UIOpacity);
+        op.opacity = 0;
+        tween<UIOpacity>(op)
+            .to(0.15, { opacity: 255 })
+            .delay(1.6)
+            .to(0.3, { opacity: 0 })
+            .call(() => { if (n && n.isValid) n.destroy(); })
+            .start();
     }
 
     private setGameplayVisible(on: boolean): void {
@@ -1566,6 +1896,74 @@ export class MenuController extends Component {
             }, this);
         }
 
+        // ---- Haptic feedback toggle ----
+        // On/off flips Settings.hapticMode which HapticsManager reads
+        // live on every impact call. Fires a preview 'medium' impact
+        // when turned ON so the player feels the change without needing
+        // to trigger gameplay.
+        if (this.authoredSettingsHapticToggle) {
+            const ht = this.authoredSettingsHapticToggle;
+            ht.node.off('toggle');
+            ht.node.on('toggle', () => {
+                setHapticMode(ht.isChecked ? 'on' : 'off');
+                log(`[Settings] haptic → ${ht.isChecked ? 'on' : 'off'}`);
+                if (ht.isChecked) HapticsManager.impact('medium');
+            }, this);
+        }
+
+        // ---- Controls picker (操作方式) ----
+        // Button in settings row opens a modal with 3 toggles (radio):
+        // legacy / dragFling / buttons. Selecting one flips the other two
+        // off, writes to Settings.controlMode, and closes the modal.
+        if (this.authoredSettingsControlsButton) {
+            this.authoredSettingsControlsButton.node.off('click');
+            this.authoredSettingsControlsButton.node.on('click',
+                () => this.openControlsPanel(), this);
+            const lab = this.authoredSettingsControlsLabel
+                     ?? this.authoredSettingsControlsButton.getComponentInChildren(Label);
+            if (lab) this.trackI18nLabel(lab, 'settings.controls');
+        }
+        // Wire each toggle to setControlMode + close-others. Toggles are
+        // authored in "any-selected" mode; script enforces mutual exclusion.
+        const wireControlToggle = (
+            toggle: Toggle | null,
+            label:  Label  | null,
+            mode:   ControlMode,
+            labelKey: string,
+        ): void => {
+            if (!toggle) return;
+            toggle.node.off('toggle');
+            toggle.node.on('toggle', () => {
+                if (!toggle.isChecked) {
+                    // User un-checked the currently-selected one — re-check
+                    // it so at least one mode stays active (radio behaviour).
+                    toggle.isChecked = true;
+                    return;
+                }
+                this.applyControlModeSelection(mode);
+            }, this);
+            if (label) this.trackI18nLabel(label, labelKey);
+        };
+        wireControlToggle(this.authoredControlsLegacyToggle,
+                          this.authoredControlsLegacyLabel,
+                          'legacy',    'controls.legacy');
+        wireControlToggle(this.authoredControlsDragFlingToggle,
+                          this.authoredControlsDragFlingLabel,
+                          'dragFling', 'controls.dragFling');
+        wireControlToggle(this.authoredControlsButtonsToggle,
+                          this.authoredControlsButtonsLabel,
+                          'buttons',   'controls.buttons');
+        if (this.authoredControlsTitleLabel) {
+            this.trackI18nLabel(this.authoredControlsTitleLabel, 'controls.title');
+        }
+        if (this.authoredControlsCloseButton) {
+            this.authoredControlsCloseButton.node.off('click');
+            this.authoredControlsCloseButton.node.on('click',
+                () => this.closeControlsPanel(), this);
+            const lab = this.authoredControlsCloseButton.getComponentInChildren(Label);
+            if (lab) this.trackI18nLabel(lab, 'controls.close');
+        }
+
         // ---- Legal docs (Terms of Service / Privacy Policy) ----
         // Both open the server-hosted HTML page in the system browser
         // via `sys.openURL` — works on web, native Android, and iOS.
@@ -1601,6 +1999,61 @@ export class MenuController extends Component {
      *  A `_=<ts>` cache-buster is appended so switching language and
      *  re-opening the same doc gets a fresh fetch instead of the
      *  browser's cached previous-language response. */
+    /** Open the "操作方式" (control scheme) picker modal, syncing the
+     *  3 toggles to reflect the currently-active mode. */
+    private openControlsPanel(): void {
+        if (!this.authoredControlsPanel) return;
+        this._syncControlToggles(getControlMode());
+        this.authoredControlsPanel.active = true;
+    }
+
+    private closeControlsPanel(): void {
+        if (!this.authoredControlsPanel) return;
+        this.authoredControlsPanel.active = false;
+    }
+
+    /** Apply a player-selected control mode: persist to Settings,
+     *  visually flip the OTHER two toggles off (radio behaviour),
+     *  and dismiss the picker so the change lands immediately. */
+    private applyControlModeSelection(mode: ControlMode): void {
+        setControlMode(mode);
+        this._syncControlToggles(mode);
+        log(`[Settings] controlMode → ${mode}`);
+        // Auto-close so the player can jump straight into the game
+        // and feel the new scheme — mirrors how the language / avatar
+        // pickers behave.
+        this.scheduleOnce(() => this.closeControlsPanel(), 0.15);
+    }
+
+    /** Push the `mode` state into all three toggles' isChecked flags
+     *  without re-firing their `toggle` events (temporary listener
+     *  detach — Cocos toggles emit on programmatic writes). */
+    private _syncControlToggles(mode: ControlMode): void {
+        const set = (t: Toggle | null, active: boolean): void => {
+            if (!t) return;
+            // Detach listeners so setting isChecked doesn't re-enter
+            // applyControlModeSelection recursively.
+            t.node.off('toggle');
+            t.isChecked = active;
+        };
+        set(this.authoredControlsLegacyToggle,    mode === 'legacy');
+        set(this.authoredControlsDragFlingToggle, mode === 'dragFling');
+        set(this.authoredControlsButtonsToggle,   mode === 'buttons');
+        // Re-attach handlers (mirrors the wire logic in bindSettingsSection).
+        const rewire = (
+            toggle: Toggle | null, m: ControlMode,
+        ): void => {
+            if (!toggle) return;
+            toggle.node.on('toggle', () => {
+                if (!toggle.isChecked) { toggle.isChecked = true; return; }
+                this.applyControlModeSelection(m);
+            }, this);
+        };
+        rewire(this.authoredControlsLegacyToggle,    'legacy');
+        rewire(this.authoredControlsDragFlingToggle, 'dragFling');
+        rewire(this.authoredControlsButtonsToggle,   'buttons');
+    }
+
     private openLegalPage(doc: 'tos' | 'privacy'): void {
         const lang = getLang();
         // Use PATH segment for language — query-string variants got
@@ -2028,6 +2481,15 @@ export class MenuController extends Component {
         }
         if (this.authoredSettingsAppleToggle) {
             this.authoredSettingsAppleToggle.isChecked = (acct === 'apple');
+        }
+        // Haptic toggle — reflect Settings state each open (may have
+        // been changed by another entry point, though today it's only
+        // touched from this panel).
+        if (this.authoredSettingsHapticToggle) {
+            this.authoredSettingsHapticToggle.isChecked = (getHapticMode() === 'on');
+        }
+        if (this.authoredSettingsHapticLabel) {
+            this.trackI18nLabel(this.authoredSettingsHapticLabel, 'settings.haptic');
         }
         // Avatar Sprite — repaint from PlayerProfile in case the player
         // picked a new one since the last open.

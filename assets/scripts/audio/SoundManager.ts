@@ -38,7 +38,8 @@ export type SfxKey =
     | 'rocket_hit'     // 火箭弹每次击中方块儿
     | 'gatling_fire'   // 加特林发射
     | 'meteor_fire'    // 流星雨每颗 DOT 发射
-    | 'mortar_land';   // 灰泥掉落锁定（每颗落地）
+    | 'mortar_land'    // 灰泥掉落锁定（每颗落地）
+    | 'level_scatter'; // 通关时塔散花的音效（scatter animation）
 
 @ccclass('SoundManager')
 export class SoundManager extends Component {
@@ -95,6 +96,9 @@ export class SoundManager extends Component {
 
     @property({ type: AudioClip, tooltip: '灰泥掉落锁定音效（每颗砂石落地印在方块儿上触发一次）' })
     mortarLand: AudioClip | null = null;
+
+    @property({ type: AudioClip, tooltip: '通关后塔散花动画音效（scatter 开始时触发一次）— 拖 AudioClip 进来' })
+    levelScatter: AudioClip | null = null;
 
     // ---- Global tuning ----
 
@@ -190,6 +194,7 @@ export class SoundManager extends Component {
             case 'gatling_fire':  return this.gatlingFire;
             case 'meteor_fire':   return this.meteorFire;
             case 'mortar_land':   return this.mortarLand;
+            case 'level_scatter': return this.levelScatter;
             default:              return null;
         }
     }

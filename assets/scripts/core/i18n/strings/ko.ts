@@ -116,8 +116,8 @@ export const KO: Record<string, string> = {
 
     // ---------- Tutorial ----------
     'tutorial.hint.tap':          '화면을 탭하여 블록 모양 변경',
-    'tutorial.hint.swipeRelease': '가로로 스와이프하고 놓으면 한 칸 회전',
-    'tutorial.hint.swipeHold':    '가로로 스와이프한 채 유지하면 연속 회전',
+    'tutorial.hint.swipeRelease': '손가락을 드래그해 타워를 한 칸씩 회전',
+    'tutorial.hint.swipeHold':    '빠르게 스와이프 후 놓으면 관성으로 회전',
     'tutorial.hint.swipeDown':    '아래로 스와이프하면 즉시 낙하',
     'tutorial.skip':              '건너뛰기',
 
@@ -169,7 +169,7 @@ export const KO: Record<string, string> = {
     // ---------- Result modals ----------
     'result.gameOver':   '게임 오버',
     'result.levelFail':  '스테이지 실패',
-    'result.fail.hole':  '구멍이 막혔습니다',
+    'result.fail.hole':  '되돌릴 수 없는 빈칸이 생겼습니다',
     'result.fail.tall':  '탑이 너무 높습니다',
     'result.win':        '클리어 ✓',
     'result.retry':      '다시 시도',
@@ -195,6 +195,13 @@ export const KO: Record<string, string> = {
     'settings.keys.off':     '끄기',
     'settings.bgm':          '배경음악',
     'settings.sfx':          '효과음',
+    'settings.haptic':       '진동',
+    'settings.controls':       '조작 방식',
+    'controls.title':          '조작 방식 선택',
+    'controls.legacy':         '클래식 (스와이프 + 길게 누르기)',
+    'controls.dragFling':      '드래그 + 플릭',
+    'controls.buttons':        '버튼 모드',
+    'controls.close':          '닫기',
     'settings.close':        '닫기',
     'audio.off':             '끄기',
     'audio.percent':         '{n}%',
@@ -255,4 +262,9 @@ export const KO: Record<string, string> = {
     'settings.googleRecovery.pending':                                       '복구 중...',
     'settings.googleRecovery.failed':                                       '복구 실패, 다시 시도',
     'settings.googleRecovery.success':                                       '계정 복구 완료',
+    // ---- Progressive unlock tips ----
+    'lock.endless':      '{n} 스테이지 클리어 시 무한 모드 해금',
+    'lock.blind':        '무한 모드에서 {n}층 달성 시 블라인드 모드 해금',
+    'lock.leaderboard':  '무한 모드에서 {n}층 달성 시 랭킹 해금',
+    'level.next':        '다음 스테이지',
 };
