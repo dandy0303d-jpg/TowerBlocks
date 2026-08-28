@@ -1,4 +1,4 @@
 /* 日本語 - Japanese */
-CFBundleDisplayName = "無限のブロックタワー";
-CFBundleName = "無限のブロックタワー";
+CFBundleDisplayName = "テトリタワー";
+CFBundleName = "テトリタワー";
 NSUserTrackingUsageDescription = "広告のパーソナライズのため、匿名識別子の使用を許可してください。ゲームプレイには影響しません。";

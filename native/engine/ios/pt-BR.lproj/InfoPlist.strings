@@ -1,4 +1,4 @@
 /* Português (Brasil) - Brazilian Portuguese */
-CFBundleDisplayName = "Torre Infinita";
-CFBundleName = "Torre Infinita";
+CFBundleDisplayName = "Torre de Blocos";
+CFBundleName = "Torre de Blocos";
 NSUserTrackingUsageDescription = "Permita-nos usar um identificador anônimo para exibir anúncios mais relevantes. Isto não afeta o jogo.";
