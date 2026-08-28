@@ -128,8 +128,8 @@ export const ZH_HANT: Record<string, string> = {
 
     // ---------- 新手引導 ----------
     'tutorial.hint.tap':          '點擊螢幕,方塊會變形',
-    'tutorial.hint.swipeRelease': '橫向滑動放手,塔轉一格',
-    'tutorial.hint.swipeHold':    '橫向滑動按住不放,塔連續轉',
+    'tutorial.hint.swipeRelease': '拖動手指，塔一格一格跟',
+    'tutorial.hint.swipeHold':    '快速滑動放手，塔靠慣性連續轉',
     'tutorial.hint.swipeDown':    '向下滑動,方塊直接落底',
     'tutorial.skip':              '跳過',
 
@@ -172,7 +172,7 @@ export const ZH_HANT: Record<string, string> = {
     // ---------- 結果彈窗 ----------
     'result.gameOver':   '遊戲結束',
     'result.levelFail':  '關卡失敗',
-    'result.fail.hole':  '漏洞被封死',
+    'result.fail.hole':  '形成了不可逆轉的空格',
     'result.fail.tall':  '塔太高',
     'result.win':        '過關 ✓',
     'result.retry':      '重試',
@@ -197,6 +197,13 @@ export const ZH_HANT: Record<string, string> = {
     'settings.keys.off':     '關',
     'settings.bgm':          '背景音樂',
     'settings.sfx':          '音效',
+    'settings.haptic':       '震動',
+    'settings.controls':       '操作方式',
+    'controls.title':          '選擇操作方式',
+    'controls.legacy':         '經典（滑動 + 長按）',
+    'controls.dragFling':      '拖動 + 慣性甩塔',
+    'controls.buttons':        '按鈕模式',
+    'controls.close':          '關閉',
     'settings.close':        '關閉',
     'audio.off':             '關',
     'audio.percent':         '{n}%',
@@ -254,4 +261,9 @@ export const ZH_HANT: Record<string, string> = {
     'settings.googleRecovery.pending':                                       '恢復中...',
     'settings.googleRecovery.failed':                                       '恢復失敗，請重試',
     'settings.googleRecovery.success':                                       '帳號已恢復',
+    // ---- Progressive unlock tips ----
+    'lock.endless':      '通過 {n} 關後解鎖無盡模式',
+    'lock.blind':        '無盡模式達到 {n} 層後解鎖閉眼模式',
+    'lock.leaderboard':  '無盡模式達到 {n} 層後解鎖排行榜',
+    'level.next':        '下一關',
 };

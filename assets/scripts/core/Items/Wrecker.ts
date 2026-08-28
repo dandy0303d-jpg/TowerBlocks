@@ -95,7 +95,14 @@ export function pickWreckerPlan(
     triggerC: number = -1,
     cachedBoomLevel: 0 | 1 | 2 | 3 = 0,
     cachedBombAxis: 'row' | 'col' | null = null,
+    // Wrecker×wrecker adjacency combo: the "leader" of an adjacent
+    // wrecker pair picks 2×WRECKER_TARGETS cells, the "passive" picks
+    // zero (its counterpart already handled the whole combo pool).
+    // Standalone wreckers use the default WRECKER_TARGETS. Pass a
+    // custom count to override; pass 0 to skip picking entirely.
+    pickCount: number = WRECKER_TARGETS,
 ): WreckerPlan | null {
+    if (pickCount <= 0) return null;
     const candidates: Array<{ r: number; c: number }> = [];
     for (let r = 0; r < state.board.length; r++) {
         for (let c = 0; c < COLS; c++) {
@@ -118,7 +125,7 @@ export function pickWreckerPlan(
         const j = Math.floor(rng() * (i + 1));
         [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
     }
-    const picks = candidates.slice(0, WRECKER_TARGETS).map(({ r, c }) => ({
+    const picks = candidates.slice(0, pickCount).map(({ r, c }) => ({
         r, c, color: state.board[r][c] as CellValue,
     }));
     // Combo gates. Both prefer the caller's pre-fire snapshot since the
@@ -260,8 +267,9 @@ export function activateWrecker(
     reservedTop: number = state.board.length,
     cachedBoomLevel: 0 | 1 | 2 | 3 = 0,
     cachedBombAxis: 'row' | 'col' | null = null,
+    pickCount: number = WRECKER_TARGETS,
 ): boolean {
-    const plan = pickWreckerPlan(state, rng, triggerR, triggerC, cachedBoomLevel, cachedBombAxis);
+    const plan = pickWreckerPlan(state, rng, triggerR, triggerC, cachedBoomLevel, cachedBombAxis, pickCount);
     if (!plan) return true;
     return applyWreckerPlan(state, plan, hooks, reservedTop);
 }

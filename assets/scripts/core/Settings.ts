@@ -23,6 +23,7 @@ const STORAGE_KEY_SFX       = 'tetritower.sfxMode';
 const STORAGE_KEY_BGM_VOL   = 'tetritower.bgmVolume';
 const STORAGE_KEY_SFX_VOL   = 'tetritower.sfxVolume';
 const STORAGE_KEY_HAPTIC    = 'tetritower.hapticMode';
+const STORAGE_KEY_CONTROL   = 'tetritower.controlMode';
 
 /** The five volume steps the settings cycle exposes: mute + four
  *  levels. 0 is the "off" position (mode also flips to 'off'). */
@@ -225,10 +226,9 @@ export function cycleSfxVolume(): number {
 }
 
 // ---------- hapticMode ----------
-// iOS-native touch feedback for line-clear + item-trigger events.
-// Off by default so a player who dislikes vibration doesn't get
-// startled on first launch — flip on from Settings once we tell
-// them. Non-iOS platforms just no-op regardless of this setting.
+// Cross-platform touch/rumble feedback (iOS UIImpactFeedbackGenerator,
+// Android Vibrator, web navigator.vibrate). ON by default; players who
+// dislike vibration can flip it off from the Settings panel.
 function loadHaptic(): AudioMode {
     return loadAudio(STORAGE_KEY_HAPTIC, 'on');
 }
@@ -244,4 +244,30 @@ export function setHapticMode(mode: AudioMode): void {
 export function toggleHapticMode(): AudioMode {
     setHapticMode(hapticMode === 'on' ? 'off' : 'on');
     return hapticMode;
+}
+
+// ---------- controlMode ----------
+// Tower rotation input scheme. Three values:
+//   - 'legacy'    : old scheme — horizontal swipe = rotate 1 col;
+//                   swipe+hold enters continuous-repeat rotation.
+//   - 'dragFling' : new default — drag = per-column rotation, release
+//                   with velocity = inertia spin with friction.
+//   - 'buttons'   : on-screen L/R buttons for rotation; swipe input
+//                   disabled (tap + swipe-down still work).
+export type ControlMode = 'legacy' | 'dragFling' | 'buttons';
+function loadControl(): ControlMode {
+    try {
+        const v = localStorage?.getItem(STORAGE_KEY_CONTROL);
+        if (v === 'legacy' || v === 'dragFling' || v === 'buttons') return v;
+    } catch (_) { /* ignore */ }
+    return 'dragFling';
+}
+let controlMode: ControlMode = loadControl();
+export function getControlMode(): ControlMode { return controlMode; }
+export function setControlMode(mode: ControlMode): void {
+    if (mode !== 'legacy' && mode !== 'dragFling' && mode !== 'buttons') return;
+    if (mode === controlMode) return;
+    controlMode = mode;
+    try { localStorage?.setItem(STORAGE_KEY_CONTROL, mode); } catch (_) { /* ignore */ }
+    notify();
 }

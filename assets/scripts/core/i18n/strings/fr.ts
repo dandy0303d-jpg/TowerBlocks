@@ -110,8 +110,8 @@ export const FR: Record<string, string> = {
     'debug.forceWin':    'Gagner',
 
     'tutorial.hint.tap':          'Touche pour changer la forme',
-    'tutorial.hint.swipeRelease': 'Glisse horizontal et relâche pour tourner',
-    'tutorial.hint.swipeHold':    'Glisse et maintiens pour rotation continue',
+    'tutorial.hint.swipeRelease': 'Glissez le doigt, la tour tourne colonne par colonne',
+    'tutorial.hint.swipeHold':    'Balayage rapide et relâchez — la tour tourne par inertie',
     'tutorial.hint.swipeDown':    'Glisse en bas pour chute directe',
     'tutorial.skip':              'Passer',
 
@@ -150,7 +150,7 @@ export const FR: Record<string, string> = {
 
     'result.gameOver':   'Fin de partie',
     'result.levelFail':  'Niveau raté',
-    'result.fail.hole':  'Trou scellé',
+    'result.fail.hole':  'Trou irréversible formé',
     'result.fail.tall':  'Tour trop haute',
     'result.win':        'Réussi ✓',
     'result.retry':      'Réessayer',
@@ -173,6 +173,13 @@ export const FR: Record<string, string> = {
     'settings.keys.off':     'Off',
     'settings.bgm':          'Musique',
     'settings.sfx':          'Effets',
+    'settings.haptic':       'Vibration',
+    'settings.controls':       'Contrôles',
+    'controls.title':          'Choisir les commandes',
+    'controls.legacy':         'Classique (glisser + maintenir)',
+    'controls.dragFling':      'Glisser + inertie',
+    'controls.buttons':        'Boutons à l\'écran',
+    'controls.close':          'Fermer',
     'settings.close':        'Fermer',
     'audio.off':             'Off',
     'audio.percent':         '{n}%',
@@ -228,4 +235,9 @@ export const FR: Record<string, string> = {
     'settings.googleRecovery.pending':                                       'Restauration...',
     'settings.googleRecovery.failed':                                       'Échec de la restauration, réessayez',
     'settings.googleRecovery.success':                                       'Compte restauré',
+    // ---- Progressive unlock tips ----
+    'lock.endless':      'Termine {n} niveaux pour déverrouiller le Mode Infini',
+    'lock.blind':        'Atteins {n} étages en Mode Infini pour déverrouiller le Mode Aveugle',
+    'lock.leaderboard':  'Atteins {n} étages en Mode Infini pour déverrouiller le Classement',
+    'level.next':        'Niveau suivant',
 };

@@ -1997,7 +1997,7 @@ export class HudController extends Component {
         // Tier stars — 3 star slots + 3 fills, positioned below the icon.
         const STAR_SIZE  = 32;
         const STAR_GAP   = 6;
-        const STAR_ROW_Y = -47;
+        const STAR_ROW_Y = -55;
         const totalW = STAR_SIZE * 3 + STAR_GAP * 2;
         const startX = -totalW / 2 + STAR_SIZE / 2;
         const fills: Sprite[] = [];
@@ -2194,10 +2194,13 @@ export class HudController extends Component {
         const overlay = this.authoredEnergyPicker;
         if (!overlay) return;
         this.wireAuthoredPicker();
-        // Reset the per-modal paid-refresh counter and paint the button
-        // label. Fresh cost tier (10 gems) + full quota (2/2) for each
-        // picker open.
-        this.resetPaidRefreshCounter('magic');
+        console.log(`[Picker] showAuthoredPicker: slot buttons wired=${this.authoredPickerSlotButtons.length}, `
+            + `icons registered=${this.pickerSlotIcons.filter(x => !!x).length}, `
+            + `itemIconHourglass wired=${!!this.itemIconHourglass}, `
+            + `itemStarSlot wired=${!!this.itemStarSlot}, `
+            + `itemStarFilled wired=${!!this.itemStarFilled}`);
+        // Fetch + paint the paid-refresh cost every time the picker
+        // opens (server may have rebalanced).
         this.refreshPaidRefreshLabel('magic');
         // Static labels.
         if (this.authoredPickerTitleLabel)    this.authoredPickerTitleLabel.string    = t('picker.title');
@@ -2977,6 +2980,7 @@ export class HudController extends Component {
         level: LevelData,
         onDone: () => void,
         durationMs: number = 1500,
+        subtitleOverride?: string | null,
     ): void {
         if (!this.fateOverlay) { onDone(); return; }
         const cp = level.customPiece;
@@ -2986,7 +2990,15 @@ export class HudController extends Component {
         this.fateCurrentIdx  = idx;
         this.fateCurrentBase = (cp && cp.baseType) || (['I','O','T','S','Z','J','L'] as PieceType[])[idx % 7];
         this.fateLevelOrder  = level.order || 0;
-        this.refreshFateSubtitle();
+        // Subtitle: caller override (e.g., "下一关" between-level preview)
+        // takes precedence over the default "关卡 X - Y 格" line so the
+        // post-clear flow can show a distinct label without touching
+        // the fate-entry path.
+        if (subtitleOverride != null && this.fateSubLab) {
+            this.fateSubLab.string = subtitleOverride;
+        } else {
+            this.refreshFateSubtitle();
+        }
         this.drawFateShape();
         // Hide interactive buttons + hint for the preview pass.
         if (this.fateButtonsGroup) this.fateButtonsGroup.active = false;

@@ -24,10 +24,12 @@ import {
     Quat,
     Texture2D,
     tween,
+    Button,
 } from 'cc';
 import { COLS, COLORS, CellValue, ENDLESS_HEIGHT_LIMIT, ENDLESS_GRAY_CAP } from '../core/Constants';
 import { SoundManager } from '../audio/SoundManager';
-import { HapticManager } from '../audio/HapticManager';
+import { HapticsManager } from '../audio/HapticsManager';
+import { getControlMode, subscribe as subscribeSettings } from '../core/Settings';
 import { LevelProgress } from '../core/LevelProgress';
 import { submitScore } from '../core/LeaderboardApi';
 // Game Center — channel-specific. On non-iOS these calls resolve
@@ -525,9 +527,40 @@ export class GameController extends Component {
      *  over. Suppresses the "one-shot rotation on release" branch in
      *  onTouchEnd, since we've been spinning the whole time already. */
     private touchIsContinuous = false;
-    /** setTimeout / setInterval handles for hold-to-repeat. */
+    /** setTimeout / setInterval handles for hold-to-repeat (legacy mode). */
     private touchHoldDelayHandle: ReturnType<typeof setTimeout> | null = null;
     private touchHoldRepeatHandle: ReturnType<typeof setInterval> | null = null;
+
+    // ---- Buttons mode: on-screen L/R rotate buttons (Settings picker) ----
+    @property({ type: Button, tooltip: '按钮模式 — 塔"向左转"按钮（点击 = 转 1 格，按住 = 连续转）— 可空' })
+    authoredRotateLeftButton: Button | null = null;
+
+    @property({ type: Button, tooltip: '按钮模式 — 塔"向右转"按钮 — 可空' })
+    authoredRotateRightButton: Button | null = null;
+
+    @property({ type: Node, tooltip: '按钮模式 — 两个方向按钮的容器节点（脚本会根据操作方式切换 active）— 可空' })
+    authoredRotateButtonsGroup: Node | null = null;
+
+    /** Held-button repeat timers (buttons mode). */
+    private _btnHoldHandle: ReturnType<typeof setInterval> | null = null;
+
+    // ---- Fling-rotation state (new drag-and-release scheme) ----
+    /** Rolling window of recent finger x-samples used to compute
+     *  release velocity in onTouchEnd. Old entries (older than
+     *  FLING_SAMPLE_WINDOW_MS) are trimmed on each push. */
+    private _touchSamples: Array<{ t: number; x: number }> = [];
+    /** Cumulative columns already stepped during THIS drag — used so
+     *  onTouchMove can figure out how many more column-steps to fire
+     *  as the finger continues moving. Reset on onTouchStart. */
+    private _touchDragCumCol: number = 0;
+    /** True while the tower is spinning freely from a release-fling.
+     *  The next touch-start cancels it immediately. */
+    private _flingActive: boolean = false;
+    /** Signed angular velocity in columns/sec. Positive = +dir. */
+    private _flingVelocity: number = 0;
+    /** Fractional-column accumulator — each frame's velocity*dt lands
+     *  here; whenever |accum| ≥ 1 we fire moveCylinder and subtract 1. */
+    private _flingAccum: number = 0;
 
     /** Touch gesture parameters:
      *   - No px minimum for the initial swipe — any horizontal motion
@@ -537,6 +570,33 @@ export class GameController extends Component {
     private static readonly HOLD_REPEAT_MS     = 80;   // continuous-mode rotation interval — INITIAL rate (0-2s)
     private static readonly HOLD_REPEAT_FAST_MS = 60;  // faster rate applied after HOLD_FAST_AFTER_MS of continuous hold
     private static readonly HOLD_FAST_AFTER_MS = 2000; // switch to the fast interval this long after entering continuous mode
+    // ---- Fling-and-friction rotation (new scheme) ----
+    // Drag distance (px) required to advance the tower by ONE column
+    // while the finger is held on-screen. Feels closest to the old
+    // continuous-hold rate at typical swipe speeds.
+    private static readonly PX_PER_COL_DRAG    = 100;
+    // Sample window used to compute release velocity — only finger
+    // movement in the last SAMPLE_WINDOW_MS before touch-end is
+    // considered, so pausing mid-drag doesn't kill the fling.
+    private static readonly FLING_SAMPLE_WINDOW_MS = 100;
+    // Minimum release velocity (in columns/second) below which the
+    // tower does NOT enter fling on touch-end — pretty much a "the
+    // player was steering, not flinging" cutoff.
+    private static readonly FLING_MIN_TRIGGER_CPS  = 3;
+    // Hard cap on fling velocity so a super-fast flick doesn't spin
+    // the cylinder faster than the renderer can keep up. Distance
+    // formula: distance = V² / (2 × FRICTION) columns.
+    //   Max cap V=24, friction 24 → max fling ≈ 12 cols (half circle)
+    //   Light swipe V≈10        → fling ≈ 2 cols
+    private static readonly FLING_MAX_VELOCITY_CPS = 24;
+    // Linear deceleration in columns/sec² — friction. Higher = tower
+    // stops quicker; typical fling lasts velocity / friction seconds.
+    // Doubled from 12 → 24 to make light swipes stop after ~2 cols
+    // instead of ~4-5 while keeping the max-cap swipe at half a circle.
+    private static readonly FLING_FRICTION_CPS2    = 36;
+    // Velocity magnitude at which we snap-stop the fling — prevents
+    // an infinitely-slow crawl at the tail of the decay curve.
+    private static readonly FLING_MIN_VELOCITY_CPS = 0.6;
     /** Uniform scale applied to BoardRoot3D so the tower occupies a smaller
      *  fraction of the screen on tall phone displays. 1.0 = original size. */
     private static readonly TOWER_VIEW_SCALE = 0.75;
@@ -649,11 +709,14 @@ export class GameController extends Component {
                 },
                 onPartialShatter: (r, content) => {
                     SoundManager.instance?.play('line_clear');
-                    HapticManager.instance.impact('light');
+            HapticsManager.impact('medium');
                     this.onShatter(r, content);
                 },
                 onCellsFell: moves => this.registerFallAnimations(moves),
-                onWreckerPrePulse: picks => this.queueWreckerPrePulse(picks),
+                onWreckerPrePulse: picks => {
+                    HapticsManager.impact('heavy');
+                    this.queueWreckerPrePulse(picks);
+                },
                 onWreckerPicksShatter: picks => this.queueWreckerPicksShatter(picks),
                 // Rocket/gatling bullets 1:1-cancel a colored cell — reuse
                 // the wrecker per-cell shatter path so each hit pops with
@@ -669,6 +732,7 @@ export class GameController extends Component {
                     // future-proofed for range hits, so loop.
                     for (let i = 0; i < picks.length; i++) {
                         SoundManager.instance?.play('rocket_hit');
+                        HapticsManager.impact('heavy');
                     }
                 },
                 onGatlingHit: picks => {
@@ -679,6 +743,7 @@ export class GameController extends Component {
                     // palette tight.
                     for (let i = 0; i < picks.length; i++) {
                         SoundManager.instance?.play('rocket_hit');
+                        HapticsManager.impact('heavy');
                     }
                 },
                 // Fire SFX for a rocket storm: play `rocket_fire` three
@@ -689,14 +754,21 @@ export class GameController extends Component {
                 // moment; 150ms stagger between the three so they stay
                 // distinct instead of stacking into one thicker impulse.
                 onRocketActivated: () => {
+                    HapticsManager.impact('heavy');
                     for (let i = 0; i < 3; i++) {
                         setTimeout(() => SoundManager.instance?.play('rocket_fire'), 300 + i * 150);
                     }
                 },
-                onGatlingFire: (_col) => SoundManager.instance?.play('gatling_fire'),
+                onGatlingFire: (_col) => {
+                    SoundManager.instance?.play('gatling_fire');
+                    HapticsManager.impact('medium');
+                },
                 // Meteor shower per-DOT launch — fires each time a
                 // DOT piece spawns (rocket / gatling parity).
-                onMeteorFire:  ()     => SoundManager.instance?.play('meteor_fire'),
+                onMeteorFire:  ()     => {
+                    SoundManager.instance?.play('meteor_fire');
+                    HapticsManager.impact('medium');
+                },
                 // Mortar drop lock — play SFX only on the FIRST drop
                 // of each storm. Subsequent drops in the same storm
                 // are silent (the "first mortar landed" cue is enough,
@@ -707,6 +779,7 @@ export class GameController extends Component {
                 onMortarActivated: () => {
                     this._mortarLandSfxArmed = true;
                     SoundManager.instance?.play('meteor_fire');
+                    HapticsManager.impact('heavy');
                 },
                 // Endless / blind — 24-col row filled + converted to
                 // gray. Play the same `line_clear` cue level mode
@@ -715,12 +788,13 @@ export class GameController extends Component {
                 // regardless of how many rows converted.
                 onEndlessRowsFilled: (_count) => {
                     SoundManager.instance?.play('line_clear');
-                    HapticManager.instance.impact('light');
+            HapticsManager.impact('medium');
                 },
                 onMortarLanded: (_r, _c, _color) => {
                     if (!this._mortarLandSfxArmed) return;
                     this._mortarLandSfxArmed = false;
                     SoundManager.instance?.play('mortar_land');
+                    HapticsManager.impact('heavy');
                 },
                 // Row bombs re-use the regular row-clear flash (via
                 // `onPartialShatter` above): bomb-spliced rows fire
@@ -739,10 +813,12 @@ export class GameController extends Component {
                 // give a visible "shock-wave from centre" feel.
                 onBoomTriggered: (r, c, level, cleared) => {
                     SoundManager.instance?.play('bomb_boom');
+                    HapticsManager.impact('heavy');
                     this.queueBoomFlash(r, c, level, cleared);
                 },
                 onColBombDetonate: (r, c) => {
                     SoundManager.instance?.play('bomb_boom');
+                    HapticsManager.impact('heavy');
                     this.queueColFlash(r, c);
                 },
                 // Shapeshifter (变形) magic item: GameState asks us to
@@ -1547,6 +1623,60 @@ export class GameController extends Component {
             window.addEventListener('keydown', this.onDomKeyDown);
             window.addEventListener('keyup',   this.onDomKeyUp);
         }
+        this._wireRotateButtons();
+        this._refreshControlModeUi();
+        // Live-update the on-screen rotate buttons when the player
+        // changes the control scheme from the Settings picker.
+        subscribeSettings(() => this._refreshControlModeUi());
+    }
+
+    // ---- On-screen rotate buttons (buttons mode) ----
+    private _wireRotateButtons(): void {
+        const bind = (btn: Button | null, dir: 1 | -1): void => {
+            if (!btn) return;
+            btn.node.off(Node.EventType.TOUCH_START);
+            btn.node.off(Node.EventType.TOUCH_END);
+            btn.node.off(Node.EventType.TOUCH_CANCEL);
+            btn.node.on(Node.EventType.TOUCH_START, () => this._rotateButtonHold(dir), this);
+            btn.node.on(Node.EventType.TOUCH_END,   () => this._rotateButtonRelease(),  this);
+            btn.node.on(Node.EventType.TOUCH_CANCEL,() => this._rotateButtonRelease(),  this);
+        };
+        bind(this.authoredRotateLeftButton,  -1);
+        bind(this.authoredRotateRightButton, +1);
+    }
+
+    private _rotateButtonHold(dir: 1 | -1): void {
+        if (!this.gameState) return;
+        // First tap: single step + arm the repeat timer for hold-to-continuous.
+        this.gameState.moveCylinder(dir);
+        SoundManager.instance?.play('rotate_tower');
+        HapticsManager.impact('light');
+        if (this._btnHoldHandle !== null) clearInterval(this._btnHoldHandle);
+        this._btnHoldHandle = setInterval(() => {
+            if (!this.gameState) return;
+            this.gameState.moveCylinder(dir);
+            SoundManager.instance?.play('rotate_tower');
+            HapticsManager.impact('light');
+        }, GameController.HOLD_REPEAT_MS);
+    }
+
+    private _rotateButtonRelease(): void {
+        if (this._btnHoldHandle !== null) {
+            clearInterval(this._btnHoldHandle);
+            this._btnHoldHandle = null;
+        }
+    }
+
+    /** Show/hide the on-screen rotate buttons based on control mode. */
+    public _refreshControlModeUi(): void {
+        const showButtons = getControlMode() === 'buttons';
+        if (this.authoredRotateButtonsGroup) {
+            this.authoredRotateButtonsGroup.active = showButtons;
+        } else {
+            // No group wired — toggle each button node individually.
+            if (this.authoredRotateLeftButton)  this.authoredRotateLeftButton.node.active  = showButtons;
+            if (this.authoredRotateRightButton) this.authoredRotateRightButton.node.active = showButtons;
+        }
     }
 
     onDestroy(): void {
@@ -1568,6 +1698,11 @@ export class GameController extends Component {
         // children own the cube transforms this frame; skip tick +
         // syncCubes so we don't fight them.
         if (this._assembling) return;
+        // Tower fling-spin (post-swipe inertia). Runs each frame while
+        // active; stops itself when friction bleeds velocity below the
+        // min threshold. A fresh onTouchStart cancels it via the state
+        // reset in that handler.
+        this.stepTowerFling(deltaTime);
         this.gameState.tick(deltaTime * 1000);
         // Advance the camera-tracking offset FIRST so the piece-realign
         // step and the cube sync below both read the current snapped
@@ -1912,6 +2047,7 @@ export class GameController extends Component {
             now - this.leftLastFire >= GameController.REPEAT_INTERVAL) {
             this.gameState.moveCylinder(-1);
             SoundManager.instance?.play('rotate_tower');
+            HapticsManager.impact('light');
             this.leftLastFire = now;
         }
         if (this.rightHeld > 0 &&
@@ -1919,6 +2055,7 @@ export class GameController extends Component {
             now - this.rightLastFire >= GameController.REPEAT_INTERVAL) {
             this.gameState.moveCylinder(+1);
             SoundManager.instance?.play('rotate_tower');
+            HapticsManager.impact('light');
             this.rightLastFire = now;
         }
     }
@@ -3105,11 +3242,13 @@ export class GameController extends Component {
             case KeyCode.ARROW_LEFT:
                 this.gameState.moveCylinder(-1);
                 SoundManager.instance?.play('rotate_tower');
+            HapticsManager.impact('light');
                 if (this.leftHeld === 0) { this.leftHeld = now; this.leftLastFire = now; }
                 break;
             case KeyCode.ARROW_RIGHT:
                 this.gameState.moveCylinder(+1);
                 SoundManager.instance?.play('rotate_tower');
+            HapticsManager.impact('light');
                 if (this.rightHeld === 0) { this.rightHeld = now; this.rightLastFire = now; }
                 break;
             case KeyCode.ARROW_UP:
@@ -4004,15 +4143,6 @@ export class GameController extends Component {
         submitScore(mode as 'endless' | 'blind', score).catch(err => {
             console.warn('[TowerBlocks] leaderboard submit failed:', err.message);
         });
-        // Also submit to Game Center. Only endless has a GC leaderboard
-        // configured (WuJinMoShi); blind mode is server-only for now.
-        // Fire-and-forget — GC failures are logged but don't block quit.
-        if (mode === 'endless') {
-            GameCenter.submitScore(GC_LEADERBOARD.endless, score).then((r) => {
-                if (!r.success) console.warn('[TowerBlocks][GC] endless submitScore failed:', r.error);
-                else            log(`[TowerBlocks][GC] endless score submitted (${reason})`);
-            });
-        }
     }
 
     /** DEBUG-only cheat: instantly complete the currently-loaded level.
@@ -4035,6 +4165,13 @@ export class GameController extends Component {
     //  Touch / drag input
     // ============================================================
     private onTouchStart(evt: EventTouch): void {
+        // Any fresh touch immediately stops an in-flight fling — per
+        // design "旋转过程中手指触碰屏幕，塔立即停止旋转".
+        if (this._flingActive) {
+            this._flingActive   = false;
+            this._flingVelocity = 0;
+            this._flingAccum    = 0;
+        }
         const loc = evt.getLocation();
         this.touchStartX    = loc.x;
         this.touchStartY    = loc.y;
@@ -4044,71 +4181,43 @@ export class GameController extends Component {
         this.touchActive    = true;
         this.touchLastDir   = 0;
         this.touchIsContinuous = false;
-        // Reset any leftover hold timers from a previous gesture and
-        // arm a new one. When it fires (HOLD_DELAY_MS from now) we look
-        // at the current finger position: if it's shifted horizontally
-        // past the tap threshold, continuous rotation kicks in.
+        // Reset drag-column accumulator + velocity sample buffer for
+        // the new gesture.
+        this._touchDragCumCol = 0;
+        this._touchSamples.length = 0;
+        this._touchSamples.push({ t: this.touchStartTime, x: loc.x });
+        // Legacy hold-repeat timers reset — arm ONLY when the current
+        // control mode is 'legacy' (Settings picker).
         this.clearTouchHoldTimers();
-        this.touchHoldDelayHandle = setTimeout(
-            () => this.tryEnterContinuous(),
-            GameController.HOLD_DELAY_MS,
-        );
-    }
-
-    private onTouchMove(evt: EventTouch): void {
-        if (!this.touchActive) return;
-        const loc = evt.getLocation();
-        this.touchLastX = loc.x;
-        this.touchLastY = loc.y;
-        // Continuous mode: keep the direction fresh so the player can
-        // switch left↔right mid-hold without releasing. Uses the
-        // total-drag sign, not per-frame delta, so a jittery finger
-        // doesn't flip direction back and forth every frame.
-        if (this.touchIsContinuous) {
-            const dx = loc.x - this.touchStartX;
-            if (Math.abs(dx) > GameController.TAP_MAX_PX) {
-                // Inverted: swipe RIGHT rotates cylinder in the -1 direction,
-                // swipe LEFT in the +1 direction. Matches the player's mental
-                // model of "push the tower away from your finger".
-                this.touchLastDir = dx > 0 ? -1 : 1;
-            }
+        if (getControlMode() === 'legacy') {
+            this.touchHoldDelayHandle = setTimeout(
+                () => this.tryEnterContinuous(),
+                GameController.HOLD_DELAY_MS,
+            );
         }
     }
 
-    /** Hold-timer callback (HOLD_DELAY_MS after touch start). Checks the
+    /** Legacy hold-repeat callback (HOLD_DELAY_MS after touch start).
+     *  Only used when Settings.controlMode === 'legacy'. Checks the
      *  latest finger position: if it moved horizontally past the tap
      *  threshold, upgrade the gesture into continuous rotation.
      *  Otherwise (finger still, or motion was mostly vertical) do
-     *  nothing — the release path will decide (piece rotate / hard drop
-     *  / no-op). */
+     *  nothing — the release path decides (piece rotate / hard drop). */
     private tryEnterContinuous(): void {
         if (!this.touchActive || !this.gameState) return;
         if (this.touchIsContinuous) return;
         const dx = this.touchLastX - this.touchStartX;
         const dy = this.touchLastY - this.touchStartY;
         const absX = Math.abs(dx), absY = Math.abs(dy);
-        // Guard: need to have actually swiped horizontally (past the
-        // tap noise floor) AND that swipe has to dominate over any
-        // vertical motion.
         if (absX < GameController.TAP_MAX_PX) return;
         if (absX < absY) return;
-
         this.touchIsContinuous = true;
-        // Inverted swipe→rotation mapping (see onTouchEnd for rationale).
         this.touchLastDir = dx > 0 ? -1 : 1;
-        // Immediate first spin so the "hold latched" moment is felt
-        // right at HOLD_DELAY_MS. Interval takes over afterwards.
         this.gameState.moveCylinder(this.touchLastDir);
         SoundManager.instance?.play('rotate_tower');
-
-        // Continuous-mode rotation timer with a two-stage rate:
-        //   0-2 s     : 80 ms per column (HOLD_REPEAT_MS)
-        //   2 s+      : 60 ms per column (HOLD_REPEAT_FAST_MS)
-        // After the first `HOLD_FAST_AFTER_MS` window elapses we tear
-        // down the slow interval and re-arm at the faster rate so the
-        // player can still cover long distances without waiting forever.
-        const continuousStartedAt = Date.now();
-        let bumpedToFast = false;
+        HapticsManager.impact('light');
+        const startedAt = Date.now();
+        let bumped = false;
         const spin = (): void => {
             if (!this.touchActive || !this.gameState || this.touchLastDir === 0) {
                 this.clearTouchHoldTimers();
@@ -4116,17 +4225,64 @@ export class GameController extends Component {
             }
             this.gameState.moveCylinder(this.touchLastDir);
             SoundManager.instance?.play('rotate_tower');
-            // First time we cross the 2 s threshold: swap timers.
-            if (!bumpedToFast
-                && Date.now() - continuousStartedAt >= GameController.HOLD_FAST_AFTER_MS) {
-                bumpedToFast = true;
-                if (this.touchHoldRepeatHandle !== null) {
-                    clearInterval(this.touchHoldRepeatHandle);
-                }
+            HapticsManager.impact('light');
+            if (!bumped && Date.now() - startedAt >= GameController.HOLD_FAST_AFTER_MS) {
+                bumped = true;
+                if (this.touchHoldRepeatHandle !== null) clearInterval(this.touchHoldRepeatHandle);
                 this.touchHoldRepeatHandle = setInterval(spin, GameController.HOLD_REPEAT_FAST_MS);
             }
         };
         this.touchHoldRepeatHandle = setInterval(spin, GameController.HOLD_REPEAT_MS);
+    }
+
+    private onTouchMove(evt: EventTouch): void {
+        if (!this.touchActive) return;
+        const loc = evt.getLocation();
+        this.touchLastX = loc.x;
+        this.touchLastY = loc.y;
+        const now = Date.now();
+        // Push sample + trim to the rolling window.
+        this._touchSamples.push({ t: now, x: loc.x });
+        const cutoff = now - GameController.FLING_SAMPLE_WINDOW_MS;
+        while (this._touchSamples.length > 1 && this._touchSamples[0].t < cutoff) {
+            this._touchSamples.shift();
+        }
+        const mode = getControlMode();
+        // Legacy mode: keep direction fresh so player can flip mid-hold.
+        if (mode === 'legacy') {
+            if (this.touchIsContinuous) {
+                const dx = loc.x - this.touchStartX;
+                if (Math.abs(dx) > GameController.TAP_MAX_PX) {
+                    this.touchLastDir = dx > 0 ? -1 : 1;
+                }
+            }
+            return;
+        }
+        // Buttons mode: swipe input is IGNORED for rotation (tap +
+        // vertical swipe-down still work through onTouchEnd).
+        if (mode === 'buttons') return;
+        // ---- Drag+Fling mode (default) ----
+        // Drag-to-column mapping: cumulative dx / PX_PER_COL_DRAG gives
+        // the target column offset (signed). Direction inverted (drag
+        // RIGHT → rotate -1) to match the "push tower away from finger"
+        // mental model. Step the tower to catch up to the target.
+        if (!this.gameState) return;
+        const dx = loc.x - this.touchStartX;
+        const targetCumCol = -Math.trunc(dx / GameController.PX_PER_COL_DRAG);
+        while (this._touchDragCumCol < targetCumCol) {
+            this.gameState.moveCylinder(1);
+            SoundManager.instance?.play('rotate_tower');
+            HapticsManager.impact('light');
+            this._touchDragCumCol++;
+            this.touchIsContinuous = true;
+        }
+        while (this._touchDragCumCol > targetCumCol) {
+            this.gameState.moveCylinder(-1);
+            SoundManager.instance?.play('rotate_tower');
+            HapticsManager.impact('light');
+            this._touchDragCumCol--;
+            this.touchIsContinuous = true;
+        }
     }
 
     private onTouchEnd(evt: EventTouch): void {
@@ -4135,20 +4291,92 @@ export class GameController extends Component {
             this.touchActive = false;
             return;
         }
-        // Continuous rotation was firing — nothing more to do on release.
-        if (this.touchIsContinuous) {
-            this.touchIsContinuous = false;
-            this.touchActive = false;
-            return;
-        }
         const loc = evt.getLocation();
         const dx = loc.x - this.touchStartX;
         const dy = loc.y - this.touchStartY;
         const absX = Math.abs(dx), absY = Math.abs(dy);
         const dt = Date.now() - this.touchStartTime;
+        const mode = getControlMode();
 
-        // 1. Pure tap → piece rotate. Requires both no meaningful motion
-        //    AND short elapsed time.
+        // ---- Legacy mode: continuous rotation was firing → stop; else
+        //      any horizontal swipe rotates ONE column (old behaviour).
+        if (mode === 'legacy') {
+            if (this.touchIsContinuous) {
+                this.touchIsContinuous = false;
+                this.touchActive = false;
+                return;
+            }
+            const isTapLegacy = absX < GameController.TAP_MAX_PX
+                             && absY < GameController.TAP_MAX_PX
+                             && dt < GameController.TAP_MAX_MS;
+            if (isTapLegacy) {
+                this.gameState.tryRotate(1);
+                SoundManager.instance?.play('piece_rotate');
+                this.touchActive = false;
+                return;
+            }
+            if (absX >= GameController.TAP_MAX_PX && absX >= absY) {
+                const dir: 1 | -1 = dx > 0 ? -1 : 1;
+                this.gameState.moveCylinder(dir);
+                SoundManager.instance?.play('rotate_tower');
+                HapticsManager.impact('light');
+                this.touchActive = false;
+                return;
+            }
+            if (dy < 0 && absY >= GameController.SWIPE_MIN_PX && absY > absX) {
+                this.gameState.hardDrop();
+                SoundManager.instance?.play('hard_drop');
+            }
+            this.touchActive = false;
+            return;
+        }
+
+        // ---- Buttons mode: rotation via on-screen buttons only.
+        //      Touch input still handles tap→piece-rotate + swipe-down→hard-drop.
+        if (mode === 'buttons') {
+            const isTapBtn = absX < GameController.TAP_MAX_PX
+                          && absY < GameController.TAP_MAX_PX
+                          && dt < GameController.TAP_MAX_MS;
+            if (isTapBtn) {
+                this.gameState.tryRotate(1);
+                SoundManager.instance?.play('piece_rotate');
+                this.touchActive = false;
+                return;
+            }
+            if (dy < 0 && absY >= GameController.SWIPE_MIN_PX && absY > absX) {
+                this.gameState.hardDrop();
+                SoundManager.instance?.play('hard_drop');
+            }
+            this.touchActive = false;
+            return;
+        }
+
+        // ---- Drag+Fling mode (default) ----
+        // Case A: drag happened → maybe kick fling from release velocity.
+        if (this.touchIsContinuous) {
+            const samples = this._touchSamples;
+            if (samples.length >= 2) {
+                const first = samples[0];
+                const last  = samples[samples.length - 1];
+                const dts   = (last.t - first.t) / 1000;
+                if (dts > 0) {
+                    const pxPerSec = (last.x - first.x) / dts;
+                    let cps = -pxPerSec / GameController.PX_PER_COL_DRAG;
+                    const cap = GameController.FLING_MAX_VELOCITY_CPS;
+                    if (cps >  cap) cps =  cap;
+                    if (cps < -cap) cps = -cap;
+                    if (Math.abs(cps) >= GameController.FLING_MIN_TRIGGER_CPS) {
+                        this._flingVelocity = cps;
+                        this._flingAccum    = 0;
+                        this._flingActive   = true;
+                    }
+                }
+            }
+            this.touchIsContinuous = false;
+            this.touchActive = false;
+            return;
+        }
+        // Case B: pure tap → rotate the piece.
         const isTap = absX < GameController.TAP_MAX_PX
                    && absY < GameController.TAP_MAX_PX
                    && dt < GameController.TAP_MAX_MS;
@@ -4158,25 +4386,54 @@ export class GameController extends Component {
             this.touchActive = false;
             return;
         }
-        // 2. Any horizontal swipe (dominantly horizontal past the tap
-        //    noise floor) → rotate ONE column regardless of distance.
-        //    "无 px 限制" — 5 px counts the same as 500 px.
-        //    Direction INVERTED (swipe right → cylinder rotates -1, swipe
-        //    left → +1) so the tower reads as "moving away from the
-        //    finger", matching the player's push-the-scene mental model.
-        if (absX >= GameController.TAP_MAX_PX && absX >= absY) {
-            const dir: 1 | -1 = dx > 0 ? -1 : 1;
-            this.gameState.moveCylinder(dir);
-            SoundManager.instance?.play('rotate_tower');
-            this.touchActive = false;
-            return;
-        }
-        // 3. Downward-dominant vertical swipe → hard drop.
+        // Case C: downward vertical swipe → hard drop.
         if (dy < 0 && absY >= GameController.SWIPE_MIN_PX && absY > absX) {
             this.gameState.hardDrop();
             SoundManager.instance?.play('hard_drop');
         }
         this.touchActive = false;
+    }
+
+    /** Step the fling-spin state one frame. Called from update(dt).
+     *  Applies velocity → accum → column steps, then linear friction
+     *  decay, then stops when below the min-velocity threshold. */
+    private stepTowerFling(dt: number): void {
+        if (!this._flingActive || !this.gameState) return;
+        // 1. Advance accum by velocity*dt (columns this frame).
+        this._flingAccum += this._flingVelocity * dt;
+        // 2. Emit as many full-column steps as accum permits. Haptic
+        //    fires per-column but the 200 ms light throttle inside
+        //    HapticsManager coalesces rapid fires into a sparse
+        //    tap-tap-tap so the fling doesn't merge into a continuous
+        //    buzz on iOS (fixed-duration system vibrate).
+        while (this._flingAccum >= 1) {
+            this.gameState.moveCylinder(1);
+            SoundManager.instance?.play('rotate_tower');
+            HapticsManager.impact('light');
+            this._flingAccum -= 1;
+        }
+        while (this._flingAccum <= -1) {
+            this.gameState.moveCylinder(-1);
+            SoundManager.instance?.play('rotate_tower');
+            HapticsManager.impact('light');
+            this._flingAccum += 1;
+        }
+        // 3. Apply linear friction — magnitude decreases at
+        //    FLING_FRICTION_CPS2 cols/sec² regardless of speed. Sign
+        //    check catches the zero-crossing so the tower doesn't
+        //    reverse direction due to over-shoot.
+        const decel = GameController.FLING_FRICTION_CPS2 * dt;
+        if (this._flingVelocity > 0) {
+            this._flingVelocity = Math.max(0, this._flingVelocity - decel);
+        } else if (this._flingVelocity < 0) {
+            this._flingVelocity = Math.min(0, this._flingVelocity + decel);
+        }
+        // 4. Snap-stop when velocity magnitude falls below cutoff.
+        if (Math.abs(this._flingVelocity) < GameController.FLING_MIN_VELOCITY_CPS) {
+            this._flingActive   = false;
+            this._flingVelocity = 0;
+            this._flingAccum    = 0;
+        }
     }
 
     /** Cancel any pending hold-to-repeat timers (called on drag-start,
