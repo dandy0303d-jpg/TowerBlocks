@@ -142,6 +142,31 @@ export class MenuController extends Component {
     @property({ type: Label, tooltip: '主页副标题 Label' })
     modeSubtitleLabel: Label | null = null;
 
+    // ---- 主页 Logo 图（按当前语言切换）----
+    @property({ type: Sprite, tooltip: '主页 Logo Sprite（拖场景里的 Sprite 节点进来；脚本会根据当前语言 swap spriteFrame）— 可空' })
+    authoredMenuLogoSprite: Sprite | null = null;
+
+    @property({ type: SpriteFrame, tooltip: 'Logo — 简体中文 (zh) 对应 SpriteFrame' })
+    logoZh: SpriteFrame | null = null;
+    @property({ type: SpriteFrame, tooltip: 'Logo — 繁體中文 (zh-Hant) 对应 SpriteFrame' })
+    logoZhHant: SpriteFrame | null = null;
+    @property({ type: SpriteFrame, tooltip: 'Logo — English (en) 对应 SpriteFrame' })
+    logoEn: SpriteFrame | null = null;
+    @property({ type: SpriteFrame, tooltip: 'Logo — 日本語 (ja) 对应 SpriteFrame' })
+    logoJa: SpriteFrame | null = null;
+    @property({ type: SpriteFrame, tooltip: 'Logo — 한국어 (ko) 对应 SpriteFrame' })
+    logoKo: SpriteFrame | null = null;
+    @property({ type: SpriteFrame, tooltip: 'Logo — Español (es) 对应 SpriteFrame' })
+    logoEs: SpriteFrame | null = null;
+    @property({ type: SpriteFrame, tooltip: 'Logo — Français (fr) 对应 SpriteFrame' })
+    logoFr: SpriteFrame | null = null;
+    @property({ type: SpriteFrame, tooltip: 'Logo — Português (pt-BR) 对应 SpriteFrame' })
+    logoPtBR: SpriteFrame | null = null;
+    @property({ type: SpriteFrame, tooltip: 'Logo — Deutsch (de) 对应 SpriteFrame' })
+    logoDe: SpriteFrame | null = null;
+    @property({ type: SpriteFrame, tooltip: 'Logo — Русский (ru) 对应 SpriteFrame' })
+    logoRu: SpriteFrame | null = null;
+
     @property({ type: Button, tooltip: '无尽模式按钮' })
     modeBtnEndless: Button | null = null;
 
@@ -446,7 +471,36 @@ export class MenuController extends Component {
         log('[TowerBlocks] MenuController.onLoad');
         // Re-translate every tracked label whenever the user toggles
         // the language at runtime. Stored unsub fires in onDestroy.
-        this.langUnsub = subscribeLang(() => this.refreshI18nLabels());
+        // Also swap the main-menu logo image to the current language's
+        // localized brand art (10 authored SpriteFrame slots).
+        this.langUnsub = subscribeLang(() => {
+            this.refreshI18nLabels();
+            this._refreshLocalizedLogo();
+        });
+        // Paint the correct logo on first load too.
+        this._refreshLocalizedLogo();
+    }
+
+    /** Swap `authoredMenuLogoSprite`'s spriteFrame to the current
+     *  i18n language's localized logo. Silent no-op if either the
+     *  Sprite slot or the matching SpriteFrame slot is unwired. */
+    private _refreshLocalizedLogo(): void {
+        if (!this.authoredMenuLogoSprite) return;
+        const code = getLang();
+        const map: Record<string, SpriteFrame | null> = {
+            'zh':      this.logoZh,
+            'zh-Hant': this.logoZhHant,
+            'en':      this.logoEn,
+            'ja':      this.logoJa,
+            'ko':      this.logoKo,
+            'es':      this.logoEs,
+            'fr':      this.logoFr,
+            'pt-BR':   this.logoPtBR,
+            'de':      this.logoDe,
+            'ru':      this.logoRu,
+        };
+        const sf = map[code] ?? this.logoEn;   // fallback: English
+        if (sf) this.authoredMenuLogoSprite.spriteFrame = sf;
     }
 
     onDestroy(): void {
