@@ -40,6 +40,7 @@ import {
 } from 'cc';
 
 import { t, subscribe as subscribeI18n } from '../core/i18n/I18n';
+import { setControlMode } from '../core/Settings';
 import { TutorialProgress } from '../core/TutorialProgress';
 import { TUTORIAL_STEPS, TutorialStep, TutorialGesture, RETRY_IDLE_MS } from '../core/TutorialSteps';
 import { TutorialHandFX } from './TutorialHandFX';
@@ -178,11 +179,24 @@ export class TutorialController extends Component {
         }
         this.panel.setSiblingIndex(999);
         this.wireOnce();
+
         this.installListeners();
         // Load the practice tower NOW so the tower is behind the
         // overlay from the start (player can see what they're
         // manipulating during the very first demo).
         this.gameController.startTutorial();
+        // Force Expert (dragFling) control mode for the tutorial —
+        // in 'buttons' mode swipe input is fully suppressed and the
+        // practice tower wouldn't react to the demonstrated gestures.
+        // dragFling accepts drag + fling, matching what the tutorial
+        // teaches. finishTutorial() keeps this mode as the new default.
+        setControlMode('dragFling');
+        // Hide all 4 on-screen action buttons for the duration of the
+        // tutorial — the hand-demo teaches gestures, and keyboard
+        // buttons would confuse the flow.
+        if (typeof (this.gameController as any).setTutorialActive === 'function') {
+            (this.gameController as any).setTutorialActive(true);
+        }
         this.runCurrentStep();
         // Safety-net: poll the tower's colored-cell count in the
         // background. If the player happens to clear every colored
@@ -193,6 +207,7 @@ export class TutorialController extends Component {
         // are edge events the player takes seconds to set up.
         this.startTowerClearedPoll();
     }
+
 
     // ============================================================
     //  Setup
@@ -575,6 +590,14 @@ export class TutorialController extends Component {
         // Hide the tutorial panel BEFORE scatter — scatter is a game
         // scene effect and the overlay would sit over it.
         if (this.panel) this.panel.active = false;
+        // Tutorial done → set the player's default control scheme to
+        // Expert (dragFling / inertia spin) — this is the "new" scheme
+        // the tutorial just taught. Also lift the tutorial-suppress
+        // flag so the standard action buttons come back for actual play.
+        setControlMode('dragFling');
+        if (this.gameController && typeof (this.gameController as any).setTutorialActive === 'function') {
+            (this.gameController as any).setTutorialActive(false);
+        }
 
         const cb = this.onDone;
         this.onDone = null;

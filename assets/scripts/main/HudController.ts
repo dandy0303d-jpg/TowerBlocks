@@ -22,6 +22,7 @@ import {
 } from 'cc';
 import { ensureDimBackdrop } from './UiHelpers';
 import { GameController } from './GameController';
+import { ToastManager } from './ToastManager';
 // NOTE: MenuController is referenced via getComponent('MenuController')
 // at runtime (string-lookup) — direct import would create a circular
 // dependency (HudController → MenuController → HudController) that
@@ -193,6 +194,9 @@ export class HudController extends Component {
 
     @property({ type: Button, tooltip: '速度累加按钮（DEV，仅无尽/盲选；1.0→1.1→...→2.0→回1.0）' })
     authoredDebugSpeedButton: Button | null = null;
+
+    @property({ type: SpriteFrame, tooltip: '小方块贴图（assets/image/smallBlock.png）— NEXT 预览 + 本命方块两处会用这张图 tint 出每种颜色的方块；留空 fallback 到旧的矢量矩形。' })
+    authoredSmallBlockSprite: SpriteFrame | null = null;
 
     @property({ type: SpriteFrame, tooltip: '能量条背景图（可选 — 拖 assets/image/energy_bar_bg.png；不拖则程序绘制矢量胶囊）' })
     authoredEnergyBarBgSprite: SpriteFrame | null = null;
@@ -1565,17 +1569,21 @@ export class HudController extends Component {
      *
      *  Called by GameController.playMilestoneCelebration. */
     public showMilestoneToast(milestone: number, cumulative: number): void {
-        this.ensureMilestoneToast();
-        const label = this.milestoneToastLabel;
-        const node  = this.milestoneToastRoot;
-        if (!label || !node) return;
-        // Text: prefer i18n; fall back to inline zh so the toast still
-        // reads on missing translations.
+        // Preferred path: unified ToastManager (endless milestones are
+        // positive/celebration events → info variant).
         const key = 'endless.milestone';
         const translated = t(key, { n: cumulative });
         const text = translated === key
             ? `第 ${cumulative} 层达成！`
             : translated;
+        if (ToastManager.instance) {
+            ToastManager.instance.info(text);
+            return;
+        }
+        this.ensureMilestoneToast();
+        const label = this.milestoneToastLabel;
+        const node  = this.milestoneToastRoot;
+        if (!label || !node) return;
         label.string = text;
         node.active = true;
         node.setSiblingIndex(999);
@@ -1997,7 +2005,7 @@ export class HudController extends Component {
         // Tier stars — 3 star slots + 3 fills, positioned below the icon.
         const STAR_SIZE  = 32;
         const STAR_GAP   = 6;
-        const STAR_ROW_Y = -55;
+        const STAR_ROW_Y = -62.92;
         const totalW = STAR_SIZE * 3 + STAR_GAP * 2;
         const startX = -totalW / 2 + STAR_SIZE / 2;
         const fills: Sprite[] = [];
@@ -2069,6 +2077,11 @@ export class HudController extends Component {
             iconSpr.spriteFrame = frame;
             iconSpr.node.active = true;
             iconSpr.node.setSiblingIndex(9999);   // render on top of sibling labels
+            // Shrink icon visually to 0.8× of the SpriteFrame's natural
+            // size — TRIMMED sizeMode locks contentSize to the frame,
+            // so setScale is the cheapest way to resize without
+            // touching per-icon UITransform math.
+            iconSpr.node.setScale(0.8, 0.8, 1);
             const iTx = iconSpr.node.getComponent(UITransform);
             console.log(`[Picker/apply] slot ${idx} key=${key}: iconActive=${iconSpr.node.activeInHierarchy} `
                 + `pos=(${iconSpr.node.position.x},${iconSpr.node.position.y}) `
@@ -2788,6 +2801,13 @@ export class HudController extends Component {
                         'parent active chain=', this.isNodeChainActive(g.node));
         }
         g.clear();
+        // Also wipe any Sprite tile children spawned by a previous paint
+        // (the small-block art path spawns one Node per filled cell).
+        const gNode = g.node;
+        for (let i = gNode.children.length - 1; i >= 0; i--) {
+            const child = gNode.children[i];
+            if (child.name.startsWith('NextTile_')) child.destroy();
+        }
         const shape = customShape ?? SHAPES[type];
         if (!shape || !shape.length) return;
         // Find filled-cell bbox so we can centre the piece in the canvas.
@@ -2815,18 +2835,62 @@ export class HudController extends Component {
         const offX = -totalW / 2;
         const offY =  totalH / 2 - cell;
         const base = this.hexToCcColor(COLORS[type as CellValue] || '#6dd5ff');
+        const tileSf = this.authoredSmallBlockSprite;
         for (let r = 0; r < h; r++) {
             for (let c = 0; c < w; c++) {
                 if (!shape[r][c]) continue;
                 const x = offX + (c - minC) * cell;
                 const y = offY - (r - minR) * cell;
-                g.fillColor = base;
-                g.rect(x + 1, y + 1, cell - 2, cell - 2);
-                g.fill();
-                g.strokeColor = new Color(20, 25, 45, 230);
-                g.lineWidth = 1.5;
-                g.rect(x + 1, y + 1, cell - 2, cell - 2);
-                g.stroke();
+                if (tileSf) {
+                    // Preferred path: spawn a Sprite child for each filled
+                    // cell using the small-block PNG, tinted per piece
+                    // color. Cocos Sprite.color multiplies the texture, so
+                    // a near-white base gives vivid tints; the beige base
+                    // muted, still readable.
+                    //
+                    // TILE_SCALE oversizes the rendered sprite relative to
+                    // the layout cell (positions stay on the cell grid, so
+                    // adjacent tiles overlap on their transparent margins
+                    // to read as one connected shape). 2 = tiles visually
+                    // twice as big as the cell — per player request.
+                    const TILE_SCALE = 1.05;
+                    const tileSize = cell * TILE_SCALE;
+                    const tile = new Node(`NextTile_${r}_${c}`);
+                    tile.parent = gNode;
+                    tile.layer  = gNode.layer;
+                    const ttx = tile.addComponent(UITransform);
+                    tile.setPosition(x + cell / 2, y + cell / 2, 0);
+                    const spr = tile.addComponent(Sprite);
+                    // ORDER CRITICAL: sizeMode must be CUSTOM before
+                    // assigning spriteFrame, otherwise TRIMMED (the
+                    // default) auto-resizes UITransform to the sprite's
+                    // trimmed dimensions on assignment, wiping any
+                    // contentSize we set earlier.
+                    spr.type = Sprite.Type.SIMPLE;
+                    spr.sizeMode = Sprite.SizeMode.CUSTOM;
+                    spr.spriteFrame = tileSf;
+                    spr.color = base;
+                    // Re-apply contentSize AFTER spriteFrame assign so
+                    // internal size updates don't undo it.
+                    ttx.setContentSize(tileSize, tileSize);
+                } else {
+                    // Fallback: original vector rect + outline (older
+                    // scenes that never wired the tile SpriteFrame).
+                    // Scaled 1.5x to match the Sprite path — rectangles
+                    // grow around the cell centre so the overall shape
+                    // reads noticeably chunkier.
+                    const SCALE = 1.05;
+                    const rw = (cell - 2) * SCALE;
+                    const cx = x + cell / 2, cy = y + cell / 2;
+                    const rx = cx - rw / 2, ry = cy - rw / 2;
+                    g.fillColor = base;
+                    g.rect(rx, ry, rw, rw);
+                    g.fill();
+                    g.strokeColor = new Color(20, 25, 45, 230);
+                    g.lineWidth = 1.5;
+                    g.rect(rx, ry, rw, rw);
+                    g.stroke();
+                }
             }
         }
     }
@@ -2860,10 +2924,16 @@ export class HudController extends Component {
         const colHex = COLORS[this.fateCurrentBase as CellValue] || '#6dd5ff';
         const col = this.hexToCcColor(colHex);
 
-        // Each filled cell = one child node with its own Graphics doing a
-        // single fill(). No multiple fill/stroke on the same Graphics —
-        // Cocos 3.8 Android APK degrades the vertex buffer otherwise
-        // (causing the FateModal to visually erode after repeated opens).
+        // Each filled cell = one child Node. Preferred path: Sprite with
+        // the small-block PNG, tinted per piece color (matches the NEXT
+        // preview). Fallback: single-fill Graphics (kept for scenes that
+        // haven't wired the tile SpriteFrame yet).
+        //
+        // Cocos 3.8 Android APK note: the Graphics fallback intentionally
+        // does ONE fill() per Graphics — multiple fills on the same
+        // Graphics degraded the vertex buffer and caused the FateModal
+        // to visually erode after repeated opens.
+        const tileSf = this.authoredSmallBlockSprite;
         for (let r = 0; r < h; r++) {
             for (let c = 0; c < w; c++) {
                 if (!shape[r][c]) continue;
@@ -2872,13 +2942,40 @@ export class HudController extends Component {
                 const cellNode = new Node(`FateCell_${r}_${c}`);
                 cellNode.parent = container;
                 cellNode.layer  = container.layer;
+                const baseSize = cell - 4;
+                // TILE_SCALE oversizes the rendered tile relative to the
+                // layout cell (positions stay on the cell grid; adjacent
+                // tiles overlap their transparent margins so the piece
+                // reads as one connected shape). 2 = tiles visually twice
+                // as big — per player request.
+                const TILE_SCALE = 1.05;
+                const drawSize = baseSize * TILE_SCALE;
                 const tx = cellNode.addComponent(UITransform);
-                tx.setContentSize(cell - 4, cell - 4);
-                cellNode.setPosition(x + (cell - 4) / 2 + 2, y + (cell - 4) / 2 + 2, 0);
-                const cellGfx = cellNode.addComponent(Graphics);
-                cellGfx.fillColor = col;
-                cellGfx.rect(-(cell - 4) / 2, -(cell - 4) / 2, cell - 4, cell - 4);
-                cellGfx.fill();
+                cellNode.setPosition(x + baseSize / 2 + 2, y + baseSize / 2 + 2, 0);
+                if (tileSf) {
+                    const spr = cellNode.addComponent(Sprite);
+                    // ORDER CRITICAL: sizeMode=CUSTOM must precede the
+                    // spriteFrame assignment; otherwise TRIMMED
+                    // (default) auto-resizes UITransform to the sprite's
+                    // trimmed size when the frame is set, wiping any
+                    // contentSize we chose.
+                    spr.type = Sprite.Type.SIMPLE;
+                    spr.sizeMode = Sprite.SizeMode.CUSTOM;
+                    spr.spriteFrame = tileSf;
+                    spr.color = col;
+                    // Re-apply contentSize AFTER spriteFrame assign so
+                    // internal size updates don't undo it.
+                    tx.setContentSize(drawSize, drawSize);
+                } else {
+                    // Fallback path — scale the drawn rect by TILE_SCALE
+                    // so scenes that haven't wired the SpriteFrame still
+                    // see the requested chunkier look.
+                    tx.setContentSize(drawSize, drawSize);
+                    const cellGfx = cellNode.addComponent(Graphics);
+                    cellGfx.fillColor = col;
+                    cellGfx.rect(-drawSize / 2, -drawSize / 2, drawSize, drawSize);
+                    cellGfx.fill();
+                }
             }
         }
     }
@@ -3130,7 +3227,13 @@ export class HudController extends Component {
         console.warn(`[HUD] paid refresh FAILED: ${msg}`);
         // Match `HTTP 402: {"error":"...","needed":N,"balance":M}` from Http.ts.
         const m = /HTTP 402:\s*(\{.*\})$/.exec(msg);
-        if (!m) return;   // not a "not enough gems" error — no popup
+        if (!m) {
+            // Non-402 error (network, 5xx, etc.) — surface it as an
+            // error-flavoured toast so the player sees SOMETHING when
+            // the refresh silently fails.
+            ToastManager.instance?.error(t('topup.failBody', { reason: msg }));
+            return;
+        }
         let needed = fallbackNeeded;
         let balance = 0;
         try {
@@ -3821,14 +3924,30 @@ export class HudController extends Component {
             log('[HudController] authoredPauseOverlay not wired — pause UI will not show');
             return;
         }
-        // Rewire buttons + repaint labels EVERY open. Some scenes share
-        // this panel node with MenuController.authoredConfirmModal
-        // (delete-account / apple-recovery confirms); the last showX
-        // to activate the panel needs to own the buttons + labels or
-        // the panel appears stuck showing the OTHER caller's text
-        // ("删除账号？" here, "已暂停" there) and firing the OTHER
-        // caller's handlers.
-        this.wireAuthoredPauseOverlay();
+        // Lazy-wire on first open (idempotent via _pauseAuthoredWired).
+        if (!this._pauseAuthoredWired) {
+            this.wireAuthoredPauseOverlay();
+            this._pauseAuthoredWired = true;
+        }
+        // Defensive: force-rewrite the pause labels every show so a
+        // previously-used shared modal (e.g., MenuController's confirm
+        // dialog) that stamped its own text onto these Labels can't
+        // leak through as stale "delete account?" content in the pause
+        // popup. Cheap: two string assigns per open.
+        if (this.authoredPauseTitleLabel) {
+            this.authoredPauseTitleLabel.string = t('pause.title');
+        }
+        if (this.authoredPauseHintLabel) {
+            this.authoredPauseHintLabel.string = t('pause.hint');
+        }
+        if (this.authoredPauseContinueButton) {
+            const lab = this.authoredPauseContinueButton.getComponentInChildren(Label);
+            if (lab) lab.string = t('pause.continue');
+        }
+        if (this.authoredPauseHomeButton) {
+            const lab = this.authoredPauseHomeButton.getComponentInChildren(Label);
+            if (lab) lab.string = t('pause.home');
+        }
         this.pauseOverlay = this.authoredPauseOverlay;
         this.pauseOverlay.setSiblingIndex(999);
         this.pauseOverlay.active = true;

@@ -23,6 +23,7 @@ import {
 } from 'cc';
 import { GameController } from './GameController';
 import { HudController } from './HudController';
+import { ToastManager } from './ToastManager';
 import { ensureDimBackdrop } from './UiHelpers';
 import { BackgroundController } from './BackgroundController';
 import { TowerBaseMist } from './TowerBaseMist';
@@ -37,7 +38,7 @@ import { fetchWallet } from '../core/WalletApi';
 import { BACKEND_BASE_URL } from '../core/BackendConfig';
 import { TutorialProgress } from '../core/TutorialProgress';
 import { TutorialController } from './TutorialController';
-import { t, cycleLang, getLang, subscribe as subscribeLang } from '../core/i18n/I18n';
+import { t, cycleLang, setLang, getLang, subscribe as subscribeLang, SUPPORTED_LANGS, Lang } from '../core/i18n/I18n';
 import {
     getBgmVolume,   setBgmVolume,   cycleBgmVolume,
     getSfxVolume,   setSfxVolume,   cycleSfxVolume,
@@ -197,6 +198,14 @@ export class MenuController extends Component {
     @property({ type: SpriteFrame, tooltip: '排行榜按钮 — 锁定态灰色图（拖 SpriteFrame 进来；留空则不换图）' })
     authoredLeaderboardLockedSprite: SpriteFrame | null = null;
 
+    // Dedicated "locked" display SpriteFrame for Endless mode. Same
+    // pattern as the other locked-art slots. When Endless is still
+    // locked (fewer than ENDLESS_UNLOCK_LEVEL_COUNT level clears),
+    // script swaps modeBtnEndless's sprite frame to this one; when
+    // unlocked, the original is restored.
+    @property({ type: SpriteFrame, tooltip: '无尽模式 — 未解锁状态图 SpriteFrame（拖一张灰色/带锁图标的图进来；未解锁时脚本把 modeBtnEndless 的 sprite frame 换成这张，解锁时恢复原图）— 可空' })
+    modeBtnEndlessLocked: SpriteFrame | null = null;
+
     @property({ type: LeaderboardController, tooltip: '排行榜面板控制器（拖场景里挂了 LeaderboardController 的节点进来）' })
     leaderboardController: LeaderboardController | null = null;
 
@@ -208,6 +217,15 @@ export class MenuController extends Component {
 
     @property({ type: Button, tooltip: '重置进度按钮（DEV）' })
     modeBtnResetProgress: Button | null = null;
+
+    @property({ type: Button, tooltip: '解锁所有模式按钮（DEV 专用；一键把关卡通过数拉到 10 + 无尽最高层数拉到 100，让 Endless / Blind / Leaderboard 全部亮起来。发布版本自动隐藏。）' })
+    modeBtnDebugUnlockAll: Button | null = null;
+
+    @property({ type: Button, tooltip: '主页面充值按钮（钻石余额 + 点击弹出充值面板）— 可空' })
+    modeBtnTopup: Button | null = null;
+
+    @property({ type: Label, tooltip: '主页面充值按钮上的余额 Label（脚本会写"钻石数字"）— 可空，会自动从按钮子节点找' })
+    modeBtnTopupBalanceLabel: Label | null = null;
 
     // ---- Progressive unlock system ----
     /** Cached endless-mode best cumulative layers. Restored from
@@ -310,26 +328,123 @@ export class MenuController extends Component {
     @property({ type: Button, tooltip: '账号信息 Button（点击复制昵称 + UUID 到剪贴板；用于客服/申诉时快速提供账号 ID）— 可空。拖你截图里那个 account 行的 Button' })
     authoredSettingsAccountButton: Button | null = null;
 
-    // ---- 已绑定账号开关（登录 + 解绑一体，登录按钮已废弃）----
-    @property({ type: Toggle, tooltip: '谷歌已绑定开关（isChecked 反映当前是否绑定；切换事件暂时只 log）— 可空' })
+    // ---- 已绑定账号按钮（未绑定 / 已绑定 用两张不同 SpriteFrame）----
+    // 未绑定 = 灰色版按钮；已绑定 = 绿色版按钮。脚本根据当前
+    // PlayerProfile.accountType 自动 swap 按钮的 Sprite spriteFrame。
+    @property({ type: Button, tooltip: '谷歌账号绑定按钮（脚本会按当前绑定状态 swap Sprite）— 可空' })
+    authoredSettingsGoogleButton: Button | null = null;
+
+    @property({ type: SpriteFrame, tooltip: '谷歌 — 未绑定状态图（灰色）' })
+    googleUnboundSprite: SpriteFrame | null = null;
+
+    @property({ type: SpriteFrame, tooltip: '谷歌 — 已绑定状态图（绿色）' })
+    googleBoundSprite: SpriteFrame | null = null;
+
+    @property({ type: Button, tooltip: '苹果账号绑定按钮（脚本会按当前绑定状态 swap Sprite）— 可空' })
+    authoredSettingsAppleButton: Button | null = null;
+
+    @property({ type: SpriteFrame, tooltip: '苹果 — 未绑定状态图（灰色）' })
+    appleUnboundSprite: SpriteFrame | null = null;
+
+    @property({ type: SpriteFrame, tooltip: '苹果 — 已绑定状态图（绿色）' })
+    appleBoundSprite: SpriteFrame | null = null;
+
+    // ---- 兼容旧场景的 Toggle 版本（不再主动使用，可以留空）----
+    @property({ type: Toggle, tooltip: '（已废弃）谷歌已绑定开关 — 请改用 authoredSettingsGoogleButton' })
     authoredSettingsGoogleToggle: Toggle | null = null;
 
-    @property({ type: Toggle, tooltip: '苹果已绑定开关（isChecked 反映当前是否绑定；切换事件暂时只 log）— 可空' })
+    @property({ type: Toggle, tooltip: '（已废弃）苹果已绑定开关 — 请改用 authoredSettingsAppleButton' })
     authoredSettingsAppleToggle: Toggle | null = null;
 
     // ---- 触觉反馈开关 ----
     @property({ type: Toggle, tooltip: '震动开关（跨平台触觉反馈，isChecked = 开）— 可空，未拖场景 Toggle 时默认永远开启' })
     authoredSettingsHapticToggle: Toggle | null = null;
 
-    @property({ type: Label, tooltip: '震动行左侧的"震动" i18n 标签，可空' })
+    @property({ type: Label, tooltip: '震动行左侧的"手机震动" i18n 标签（走 settings.haptic）— 可空' })
     authoredSettingsHapticLabel: Label | null = null;
 
-    // ---- 操作方式：设置面板行 + 弹窗选择 ----
-    @property({ type: Button, tooltip: '"操作方式"按钮 — 点击弹出操作方式选择弹窗。可空' })
+    // ---- 新版设置界面的其它 i18n 标签 ----
+    @property({ type: Label, tooltip: '设置面板主标题 Label（走 settings.title）— 可空' })
+    authoredSettingsTitleLabel: Label | null = null;
+
+    @property({ type: Label, tooltip: '昵称行的"昵称" i18n 表头 Label（走 settings.nickname）— 可空。注意：这不是显示玩家昵称的 Label，那个是 authoredSettingsNicknameLabel。' })
+    authoredSettingsNicknameHeaderLabel: Label | null = null;
+
+    @property({ type: Label, tooltip: '音量行左侧的"音乐大小" i18n 标签（走 settings.volume）— 可空' })
+    authoredSettingsVolumeLabel: Label | null = null;
+
+    @property({ type: Label, tooltip: '"账号与数据"分组标题 Label（走 settings.accountData）— 可空' })
+    authoredSettingsAccountDataLabel: Label | null = null;
+
+    @property({ type: Label, tooltip: '"谷歌账号" i18n 标签（走 settings.googleAccount）— 可空' })
+    authoredSettingsGoogleAccountLabel: Label | null = null;
+
+    @property({ type: Label, tooltip: '"苹果账号" i18n 标签（走 settings.appleAccount）— 可空' })
+    authoredSettingsAppleAccountLabel: Label | null = null;
+
+    @property({ type: Label, tooltip: '谷歌按钮上"未绑定/已绑定"文字 Label（走 settings.notBound 或空值）— 可空' })
+    authoredSettingsGoogleStatusLabel: Label | null = null;
+
+    @property({ type: Label, tooltip: '苹果按钮上"未绑定/已绑定"文字 Label（走 settings.notBound 或空值）— 可空' })
+    authoredSettingsAppleStatusLabel: Label | null = null;
+
+    // ---- 语言选择上拉框（10 个按钮 + 选中覆盖 Node）----
+    // 点设置面板的语言行 → 从底部滑出 authoredLangPickerPanel。
+    // 每个 authoredLangPickerButtons[i] 对应 SUPPORTED_LANGS[i] 的语言。
+    // 语言顺序：zh / zh-Hant / en / ja / ko / es / pt-BR / fr / de / ru
+    @property({ type: Node, tooltip: '语言选择上拉框面板根节点（含 10 个语言按钮 + 关闭按钮；默认 active=false）— 可空' })
+    authoredLangPickerPanel: Node | null = null;
+
+    @property({ type: [Button], tooltip: '10 个语言按钮（按 zh / zh-Hant / en / ja / ko / es / pt-BR / fr / de / ru 顺序拖入）' })
+    authoredLangPickerButtons: Button[] = [];
+
+    @property({ type: [Label], tooltip: '10 个语言按钮内部 Label（同顺序）— 选中时脚本会把 Label.color 改成绿色，其他改回白色' })
+    authoredLangPickerLabels: Label[] = [];
+
+    @property({ type: [Node], tooltip: '10 个语言按钮尾部的"对号"图标 Node（同顺序）— 选中时脚本把它 active=true，其他 active=false' })
+    authoredLangPickerCheckmarks: Node[] = [];
+
+    @property({ type: Button, tooltip: '语言面板关闭按钮 — 可空（不拖也可以点面板外的 dim 关闭，如果背景挂了 Button）' })
+    authoredLangPickerCloseButton: Button | null = null;
+
+    // ---- 操作方式：设置面板行内三按钮（无弹窗）----
+    // 3 个操作方式对应 3 个 Button + 3 个半透明"选中框"覆盖 Node。
+    // 点击 Button → setControlMode 更新持久化 + 同步显示。
+    // 选中的按钮上叠加 Selected 覆盖 Node（半透明 sprite），其他 2 个覆盖 Node 隐藏。
+    @property({ type: Button, tooltip: '"操作方式"分组的行标签按钮（可选：一般是纯 Label，不用点击）。可空' })
     authoredSettingsControlsButton: Button | null = null;
 
-    @property({ type: Label, tooltip: '"操作方式"按钮内部 Label（走 i18n settings.controls）。可空' })
+    @property({ type: Label, tooltip: '"操作方式"分组的行标签 Label（走 i18n settings.controls）。可空' })
     authoredSettingsControlsLabel: Label | null = null;
+
+    @property({ type: Button, tooltip: '操作方式 — 经典模式按钮（虚拟按钮 = buttons 模式）' })
+    authoredControlsClassicButton: Button | null = null;
+
+    @property({ type: Node, tooltip: '经典模式按钮的"选中"覆盖 Node（半透明选中框，被选中时显示）' })
+    authoredControlsClassicSelected: Node | null = null;
+
+    @property({ type: Label, tooltip: '经典模式按钮 Label（走 i18n controls.classic）' })
+    authoredControlsClassicLabel: Label | null = null;
+
+    @property({ type: Button, tooltip: '操作方式 — 进阶模式按钮（滑动屏幕按住连续旋转 = legacy 模式）' })
+    authoredControlsAdvancedButton: Button | null = null;
+
+    @property({ type: Node, tooltip: '进阶模式按钮的"选中"覆盖 Node（半透明选中框）' })
+    authoredControlsAdvancedSelected: Node | null = null;
+
+    @property({ type: Label, tooltip: '进阶模式按钮 Label（走 i18n controls.advanced）' })
+    authoredControlsAdvancedLabel: Label | null = null;
+
+    @property({ type: Button, tooltip: '操作方式 — 高手模式按钮（惯性旋转 = dragFling 模式）' })
+    authoredControlsExpertButton: Button | null = null;
+
+    @property({ type: Node, tooltip: '高手模式按钮的"选中"覆盖 Node（半透明选中框）' })
+    authoredControlsExpertSelected: Node | null = null;
+
+    @property({ type: Label, tooltip: '高手模式按钮 Label（走 i18n controls.expert）' })
+    authoredControlsExpertLabel: Label | null = null;
+
+    // ---- 兼容旧场景的弹窗方案（可以留空，不再主动使用）----
 
     @property({ type: Node, tooltip: '操作方式选择弹窗根节点（含 dim 遮罩 + 卡片 + 3 个 Toggle + 关闭按钮，默认 active=false）— 可空' })
     authoredControlsPanel: Node | null = null;
@@ -492,12 +607,13 @@ export class MenuController extends Component {
         this._refreshLocalizedLogo();
     }
 
-    /** Swap `authoredMenuLogoSprite`'s spriteFrame to the current
-     *  i18n language's localized logo. Silent no-op if either the
-     *  Sprite slot or the matching SpriteFrame slot is unwired. */
-    private _refreshLocalizedLogo(): void {
-        if (!this.authoredMenuLogoSprite) return;
-        const code = getLang();
+    /** Look up the localized logo SpriteFrame for a given i18n code
+     *  (defaults to current game language). Returns the English logo
+     *  as fallback, or null if even that isn't wired. Public so other
+     *  scenes (LoadingController) can reuse the same authored slots
+     *  without duplicating 10 SpriteFrame @property fields. */
+    public getLocalizedLogoSpriteFrame(code?: string): SpriteFrame | null {
+        const c = code ?? getLang();
         const map: Record<string, SpriteFrame | null> = {
             'zh':      this.logoZh,
             'zh-Hant': this.logoZhHant,
@@ -510,7 +626,15 @@ export class MenuController extends Component {
             'de':      this.logoDe,
             'ru':      this.logoRu,
         };
-        const sf = map[code] ?? this.logoEn;   // fallback: English
+        return map[c] ?? this.logoEn;
+    }
+
+    /** Swap `authoredMenuLogoSprite`'s spriteFrame to the current
+     *  i18n language's localized logo. Silent no-op if either the
+     *  Sprite slot or the matching SpriteFrame slot is unwired. */
+    private _refreshLocalizedLogo(): void {
+        if (!this.authoredMenuLogoSprite) return;
+        const sf = this.getLocalizedLogoSpriteFrame();
         if (sf) this.authoredMenuLogoSprite.spriteFrame = sf;
     }
 
@@ -834,7 +958,7 @@ export class MenuController extends Component {
             // hides it again later (idempotent, no-op the second time).
             if (this.levelStage3D) this.levelStage3D.node.active = false;
             if (hud && typeof hud.showFatePreview === 'function' && rawLvl) {
-                hud.showFatePreview(rawLvl, () => this.doEnterLevel(idx, releaseGuard), 500);
+                hud.showFatePreview(rawLvl, () => this.doEnterLevel(idx, releaseGuard), 1000);
             } else {
                 this.doEnterLevel(idx, releaseGuard);
             }
@@ -1265,6 +1389,28 @@ export class MenuController extends Component {
         console.log('[MenuController] LevelProgress + localStorage cleared — restart the preview for full effect.');
     }
 
+    /** DEV-only cheat: unlock all mode buttons in one tap.
+     *   • Marks level 10 cleared (satisfies ENDLESS_UNLOCK_LEVEL_COUNT
+     *     gate so Endless becomes tappable).
+     *   • Sets endless-best layers to 100 (satisfies
+     *     BLIND_UNLOCK_ENDLESS_LAYERS so Blind + Leaderboard unlock).
+     *  Persists both to localStorage and repaints the lock overlays
+     *  so the change is visible immediately. */
+    private _debugUnlockAllModes(): void {
+        // Nudge level progress up to at least 10 clears (idx = 9).
+        const targetIdx = MenuController.ENDLESS_UNLOCK_LEVEL_COUNT - 1;
+        if (LevelProgress.maxClearedIdx < targetIdx) {
+            LevelProgress.markCleared(targetIdx);
+        }
+        // Nudge endless best up to at least the blind/leaderboard gate.
+        if (this._endlessBestLayers < MenuController.BLIND_UNLOCK_ENDLESS_LAYERS) {
+            this._endlessBestLayers = MenuController.BLIND_UNLOCK_ENDLESS_LAYERS;
+            this._persistEndlessBest();
+        }
+        this._refreshModeButtonLocks();
+        log(`[DEV] unlockAllModes — maxClearedIdx=${LevelProgress.maxClearedIdx}, endlessBest=${this._endlessBestLayers}`);
+    }
+
     /** Attach click handlers + i18n tracking to the manually-authored
      *  mode-select controls that were wired via @property. Any slot
      *  left empty in the inspector just gets skipped — the code path
@@ -1294,19 +1440,31 @@ export class MenuController extends Component {
             if (this._isBlindOrLbUnlocked()) this.enterBlindMode();
             else this._showLockToast(t('lock.blind', { n: MenuController.BLIND_UNLOCK_ENDLESS_LAYERS }));
         });
+        // Locked-state Blind Sprite is decoration-only — clicks are
+        // still handled by the regular modeBtnBlind Button (which sits
+        // behind or beside it) and shows the lock toast when locked.
         bindBtn(this.modeBtnLeaderboard,   'menu.leaderboard', () => {
             if (this._isBlindOrLbUnlocked()) this.onLeaderboardClicked();
             else this._showLockToast(t('lock.leaderboard', { n: MenuController.BLIND_UNLOCK_ENDLESS_LAYERS }));
         });
         bindBtn(this.modeBtnSettings,      'settings.button',  () => this.openSettingsPanel());
+        // Main-page top-up (recharge) button — opens the TopUp panel.
+        // Passes `null` key so bindBtn doesn't retranslate the button
+        // label (it's a numeric balance, not an i18n string).
+        if (this.modeBtnTopup) {
+            this.modeBtnTopup.node.off('click');
+            this.modeBtnTopup.node.on('click', () => this.onTopupClicked(), this);
+        }
         // Reset progress button: DEV-only. Hidden in release builds so
         // players can't nuke their own save by accident (and to keep
         // the main menu clean). IS_DEV_BUILD is set per branch — see
         // assets/scripts/core/BuildConfig.ts.
         if (IS_DEV_BUILD) {
             bindBtn(this.modeBtnResetProgress, 'menu.reset',   () => this.onResetProgressClicked());
-        } else if (this.modeBtnResetProgress) {
-            this.modeBtnResetProgress.node.active = false;
+            bindBtn(this.modeBtnDebugUnlockAll, 'menu.unlockAll', () => this._debugUnlockAllModes());
+        } else {
+            if (this.modeBtnResetProgress)  this.modeBtnResetProgress.node.active  = false;
+            if (this.modeBtnDebugUnlockAll) this.modeBtnDebugUnlockAll.node.active = false;
         }
         // Initial paint of lock state — showModeSelect will refresh on
         // subsequent shows as progress changes.
@@ -1368,7 +1526,16 @@ export class MenuController extends Component {
         // pre-baked gray art. When locked, the Sprite's spriteFrame is
         // swapped to `authoredXxxLockedSprite`; when unlocked, restored
         // from the cached original. Label color still dims for extra clarity.
-        const paintLock = (btn: Button | null, unlocked: boolean, lockedSpr: SpriteFrame | null): void => {
+        // Per-mode unlocked label color (locked = gray for all).
+        // Design brief: Endless = #D6D7E4, Blind = #D8DBE7, others = white.
+        const COL_LOCKED = new Color(160, 160, 160, 255);
+        const COL_DEFAULT_UNLOCKED = new Color(255, 255, 255, 255);
+        const paintLock = (
+            btn: Button | null,
+            unlocked: boolean,
+            lockedSpr: SpriteFrame | null,
+            unlockedColor: Color = COL_DEFAULT_UNLOCKED,
+        ): void => {
             if (!btn) return;
             const spr = btn.getComponent(Sprite);
             if (spr) {
@@ -1381,24 +1548,29 @@ export class MenuController extends Component {
                 if (spr.spriteFrame !== next) spr.spriteFrame = next;
             }
             const lab = btn.getComponentInChildren(Label);
-            if (lab) lab.color = unlocked
-                ? new Color(255, 255, 255, 255)
-                : new Color(160, 160, 160, 255);
+            if (lab) lab.color = unlocked ? unlockedColor : COL_LOCKED;
         };
-        // Endless: label-only graying (unlocks at 10 levels, no gray art slot).
-        paintLock(this.modeBtnEndless,     this._isEndlessUnlocked(),     null);
-        paintLock(this.modeBtnBlind,       this._isBlindOrLbUnlocked(),   this.authoredBlindLockedSprite);
+        const COL_ENDLESS = new Color(0xD6, 0xD7, 0xE4, 255);   // #D6D7E4
+        const COL_BLIND   = new Color(0xD8, 0xDB, 0xE7, 255);   // #D8DBE7
+        paintLock(this.modeBtnEndless,     this._isEndlessUnlocked(),     this.modeBtnEndlessLocked,          COL_ENDLESS);
+        paintLock(this.modeBtnBlind,       this._isBlindOrLbUnlocked(),   this.authoredBlindLockedSprite,     COL_BLIND);
         paintLock(this.modeBtnLeaderboard, this._isBlindOrLbUnlocked(),   this.authoredLeaderboardLockedSprite);
     }
 
-    /** Show the lock-tip toast. If the scene author wired
-     *  `authoredLockToastNode` (drag a Toast prefab into the inspector
-     *  slot), that node is re-used — script sets the label text, forces
-     *  active=true, and fades it out. Otherwise falls back to a
-     *  self-built floating label so the tip is never invisible. */
+    /** Show the lock-tip toast. Preferred path is the unified
+     *  ToastManager (drag one ToastManager component into the scene
+     *  and wire its bgPositive / bgNegative SpriteFrames); locked-
+     *  feature tips are "error"-flavoured. Falls back to the older
+     *  `authoredLockToastNode` slot, then to a self-built floating
+     *  label if nothing is wired. */
     private _showLockToast(text: string): void {
         console.log('[Lock] ' + text);
-        // ---- Preferred path: use the authored Toast node ----
+        // ---- Preferred path: unified ToastManager ----
+        if (ToastManager.instance) {
+            ToastManager.instance.error(text);
+            return;
+        }
+        // ---- Legacy path: authored lock-toast node ----
         const authored = this.authoredLockToastNode;
         if (authored && authored.isValid) {
             // Write label text.
@@ -1471,6 +1643,13 @@ export class MenuController extends Component {
         // child nodes.
         if (this.hudController) this.hudController.setHudVisible(on);
         if (this.boardRoot3D)   this.boardRoot3D.active = on;
+        // Sync the on-screen action buttons (rotate L/R / hard-drop /
+        // rotate-piece) with gameplay visibility — they should never
+        // show on the level-select or main-menu screens.
+        if (this.gameController
+            && typeof (this.gameController as any).setGameplayUiVisible === 'function') {
+            (this.gameController as any).setGameplayUiVisible(on);
+        }
         // Mirror the bg quad's visibility so the menu screens still get
         // a clean dark backdrop while gameplay scenes show the sky / temple art.
         if (this.backgroundController) this.backgroundController.setVisible(on);
@@ -1842,8 +2021,10 @@ export class MenuController extends Component {
                 this.refreshAuthoredSettingsValues();
             }, this);
         };
-        // Row 0: language (cycle button, required).
-        wireBtn(0, () => cycleLang());
+        // Row 0: language — opens the pull-up picker instead of
+        // cycling through languages one at a time. Falls back to
+        // cycleLang() if the picker panel isn't wired.
+        wireBtn(0, () => this.openLangPicker());
         // Row 1 (optional fallback): BGM cycle.
         wireBtn(1, () => {
             const v = cycleBgmVolume();
@@ -1863,44 +2044,55 @@ export class MenuController extends Component {
             }
         });
 
-        // BGM slider — continuous drag, no snap.
+        // UNIFIED master-volume slider. Per design the settings panel
+        // now exposes ONE volume slider that drives BGM + SFX together
+        // at the same value. Both @property slots stay wired for
+        // backward compat with existing scenes; dragging either one
+        // updates both volumes + keeps the other slider's UI in sync,
+        // so scene authors can safely delete whichever one they don't
+        // want on-screen. Fill widgets + value labels for both rows
+        // also stay in sync (single value → mirror on both).
+        const applyMasterVolume = (v: number, source: 'bgm' | 'sfx'): void => {
+            v = Math.max(0, Math.min(1, v));
+            // Persist to both channels' storage keys so a reboot
+            // restores the same volume in either lookup path.
+            setBgmVolume(v, false);
+            setSfxVolume(v, false);
+            const bgm = BgmManager.instance;
+            if (bgm) { bgm.setEnabled(v > 0); bgm.setMasterVolume(v); }
+            const sfx = SoundManager.instance;
+            if (sfx) { sfx.setEnabled(v > 0); sfx.setMasterVolume(v); }
+            // Sync the OTHER slider's progress (skip the one being
+            // dragged — Cocos would fight the finger position).
+            if (source !== 'bgm' && this.authoredSettingsBgmSlider) {
+                this.authoredSettingsBgmSlider.progress = v;
+            }
+            if (source !== 'sfx' && this.authoredSettingsSfxSlider) {
+                this.authoredSettingsSfxSlider.progress = v;
+            }
+            // Mirror value label + fill for BOTH rows if they're wired.
+            const labStr = this.formatAudioLabel(v);
+            const bgmLab = this.authoredSettingsRowValueLabels[1];
+            const sfxLab = this.authoredSettingsRowValueLabels[2];
+            if (bgmLab) bgmLab.string = labStr;
+            if (sfxLab) sfxLab.string = labStr;
+            if (this.authoredSettingsBgmFill) this.authoredSettingsBgmFill.fillRange = v;
+            if (this.authoredSettingsSfxFill) this.authoredSettingsSfxFill.fillRange = v;
+        };
         if (this.authoredSettingsBgmSlider) {
             const sliderNode = this.authoredSettingsBgmSlider.node;
             sliderNode.off('slide');
             sliderNode.on('slide', () => {
                 const s = this.authoredSettingsBgmSlider;
-                if (!s) return;
-                const v = Math.max(0, Math.min(1, s.progress));
-                setBgmVolume(v, false);
-                const bgm = BgmManager.instance;
-                if (bgm) {
-                    bgm.setEnabled(v > 0);
-                    bgm.setMasterVolume(v);
-                }
-                // Only update the value label + fill — do NOT re-write
-                // slider progress (would fight the user's drag).
-                const lab = this.authoredSettingsRowValueLabels[1];
-                if (lab) lab.string = this.formatAudioLabel(v);
-                if (this.authoredSettingsBgmFill) this.authoredSettingsBgmFill.fillRange = v;
+                if (s) applyMasterVolume(s.progress, 'bgm');
             }, this);
         }
-        // SFX slider — same shape as BGM.
         if (this.authoredSettingsSfxSlider) {
             const sliderNode = this.authoredSettingsSfxSlider.node;
             sliderNode.off('slide');
             sliderNode.on('slide', () => {
                 const s = this.authoredSettingsSfxSlider;
-                if (!s) return;
-                const v = Math.max(0, Math.min(1, s.progress));
-                setSfxVolume(v, false);
-                const sfx = SoundManager.instance;
-                if (sfx) {
-                    sfx.setEnabled(v > 0);
-                    sfx.setMasterVolume(v);
-                }
-                const lab = this.authoredSettingsRowValueLabels[2];
-                if (lab) lab.string = this.formatAudioLabel(v);
-                if (this.authoredSettingsSfxFill) this.authoredSettingsSfxFill.fillRange = v;
+                if (s) applyMasterVolume(s.progress, 'sfx');
             }, this);
         }
 
@@ -1938,72 +2130,41 @@ export class MenuController extends Component {
         // ---- Wire the avatar picker (idempotent) ----
         this.wireAvatarPicker();
 
-        // ---- Google / Apple linked toggles ----
-        // Login-button @property fields removed — the Toggle IS the
-        // click surface now. Tap toggle to bind, tap again to attempt
-        // unbind (not implemented yet, snaps back).
-        // Toggle ON when NOT bound  → same as tapping the "Apple 登录" btn
-        //                             (kicks off SIWA + link flow).
-        // Toggle OFF when bound     → unbind not implemented yet. We snap
-        //                             the check back on via refresh so
-        //                             the UI stays truthful. If we ever
-        //                             ship an unbind flow, replace the
-        //                             snap-back with the real call.
-        // Toggle ON when already ON → no-op (handleAppleLoginClick's
-        //                             own early-out covers this).
-        // NOTE ON DUAL-BIND LOOP:
-        // A user can be bound to BOTH Apple and Google. reconcile picks
-        // ONE as `accountType` (apple wins today), but sets BOTH toggles
-        // to their true bind state. If we only check `accountType` here,
-        // Google Toggle=true + accountType='apple' would re-fire login.
-        // Guard by checking `_knownLinkedProviders` (server-authoritative
-        // set) — only trigger login when a provider is truly NOT bound.
-        // Also suppress toggle events during programmatic isChecked=
-        // assignment (Cocos fires 'toggle' on both user + programmatic).
+        // ---- Google / Apple linked buttons ----
+        // Buttons swap between "未绑定"（灰）/ "已绑定"（绿）SpriteFrames.
+        // Click currently just logs — bind/unbind flow lands later.
+        if (this.authoredSettingsGoogleButton) {
+            const btn = this.authoredSettingsGoogleButton;
+            btn.node.off('click');
+            btn.node.on('click', () => {
+                log('[Settings] Google button clicked — bind/unbind flow TODO');
+                this.refreshAuthoredSettingsValues();
+            }, this);
+        }
+        if (this.authoredSettingsAppleButton) {
+            const btn = this.authoredSettingsAppleButton;
+            btn.node.off('click');
+            btn.node.on('click', () => {
+                log('[Settings] Apple button clicked — bind/unbind flow TODO');
+                this.refreshAuthoredSettingsValues();
+            }, this);
+        }
+        // Legacy toggle bindings kept for backward compat — a scene that
+        // still uses the Toggle version will still update on click.
         if (this.authoredSettingsGoogleToggle) {
-            const gt = this.authoredSettingsGoogleToggle;
-            gt.node.off('toggle');
-            gt.node.on('toggle', () => {
-                if (this._suppressToggleEvents) return;
-                log(`[Settings] Google toggle → ${gt.isChecked}`);
-                const alreadyBound = this._knownLinkedProviders.has('google');
-                if (gt.isChecked && !alreadyBound) {
-                    void this.handleGoogleLoginClick();
-                } else if (!gt.isChecked && alreadyBound) {
-                    log('[Settings] Google toggle OFF — unbind not implemented, snapping back');
-                    this.refreshAuthoredSettingsValues();
-                }
-                // isChecked matches the bound state (either both true
-                // or both false) → no-op, don't re-trigger login.
+            const tg = this.authoredSettingsGoogleToggle;
+            tg.node.off('toggle');
+            tg.node.on('toggle', () => {
+                log(`[Settings] Google toggle → ${tg.isChecked} — legacy path`);
+                this.refreshAuthoredSettingsValues();
             }, this);
         }
         if (this.authoredSettingsAppleToggle) {
-            const at = this.authoredSettingsAppleToggle;
-            at.node.off('toggle');
-            at.node.on('toggle', () => {
-                if (this._suppressToggleEvents) return;
-                log(`[Settings] Apple toggle → ${at.isChecked}`);
-                const alreadyBound = this._knownLinkedProviders.has('apple');
-                if (at.isChecked && !alreadyBound) {
-                    void this.handleAppleLoginClick();
-                } else if (!at.isChecked && alreadyBound) {
-                    log('[Settings] Apple toggle OFF — unbind not implemented, snapping back');
-                    this.refreshAuthoredSettingsValues();
-                }
-            }, this);
-        }
-
-        // ---- Haptic feedback toggle ----
-        // On/off flips Settings.hapticMode which HapticManager reads.
-        // Fires a preview 'medium' impact when turned ON so the player
-        // feels the change without needing to trigger gameplay.
-        if (this.authoredSettingsHapticToggle) {
-            const ht = this.authoredSettingsHapticToggle;
-            ht.node.off('toggle');
-            ht.node.on('toggle', () => {
-                setHapticMode(ht.isChecked ? 'on' : 'off');
-                log(`[Settings] haptic → ${ht.isChecked ? 'on' : 'off'}`);
-                if (ht.isChecked) HapticManager.instance.impact('medium');
+            const tg = this.authoredSettingsAppleToggle;
+            tg.node.off('toggle');
+            tg.node.on('toggle', () => {
+                log(`[Settings] Apple toggle → ${tg.isChecked} — legacy path`);
+                this.refreshAuthoredSettingsValues();
             }, this);
         }
 
@@ -2022,58 +2183,67 @@ export class MenuController extends Component {
             }, this);
         }
 
-        // ---- Controls picker (操作方式) ----
-        // Button in settings row opens a modal with 3 toggles (radio):
-        // legacy / dragFling / buttons. Selecting one flips the other two
-        // off, writes to Settings.controlMode, and closes the modal.
-        if (this.authoredSettingsControlsButton) {
-            this.authoredSettingsControlsButton.node.off('click');
-            this.authoredSettingsControlsButton.node.on('click',
-                () => this.openControlsPanel(), this);
-            const lab = this.authoredSettingsControlsLabel
-                     ?? this.authoredSettingsControlsButton.getComponentInChildren(Label);
-            if (lab) this.trackI18nLabel(lab, 'settings.controls');
+        // ---- Controls picker (操作方式) —— 直接放在设置面板里的 3 个按钮 ----
+        // 每个模式对应一个 Button + 一个半透明"选中"覆盖 Node。
+        // 点按钮 → setControlMode → 覆盖 Node 只显示被选中的那个。
+        // 常态按钮外观不变，选中状态只是"上面盖一层半透明选中框"。
+        // "操作方式" row heading — prefer explicit Label ref; fall back
+        // to the Button's inner Label so scenes that only wire the
+        // Button still get localised text.
+        {
+            const controlsLab = this.authoredSettingsControlsLabel
+                ?? (this.authoredSettingsControlsButton?.getComponentInChildren(Label) ?? null);
+            if (controlsLab) this.trackI18nLabel(controlsLab, 'settings.controls');
         }
-        // Wire each toggle to setControlMode + close-others. Toggles are
-        // authored in "any-selected" mode; script enforces mutual exclusion.
-        const wireControlToggle = (
-            toggle: Toggle | null,
-            label:  Label  | null,
-            mode:   ControlMode,
+        // New-layout section labels — all optional; wire whatever the
+        // scene author dragged in. `trackI18nLabel` auto-repaints on
+        // language switch.
+        if (this.authoredSettingsTitleLabel) {
+            this.trackI18nLabel(this.authoredSettingsTitleLabel, 'settings.title');
+        }
+        if (this.authoredSettingsNicknameHeaderLabel) {
+            this.trackI18nLabel(this.authoredSettingsNicknameHeaderLabel, 'settings.nickname');
+        }
+        if (this.authoredSettingsVolumeLabel) {
+            this.trackI18nLabel(this.authoredSettingsVolumeLabel, 'settings.volume');
+        }
+        if (this.authoredSettingsAccountDataLabel) {
+            this.trackI18nLabel(this.authoredSettingsAccountDataLabel, 'settings.accountData');
+        }
+        if (this.authoredSettingsGoogleAccountLabel) {
+            this.trackI18nLabel(this.authoredSettingsGoogleAccountLabel, 'settings.googleAccount');
+        }
+        if (this.authoredSettingsAppleAccountLabel) {
+            this.trackI18nLabel(this.authoredSettingsAppleAccountLabel, 'settings.appleAccount');
+        }
+        if (this.authoredSettingsGoogleStatusLabel) {
+            this.trackI18nLabel(this.authoredSettingsGoogleStatusLabel, 'settings.notBound');
+        }
+        if (this.authoredSettingsAppleStatusLabel) {
+            this.trackI18nLabel(this.authoredSettingsAppleStatusLabel, 'settings.notBound');
+        }
+        const wireControlButton = (
+            btn: Button | null,
+            label: Label | null,
+            mode: ControlMode,
             labelKey: string,
         ): void => {
-            if (!toggle) return;
-            toggle.node.off('toggle');
-            toggle.node.on('toggle', () => {
-                if (!toggle.isChecked) {
-                    // User un-checked the currently-selected one — re-check
-                    // it so at least one mode stays active (radio behaviour).
-                    toggle.isChecked = true;
-                    return;
-                }
-                this.applyControlModeSelection(mode);
-            }, this);
+            if (!btn) return;
+            btn.node.off('click');
+            btn.node.on('click', () => this._selectControlMode(mode), this);
             if (label) this.trackI18nLabel(label, labelKey);
         };
-        wireControlToggle(this.authoredControlsLegacyToggle,
-                          this.authoredControlsLegacyLabel,
-                          'legacy',    'controls.legacy');
-        wireControlToggle(this.authoredControlsDragFlingToggle,
-                          this.authoredControlsDragFlingLabel,
-                          'dragFling', 'controls.dragFling');
-        wireControlToggle(this.authoredControlsButtonsToggle,
-                          this.authoredControlsButtonsLabel,
-                          'buttons',   'controls.buttons');
-        if (this.authoredControlsTitleLabel) {
-            this.trackI18nLabel(this.authoredControlsTitleLabel, 'controls.title');
-        }
-        if (this.authoredControlsCloseButton) {
-            this.authoredControlsCloseButton.node.off('click');
-            this.authoredControlsCloseButton.node.on('click',
-                () => this.closeControlsPanel(), this);
-            const lab = this.authoredControlsCloseButton.getComponentInChildren(Label);
-            if (lab) this.trackI18nLabel(lab, 'controls.close');
-        }
+        wireControlButton(this.authoredControlsClassicButton,
+                          this.authoredControlsClassicLabel,
+                          'buttons',   'controls.classic');
+        wireControlButton(this.authoredControlsAdvancedButton,
+                          this.authoredControlsAdvancedLabel,
+                          'legacy',    'controls.advanced');
+        wireControlButton(this.authoredControlsExpertButton,
+                          this.authoredControlsExpertLabel,
+                          'dragFling', 'controls.expert');
+        // Paint the currently-active mode on first open.
+        this._refreshControlModeSelection();
 
         // ---- Legal docs (Terms of Service / Privacy Policy) ----
         // Both open the server-hosted HTML page in the system browser
@@ -2163,6 +2333,133 @@ export class MenuController extends Component {
         rewire(this.authoredControlsLegacyToggle,    'legacy');
         rewire(this.authoredControlsDragFlingToggle, 'dragFling');
         rewire(this.authoredControlsButtonsToggle,   'buttons');
+    }
+
+    /** Open the language pull-up picker. Idempotent — first call wires
+     *  the 10 language buttons + close button; subsequent calls just
+     *  toggle visibility. Falls back to `cycleLang()` if no picker
+     *  panel is authored (keeps the settings row functional). */
+    private openLangPicker(): void {
+        if (!this.authoredLangPickerPanel) {
+            cycleLang();
+            this.refreshAuthoredSettingsValues();
+            return;
+        }
+        // Lazily wire click handlers once — SUPPORTED_LANGS index maps
+        // directly to authoredLangPickerButtons[i].
+        if (!this._langPickerWired) {
+            for (let i = 0; i < this.authoredLangPickerButtons.length; i++) {
+                const btn = this.authoredLangPickerButtons[i];
+                const lang = SUPPORTED_LANGS[i] as Lang | undefined;
+                if (!btn || !lang) continue;
+                btn.node.off('click');
+                btn.node.on('click', () => this._pickLang(lang), this);
+            }
+            if (this.authoredLangPickerCloseButton) {
+                this.authoredLangPickerCloseButton.node.off('click');
+                this.authoredLangPickerCloseButton.node.on('click',
+                    () => this.closeLangPicker(), this);
+            }
+            this._langPickerWired = true;
+        }
+        this._refreshLangPickerSelection();
+        this.authoredLangPickerPanel.active = true;
+        this.authoredLangPickerPanel.setSiblingIndex(999);
+    }
+
+    private closeLangPicker(): void {
+        if (this.authoredLangPickerPanel) this.authoredLangPickerPanel.active = false;
+    }
+
+    /** Player picked a language from the pull-up. Persist, repaint
+     *  the settings values (i18n labels re-translate via subscribe),
+     *  and auto-dismiss the picker. */
+    private _pickLang(lang: Lang): void {
+        if (getLang() !== lang) {
+            setLang(lang);
+            log(`[Settings] language → ${lang}`);
+        }
+        this._refreshLangPickerSelection();
+        this.refreshAuthoredSettingsValues();
+        // Small delay lets the player see the checkmark move to the new
+        // row before the picker vanishes.
+        this.scheduleOnce(() => this.closeLangPicker(), 0.15);
+    }
+
+    /** Selected language visual: its Label turns green + its checkmark
+     *  Node becomes visible. All other rows: Label back to white and
+     *  checkmark hidden. No-op on empty arrays so scenes that only
+     *  wired one of the two still degrade gracefully. */
+    private static readonly _LANG_COLOR_SELECTED = new Color(80, 200, 120, 255);    // 绿色
+    private static readonly _LANG_COLOR_DEFAULT  = new Color(0xDC, 0xC0, 0xB5, 255); // #DCC0B5 米粉色
+    /** Native language names — each language displayed in its own script
+     *  so a player who accidentally switched to a foreign language can
+     *  still recognise their own. Order MUST match SUPPORTED_LANGS. */
+    private static readonly _LANG_DISPLAY_NAMES: readonly string[] = [
+        '简体中文',    // zh
+        '繁體中文',    // zh-Hant
+        'English',    // en
+        '日本語',      // ja
+        '한국어',      // ko
+        'Español',    // es
+        'Português',  // pt-BR
+        'Français',   // fr
+        'Deutsch',    // de
+        'Русский',    // ru
+    ];
+    private _refreshLangPickerSelection(): void {
+        const cur = getLang();
+        for (let i = 0; i < SUPPORTED_LANGS.length; i++) {
+            const isCur = SUPPORTED_LANGS[i] === cur;
+            // Prefer the explicit Label ref; if not wired, fish the Label
+            // out of the button itself so the scene author doesn't have
+            // to drag 10 additional Label refs.
+            let lab = this.authoredLangPickerLabels[i] ?? null;
+            if (!lab) {
+                const btn = this.authoredLangPickerButtons[i];
+                if (btn) lab = btn.getComponentInChildren(Label);
+            }
+            if (lab) {
+                // Native language name (脚本填写, 覆盖 authored 文字).
+                const name = MenuController._LANG_DISPLAY_NAMES[i];
+                if (name && lab.string !== name) lab.string = name;
+                lab.color = isCur
+                    ? MenuController._LANG_COLOR_SELECTED
+                    : MenuController._LANG_COLOR_DEFAULT;
+            }
+            const mark = this.authoredLangPickerCheckmarks[i];
+            if (mark && mark.isValid && mark.active !== isCur) mark.active = isCur;
+        }
+    }
+
+    private _langPickerWired: boolean = false;
+
+    /** Player tapped one of the 3 in-panel control-mode buttons.
+     *  Persist + repaint the "selected" overlay row. Called from the
+     *  wireControlButton click bindings. */
+    private _selectControlMode(mode: ControlMode): void {
+        if (getControlMode() === mode) {
+            // Already-selected — repaint anyway in case the overlay
+            // got hidden by a scene reload.
+            this._refreshControlModeSelection();
+            return;
+        }
+        setControlMode(mode);
+        log(`[Settings] controlMode → ${mode}`);
+        this._refreshControlModeSelection();
+    }
+
+    /** Show ONLY the "selected" overlay Node above the currently-active
+     *  mode's button; hide the other two. Silent no-op if the scene
+     *  author hasn't wired overlays yet. */
+    private _refreshControlModeSelection(): void {
+        const mode = getControlMode();
+        const toggle = (n: Node | null, on: boolean): void => {
+            if (n && n.isValid && n.active !== on) n.active = on;
+        };
+        toggle(this.authoredControlsClassicSelected,  mode === 'buttons');
+        toggle(this.authoredControlsAdvancedSelected, mode === 'legacy');
+        toggle(this.authoredControlsExpertSelected,   mode === 'dragFling');
     }
 
     private openLegalPage(doc: 'tos' | 'privacy'): void {
@@ -2592,6 +2889,7 @@ export class MenuController extends Component {
         if (trimmed.length > MenuController.NICKNAME_MAX_CHARS) {
             this.showSettingsToast(
                 t('settings.nickname.tooLong', { n: MenuController.NICKNAME_MAX_CHARS }),
+                'error',
             );
             eb.string = PlayerProfile.name;   // roll back to what's persisted
             return;
@@ -2647,6 +2945,7 @@ export class MenuController extends Component {
         if (trimmed.length > MenuController.NICKNAME_MAX_CHARS) {
             this.showSettingsToast(
                 t('settings.nickname.tooLong', { n: MenuController.NICKNAME_MAX_CHARS }),
+                'error',
             );
             return;
         }
@@ -2766,7 +3065,7 @@ export class MenuController extends Component {
         } catch (err) {
             const msg = (err as Error).message ?? String(err);
             console.warn(`[Settings] delete account failed: ${msg}`);
-            this.showSettingsToast(t('settings.deleteAccount.failed'));
+            this.showSettingsToast(t('settings.deleteAccount.failed'), 'error');
         } finally {
             if (btnComp) btnComp.interactable = true;
         }
@@ -2957,9 +3256,17 @@ export class MenuController extends Component {
     }
 
     /** Fade-in / auto-hide toast for settings-panel errors + info.
-     *  Silently no-ops if the toast node isn't wired. Mirrors the
-     *  pattern in TopUpController.showToast. */
-    private showSettingsToast(text: string): void {
+     *  Preferred path is the unified ToastManager; falls back to the
+     *  older per-panel authored toast node when ToastManager is not
+     *  wired. Settings toasts are info-flavoured unless the caller
+     *  explicitly signals an error (kept simple for now: all settings
+     *  toasts go through `info`; if we later want per-message variants,
+     *  add a `kind` param and route to `error`). */
+    private showSettingsToast(text: string, kind: 'info' | 'error' = 'info'): void {
+        if (ToastManager.instance) {
+            ToastManager.instance.show(text, kind);
+            return;
+        }
         const node = this.authoredSettingsToastNode;
         if (!node) { log(`[Settings] toast (no node): ${text}`); return; }
         const lab = this.authoredSettingsToastLabel
@@ -2989,6 +3296,9 @@ export class MenuController extends Component {
      *  from inside the slider's own 'slide' event — that would fight
      *  the user's drag). */
     private refreshAuthoredSettingsValues(): void {
+        // Repaint the "selected" overlay above the currently-active
+        // control-mode button (in case the mode changed since last open).
+        this._refreshControlModeSelection();
         const set = (idx: number, text: string): void => {
             const lab = this.authoredSettingsRowValueLabels[idx];
             if (lab) lab.string = text;
@@ -3032,34 +3342,23 @@ export class MenuController extends Component {
             this.authoredSettingsAccountTypeLabel.string
                 = this.formatAccountRow(PlayerProfile.accountType, PlayerProfile.uuid);
         }
-        // Google / Apple toggles — reflect the real bind state. Until
-        // real OAuth is wired every player is `anonymous`, so both
-        // toggles read as OFF. First paint is from local state (fast,
-        // no flash); the server-side reconcile below then corrects
-        // any drift.
-        // Programmatic isChecked= fires 'toggle' events in Cocos —
-        // wrap in the suppress flag so the handlers know it's not a
-        // user tap.
-        //
-        // Toggle state is paint from _knownLinkedProviders (server
-        // truth) — NOT PlayerProfile.accountType. The accountType only
-        // reflects ONE provider (apple wins when both bound), so
-        // painting from it would force the OTHER toggle off every
-        // refresh + make Google visibly flip whenever the user taps
-        // Apple.
-        this._suppressToggleEvents = true;
-        try {
-            if (this.authoredSettingsGoogleToggle) {
-                this.authoredSettingsGoogleToggle.isChecked = this._knownLinkedProviders.has('google');
-            }
-            if (this.authoredSettingsAppleToggle) {
-                this.authoredSettingsAppleToggle.isChecked = this._knownLinkedProviders.has('apple');
-            }
-            if (this.authoredSettingsHapticToggle) {
-                this.authoredSettingsHapticToggle.isChecked = (getHapticMode() === 'on');
-            }
-        } finally {
-            this._suppressToggleEvents = false;
+        // Google / Apple binding buttons — swap their Sprite between
+        // "未绑定"（灰）和 "已绑定"（绿）based on the real bind state.
+        // Until real OAuth is wired every player is `anonymous`, so
+        // both buttons show the unbound (gray) variant.
+        const acct = PlayerProfile.accountType;
+        const setBtnSprite = (btn: Button | null, sf: SpriteFrame | null): void => {
+            if (!btn || !sf) return;
+            const spr = btn.getComponent(Sprite) ?? btn.getComponentInChildren(Sprite);
+            if (spr) spr.spriteFrame = sf;
+        };
+        setBtnSprite(this.authoredSettingsGoogleButton,
+                     acct === 'google' ? this.googleBoundSprite : this.googleUnboundSprite);
+        setBtnSprite(this.authoredSettingsAppleButton,
+                     acct === 'apple'  ? this.appleBoundSprite  : this.appleUnboundSprite);
+        // Legacy toggle version (kept for backward compat).
+        if (this.authoredSettingsGoogleToggle) {
+            this.authoredSettingsGoogleToggle.isChecked = (acct === 'google');
         }
         if (this.authoredSettingsHapticLabel) {
             this.trackI18nLabel(this.authoredSettingsHapticLabel, 'settings.haptic');
@@ -3274,7 +3573,7 @@ export class MenuController extends Component {
         if (copied) {
             this.showSettingsToast(t('settings.account.copied'));
         } else {
-            this.showSettingsToast(t('settings.account.copyFailed'));
+            this.showSettingsToast(t('settings.account.copyFailed'), 'error');
         }
     }
 
@@ -3282,11 +3581,19 @@ export class MenuController extends Component {
      *  `topup.balance` i18n key ("宝石: {n}") for consistency with the
      *  top-up panel's own balance strip. */
     private paintBalanceButton(gems: number): void {
-        const btn = this.authoredSettingsBalanceButton;
-        if (!btn) return;
-        const lab = this.authoredSettingsBalanceLabel
-            ?? btn.getComponentInChildren(Label);
-        if (lab) lab.string = t('topup.balance', { n: gems.toString() });
+        // Settings-panel balance button (legacy location, may still be
+        // wired in older scenes).
+        if (this.authoredSettingsBalanceButton) {
+            const lab = this.authoredSettingsBalanceLabel
+                ?? this.authoredSettingsBalanceButton.getComponentInChildren(Label);
+            if (lab) lab.string = t('topup.balance', { n: gems.toString() });
+        }
+        // Main mode-select page balance button (new location).
+        if (this.modeBtnTopup) {
+            const lab = this.modeBtnTopupBalanceLabel
+                ?? this.modeBtnTopup.getComponentInChildren(Label);
+            if (lab) lab.string = t('topup.balance', { n: gems.toString() });
+        }
     }
 
     /** Balance button click — close settings, open top-up. Both panels

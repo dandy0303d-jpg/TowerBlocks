@@ -541,8 +541,20 @@ export class GameController extends Component {
     @property({ type: Node, tooltip: '按钮模式 — 两个方向按钮的容器节点（脚本会根据操作方式切换 active）— 可空' })
     authoredRotateButtonsGroup: Node | null = null;
 
+    @property({ type: Button, tooltip: '通用 — 硬降按钮（点击 = hardDrop，方块直接落底）— 所有操作模式都能用；可空' })
+    authoredHardDropButton: Button | null = null;
+
+    @property({ type: Button, tooltip: '通用 — 方块变形按钮（点击 = tryRotate(1)，旋转当前方块）— 所有操作模式都能用；可空' })
+    authoredRotatePieceButton: Button | null = null;
+
     /** Held-button repeat timers (buttons mode). */
     private _btnHoldHandle: ReturnType<typeof setInterval> | null = null;
+    private _btnHoldDelayHandle: ReturnType<typeof setTimeout> | null = null;
+    /** Delay (ms) after TOUCH_START before the hold-to-repeat kicks
+     *  in. A normal tap lasts 80-200 ms, so anything shorter than
+     *  ~350 ms should be treated as a single click and NOT trigger
+     *  the interval — otherwise fast taps end up rotating 2 columns. */
+    private static readonly BTN_HOLD_START_MS = 350;
 
     // ---- Fling-rotation state (new drag-and-release scheme) ----
     /** Rolling window of recent finger x-samples used to compute
@@ -574,7 +586,7 @@ export class GameController extends Component {
     // Drag distance (px) required to advance the tower by ONE column
     // while the finger is held on-screen. Feels closest to the old
     // continuous-hold rate at typical swipe speeds.
-    private static readonly PX_PER_COL_DRAG    = 100;
+    private static readonly PX_PER_COL_DRAG    = 125;
     // Sample window used to compute release velocity — only finger
     // movement in the last SAMPLE_WINDOW_MS before touch-end is
     // considered, so pausing mid-drag doesn't kill the fling.
@@ -1643,40 +1655,112 @@ export class GameController extends Component {
         };
         bind(this.authoredRotateLeftButton,  -1);
         bind(this.authoredRotateRightButton, +1);
+        // Hard-drop button — single click fires hardDrop, no hold repeat.
+        if (this.authoredHardDropButton) {
+            this.authoredHardDropButton.node.off('click');
+            this.authoredHardDropButton.node.on('click', () => {
+                if (!this.gameState) return;
+                this.gameState.hardDrop();
+                SoundManager.instance?.play('hard_drop');
+            }, this);
+        }
+        // Rotate-piece (变形) button — single click fires tryRotate(1).
+        if (this.authoredRotatePieceButton) {
+            this.authoredRotatePieceButton.node.off('click');
+            this.authoredRotatePieceButton.node.on('click', () => {
+                if (!this.gameState) return;
+                this.gameState.tryRotate(1);
+                SoundManager.instance?.play('piece_rotate');
+            }, this);
+        }
+        // Suppress the generic ui_click SFX on the 4 game-action
+        // buttons — each already fires its own action-specific SFX
+        // (rotate_tower / hard_drop / piece_rotate) and stacking
+        // ui_click on top makes the audio muddy.
+        SoundManager.suppressClickSound(this.authoredRotateLeftButton);
+        SoundManager.suppressClickSound(this.authoredRotateRightButton);
+        SoundManager.suppressClickSound(this.authoredHardDropButton);
+        SoundManager.suppressClickSound(this.authoredRotatePieceButton);
     }
 
     private _rotateButtonHold(dir: 1 | -1): void {
         if (!this.gameState) return;
-        // First tap: single step + arm the repeat timer for hold-to-continuous.
+        // First tap: single step immediately. The repeat interval is
+        // DELAYED by BTN_HOLD_START_MS so a normal tap (< ~350 ms) only
+        // fires the initial move and never enters continuous mode —
+        // fixes the "one tap rotates 2 columns" bug where the interval's
+        // 80 ms firing beat the TOUCH_END clear on average taps.
         this.gameState.moveCylinder(dir);
         SoundManager.instance?.play('rotate_tower');
         HapticsManager.impact('light');
+        // Clear any leftover handles from a previous press.
         if (this._btnHoldHandle !== null) clearInterval(this._btnHoldHandle);
-        this._btnHoldHandle = setInterval(() => {
-            if (!this.gameState) return;
-            this.gameState.moveCylinder(dir);
-            SoundManager.instance?.play('rotate_tower');
-            HapticsManager.impact('light');
-        }, GameController.HOLD_REPEAT_MS);
+        if (this._btnHoldDelayHandle !== null) clearTimeout(this._btnHoldDelayHandle);
+        this._btnHoldDelayHandle = setTimeout(() => {
+            this._btnHoldDelayHandle = null;
+            this._btnHoldHandle = setInterval(() => {
+                if (!this.gameState) return;
+                this.gameState.moveCylinder(dir);
+                SoundManager.instance?.play('rotate_tower');
+                HapticsManager.impact('light');
+            }, GameController.HOLD_REPEAT_MS);
+        }, GameController.BTN_HOLD_START_MS);
     }
 
     private _rotateButtonRelease(): void {
+        if (this._btnHoldDelayHandle !== null) {
+            clearTimeout(this._btnHoldDelayHandle);
+            this._btnHoldDelayHandle = null;
+        }
         if (this._btnHoldHandle !== null) {
             clearInterval(this._btnHoldHandle);
             this._btnHoldHandle = null;
         }
     }
 
-    /** Show/hide the on-screen rotate buttons based on control mode. */
+    /** True while gameplay UI is visible on screen — driven by
+     *  MenuController.setGameplayVisible() so mode-select / level-
+     *  select screens can hide the on-screen action buttons even
+     *  when control mode = 'buttons'. */
+    private _gameplayVisible: boolean = false;
+
+    /** True while the new-player tutorial is running — forces ALL
+     *  four action buttons hidden regardless of control mode, so the
+     *  tutorial's own hand-demo isn't buried under keyboard buttons. */
+    private _tutorialActive: boolean = false;
+
+    /** Public hook so MenuController can flip the gameplay-visible
+     *  flag when the player enters / leaves a level. Repaints the
+     *  button UI immediately. */
+    public setGameplayUiVisible(on: boolean): void {
+        this._gameplayVisible = on;
+        this._refreshControlModeUi();
+    }
+
+    /** Public hook for TutorialController: while a tutorial is
+     *  running, hide all 4 action buttons regardless of control mode. */
+    public setTutorialActive(on: boolean): void {
+        this._tutorialActive = on;
+        this._refreshControlModeUi();
+    }
+
+    /** Show/hide the on-screen action buttons based on control mode
+     *  AND gameplay visibility. Rotate L/R belong to buttons mode
+     *  only; hard-drop + rotate-piece are gameplay-only regardless
+     *  of mode (they replace touch input that also is gameplay-only).
+     *  On level-select / main-menu screens, ALL four stay hidden. */
     public _refreshControlModeUi(): void {
-        const showButtons = getControlMode() === 'buttons';
+        const buttonsMode = getControlMode() === 'buttons';
+        const showRotate  = buttonsMode && this._gameplayVisible && !this._tutorialActive;
+        const showAction  = this._gameplayVisible && !this._tutorialActive; // hard-drop + rotate-piece
         if (this.authoredRotateButtonsGroup) {
-            this.authoredRotateButtonsGroup.active = showButtons;
+            this.authoredRotateButtonsGroup.active = showRotate;
         } else {
-            // No group wired — toggle each button node individually.
-            if (this.authoredRotateLeftButton)  this.authoredRotateLeftButton.node.active  = showButtons;
-            if (this.authoredRotateRightButton) this.authoredRotateRightButton.node.active = showButtons;
+            if (this.authoredRotateLeftButton)  this.authoredRotateLeftButton.node.active  = showRotate;
+            if (this.authoredRotateRightButton) this.authoredRotateRightButton.node.active = showRotate;
         }
+        if (this.authoredHardDropButton)     this.authoredHardDropButton.node.active     = showAction;
+        if (this.authoredRotatePieceButton)  this.authoredRotatePieceButton.node.active  = showAction;
     }
 
     onDestroy(): void {
@@ -4041,6 +4125,14 @@ export class GameController extends Component {
         this.gameState.startLevel(buildTutorialLevel());
         this.boardYOffsetInitialised = false;
         this.lastKnownTotalRows = -1;
+        // Enable gameplay UI + touch input for the tutorial tower so
+        // player gestures actually reach onTouchStart / rotate the
+        // tower. Without this, the touch handlers early-return on
+        // `!this._gameplayVisible` and the tower never responds.
+        // `_tutorialActive` (set by TutorialController) still keeps
+        // the 4 action buttons hidden so the hand-demo isn't crowded.
+        this._gameplayVisible = true;
+        this._refreshControlModeUi();
         log('[TowerBlocks] tutorial started');
     }
 
@@ -4165,6 +4257,10 @@ export class GameController extends Component {
     //  Touch / drag input
     // ============================================================
     private onTouchStart(evt: EventTouch): void {
+        // Gate ALL gameplay touch handling on _gameplayVisible so
+        // swipes on the main menu / level-select / other screens
+        // don't sneak through to moveCylinder + play rotate_tower SFX.
+        if (!this._gameplayVisible) return;
         // Any fresh touch immediately stops an in-flight fling — per
         // design "旋转过程中手指触碰屏幕，塔立即停止旋转".
         if (this._flingActive) {
@@ -4331,22 +4427,13 @@ export class GameController extends Component {
             return;
         }
 
-        // ---- Buttons mode: rotation via on-screen buttons only.
-        //      Touch input still handles tap→piece-rotate + swipe-down→hard-drop.
+        // ---- Buttons mode: all touch input is ignored.
+        //      Rotation / piece-rotate / hard-drop all live on dedicated
+        //      on-screen Buttons (authoredRotateLeftButton /
+        //      authoredRotateRightButton / authoredRotatePieceButton /
+        //      authoredHardDropButton). Touch is a no-op so accidental
+        //      swipes on the playfield don't trigger anything.
         if (mode === 'buttons') {
-            const isTapBtn = absX < GameController.TAP_MAX_PX
-                          && absY < GameController.TAP_MAX_PX
-                          && dt < GameController.TAP_MAX_MS;
-            if (isTapBtn) {
-                this.gameState.tryRotate(1);
-                SoundManager.instance?.play('piece_rotate');
-                this.touchActive = false;
-                return;
-            }
-            if (dy < 0 && absY >= GameController.SWIPE_MIN_PX && absY > absX) {
-                this.gameState.hardDrop();
-                SoundManager.instance?.play('hard_drop');
-            }
             this.touchActive = false;
             return;
         }

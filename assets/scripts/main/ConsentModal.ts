@@ -34,8 +34,8 @@
  * uses `sys.openURL()` — Cocos wraps Safari on iOS.
  */
 
-import { _decorator, Component, Node, Label, Button, Toggle, sys } from 'cc';
-import { t } from '../core/i18n/I18n';
+import { _decorator, Component, Node, Label, Button, Toggle, Sprite, sys } from 'cc';
+import { t, getLang, subscribe as subscribeI18n } from '../core/i18n/I18n';
 import { fetchConsentStatus, postConsent, ConsentStatusResult } from '../core/ConsentApi';
 import { BACKEND_BASE_URL } from '../core/BackendConfig';
 
@@ -49,6 +49,12 @@ export class ConsentModal extends Component {
 
     @property({ type: Label, tooltip: '标题 Label — consent.title' })
     titleLabel: Label = null!;
+
+    @property({ type: Sprite, tooltip: '用户协议面板顶部 Logo Sprite — 脚本会按当前语言 swap spriteFrame（复用 MenuController 里配好的 10 张 logo SF）— 可空' })
+    logoSprite: Sprite | null = null;
+
+    @property({ type: Node, tooltip: 'MenuController 所在节点（脚本会拿它的 getLocalizedLogoSpriteFrame 复用 10 张 logo SF）— 可空，不拖则跳过 logo 换图' })
+    menuControllerNode: Node | null = null;
 
     @property({ type: Toggle, tooltip: '「전체 동의」主 Toggle — 联动全部子项' })
     agreeAllToggle: Toggle = null!;
@@ -110,6 +116,28 @@ export class ConsentModal extends Component {
 
         // Start button
         this.startBtn?.node.on(Button.EventType.CLICK, this.onStart, this);
+
+        // Localized logo — reuses MenuController's 10 SF slots.
+        this._refreshLocalizedLogo();
+        this._langUnsub = subscribeI18n(() => this._refreshLocalizedLogo());
+    }
+
+    onDestroy() {
+        if (this._langUnsub) { this._langUnsub(); this._langUnsub = null; }
+    }
+
+    /** Localized logo swap — reuses MenuController's authored 10 SF
+     *  slots via its getLocalizedLogoSpriteFrame() accessor. Silent
+     *  no-op if either the Sprite slot or the MenuController node
+     *  isn't wired. */
+    private _langUnsub: (() => void) | null = null;
+    private _refreshLocalizedLogo(): void {
+        if (!this.logoSprite || !this.menuControllerNode) return;
+        const menu = this.menuControllerNode.getComponent('MenuController') as any;
+        if (menu && typeof menu.getLocalizedLogoSpriteFrame === 'function') {
+            const sf = menu.getLocalizedLogoSpriteFrame(getLang());
+            if (sf) this.logoSprite.spriteFrame = sf;
+        }
     }
 
     /** Called by LoadingController when consent is required. Returns
@@ -126,6 +154,10 @@ export class ConsentModal extends Component {
         this.paintLabels();
         this.resetToggles();
         this.refreshStartButton();
+        // Refresh localized logo on gate open — covers the first-boot
+        // ordering case where MenuController's SF slots weren't
+        // populated by the time this modal's onLoad ran.
+        this._refreshLocalizedLogo();
 
         if (this.hintLabel) this.hintLabel.node.active = false;
         if (this.root)      this.root.active = true;

@@ -64,6 +64,7 @@ import {
 
 import { t, subscribe as subscribeI18n } from '../core/i18n/I18n';
 import { LeaderboardRow } from './LeaderboardRow';
+import { getLang, subscribe as subscribeLang } from '../core/i18n/I18n';
 import { fetchTop, fetchMyRank, LeaderboardApiEntry, LeaderboardApiMode, MyRankResult } from '../core/LeaderboardApi';
 import { PlayerProfile } from '../core/PlayerProfile';
 
@@ -97,6 +98,12 @@ export class LeaderboardController extends Component {
 
     @property({ type: Label, tooltip: '"排行榜" 标题 Label' })
     titleLabel: Label | null = null;
+
+    @property({ type: Sprite, tooltip: '排行榜面板顶部 Logo Sprite — 脚本会按当前语言 swap spriteFrame（复用 MenuController 里配好的 10 张 logo SF）— 可空' })
+    logoSprite: Sprite | null = null;
+
+    @property({ type: Node, tooltip: 'MenuController 所在节点（脚本会拿它的 getLocalizedLogoSpriteFrame 复用 10 张 logo SF）— 可空，不拖则跳过 logo 换图' })
+    menuControllerNode: Node | null = null;
 
     @property({ type: Button, tooltip: '返回按钮（点击 → 隐藏面板回到主菜单）' })
     backButton: Button | null = null;
@@ -169,10 +176,31 @@ export class LeaderboardController extends Component {
         // Panel starts hidden regardless of scene state — the menu
         // button is the only way in.
         if (this.panel) this.panel.active = false;
+        // Repaint the localized logo on first boot + every language
+        // switch. The panel is hidden until the player opens it, so
+        // the initial paint just primes the SpriteFrame so it's ready
+        // when the panel activates.
+        this._refreshLocalizedLogo();
+        this._langUnsub = subscribeLang(() => this._refreshLocalizedLogo());
     }
 
     onDestroy(): void {
         if (this.i18nUnsub) { this.i18nUnsub(); this.i18nUnsub = null; }
+        if (this._langUnsub) { this._langUnsub(); this._langUnsub = null; }
+    }
+
+    /** Localized logo swap — reuses MenuController's authored 10 SF
+     *  slots via its getLocalizedLogoSpriteFrame() accessor. Silent
+     *  no-op if either the Sprite slot or the MenuController node
+     *  isn't wired. */
+    private _langUnsub: (() => void) | null = null;
+    private _refreshLocalizedLogo(): void {
+        if (!this.logoSprite || !this.menuControllerNode) return;
+        const menu = this.menuControllerNode.getComponent('MenuController') as any;
+        if (menu && typeof menu.getLocalizedLogoSpriteFrame === 'function') {
+            const sf = menu.getLocalizedLogoSpriteFrame(getLang());
+            if (sf) this.logoSprite.spriteFrame = sf;
+        }
     }
 
     // ============================================================
@@ -196,6 +224,10 @@ export class LeaderboardController extends Component {
         // symptom.
         this.panel.active = true;
         this.panel.setSiblingIndex(999);
+        // Ensure the logo matches the current language every open —
+        // covers the case where MenuController's SF slots weren't
+        // populated at first-boot onLoad ordering.
+        this._refreshLocalizedLogo();
         this.wire();
         this.currentMode = mode;
         this.refresh();

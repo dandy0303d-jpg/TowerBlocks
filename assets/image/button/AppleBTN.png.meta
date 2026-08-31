@@ -2,7 +2,7 @@
   "ver": "1.0.27",
   "importer": "image",
   "imported": true,
-  "uuid": "047744a7-d395-4655-9cd6-f3c4ec9a2e3d",
+  "uuid": "7f034e3c-0f39-4bb9-9314-95c592647e42",
   "files": [
     ".json",
     ".png"
@@ -10,14 +10,14 @@
   "subMetas": {
     "6c48a": {
       "importer": "texture",
-      "uuid": "047744a7-d395-4655-9cd6-f3c4ec9a2e3d@6c48a",
-      "displayName": "AppleBTN",
+      "uuid": "7f034e3c-0f39-4bb9-9314-95c592647e42@6c48a",
+      "displayName": "Applebtn",
       "id": "6c48a",
       "name": "texture",
       "userData": {
         "wrapModeS": "clamp-to-edge",
         "wrapModeT": "clamp-to-edge",
-        "imageUuidOrDatabaseUri": "047744a7-d395-4655-9cd6-f3c4ec9a2e3d",
+        "imageUuidOrDatabaseUri": "7f034e3c-0f39-4bb9-9314-95c592647e42",
         "isUuid": true,
         "visible": false,
         "minfilter": "linear",
@@ -34,21 +34,21 @@
     },
     "f9941": {
       "importer": "sprite-frame",
-      "uuid": "047744a7-d395-4655-9cd6-f3c4ec9a2e3d@f9941",
-      "displayName": "AppleBTN",
+      "uuid": "7f034e3c-0f39-4bb9-9314-95c592647e42@f9941",
+      "displayName": "Applebtn",
       "id": "f9941",
       "name": "spriteFrame",
       "userData": {
         "trimThreshold": 1,
         "rotated": false,
-        "offsetX": 0,
-        "offsetY": 0,
-        "trimX": 3,
-        "trimY": 0,
-        "width": 301,
-        "height": 70,
-        "rawWidth": 307,
-        "rawHeight": 70,
+        "offsetX": 1,
+        "offsetY": 0.5,
+        "trimX": 6,
+        "trimY": 6,
+        "width": 236,
+        "height": 94,
+        "rawWidth": 246,
+        "rawHeight": 107,
         "borderTop": 0,
         "borderBottom": 0,
         "borderLeft": 0,
@@ -60,17 +60,17 @@
         "meshType": 0,
         "vertices": {
           "rawPosition": [
-            -150.5,
-            -35,
+            -118,
+            -47,
             0,
-            150.5,
-            -35,
+            118,
+            -47,
             0,
-            -150.5,
-            35,
+            -118,
+            47,
             0,
-            150.5,
-            35,
+            118,
+            47,
             0
           ],
           "indexes": [
@@ -82,38 +82,38 @@
             3
           ],
           "uv": [
-            3,
-            70,
-            304,
-            70,
-            3,
-            0,
-            304,
-            0
+            6,
+            101,
+            242,
+            101,
+            6,
+            7,
+            242,
+            7
           ],
           "nuv": [
-            0.009771986970684038,
-            0,
-            0.990228013029316,
-            0,
-            0.009771986970684038,
-            1,
-            0.990228013029316,
-            1
+            0.024390243902439025,
+            0.06542056074766354,
+            0.983739837398374,
+            0.06542056074766354,
+            0.024390243902439025,
+            0.9439252336448598,
+            0.983739837398374,
+            0.9439252336448598
           ],
           "minPos": [
-            -150.5,
-            -35,
+            -118,
+            -47,
             0
           ],
           "maxPos": [
-            150.5,
-            35,
+            118,
+            47,
             0
           ]
         },
         "isUuid": true,
-        "imageUuidOrDatabaseUri": "047744a7-d395-4655-9cd6-f3c4ec9a2e3d@6c48a",
+        "imageUuidOrDatabaseUri": "7f034e3c-0f39-4bb9-9314-95c592647e42@6c48a",
         "atlasUuid": "",
         "trimType": "auto"
       },
@@ -129,6 +129,6 @@
     "type": "sprite-frame",
     "fixAlphaTransparencyArtifacts": false,
     "hasAlpha": true,
-    "redirect": "047744a7-d395-4655-9cd6-f3c4ec9a2e3d@6c48a"
+    "redirect": "7f034e3c-0f39-4bb9-9314-95c592647e42@6c48a"
   }
 }

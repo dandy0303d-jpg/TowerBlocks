@@ -42,12 +42,13 @@ import {
     Node,
     Label,
     Button,
+    Sprite,
     tween,
     UIOpacity,
     log,
 } from 'cc';
 
-import { t, subscribe as subscribeI18n } from '../core/i18n/I18n';
+import { t, subscribe as subscribeI18n, getLang } from '../core/i18n/I18n';
 import {
     WALLET_SKUS,
     fetchWallet,
@@ -57,6 +58,7 @@ import {
     WalletSku,
 } from '../core/WalletApi';
 import { Providers } from '../core/channels/Providers';
+import { ToastManager } from './ToastManager';
 
 const { ccclass, property } = _decorator;
 
@@ -72,6 +74,12 @@ export class TopUpController extends Component {
 
     @property({ type: Label, tooltip: '"充值宝石" 标题 Label' })
     titleLabel: Label | null = null;
+
+    @property({ type: Sprite, tooltip: '充值面板顶部 Logo Sprite — 脚本会按当前语言 swap spriteFrame（复用 MenuController 里配好的 10 张 logo SF）— 可空' })
+    logoSprite: Sprite | null = null;
+
+    @property({ type: Node, tooltip: 'MenuController 所在节点（脚本会拿它的 getLocalizedLogoSpriteFrame 复用 10 张 logo SF）— 可空，不拖则跳过 logo 换图' })
+    menuControllerNode: Node | null = null;
 
     @property({ type: Label, tooltip: '"宝石: N" 顶部余额 Label' })
     balanceLabel: Label | null = null;
@@ -114,10 +122,29 @@ export class TopUpController extends Component {
     onLoad(): void {
         if (this.panel)     this.panel.active = false;
         if (this.toastNode) this.toastNode.active = false;
+        // Prime the localized logo (panel is hidden until show(); this
+        // just makes sure the SF is ready when the panel activates).
+        this._refreshLocalizedLogo();
+        this._langUnsub = subscribeI18n(() => this._refreshLocalizedLogo());
     }
 
     onDestroy(): void {
         if (this.i18nUnsub) { this.i18nUnsub(); this.i18nUnsub = null; }
+        if (this._langUnsub) { this._langUnsub(); this._langUnsub = null; }
+    }
+
+    /** Localized logo swap — reuses MenuController's authored 10 SF
+     *  slots via its getLocalizedLogoSpriteFrame() accessor. Silent
+     *  no-op if either the Sprite slot or the MenuController node
+     *  isn't wired. */
+    private _langUnsub: (() => void) | null = null;
+    private _refreshLocalizedLogo(): void {
+        if (!this.logoSprite || !this.menuControllerNode) return;
+        const menu = this.menuControllerNode.getComponent('MenuController') as any;
+        if (menu && typeof menu.getLocalizedLogoSpriteFrame === 'function') {
+            const sf = menu.getLocalizedLogoSpriteFrame(getLang());
+            if (sf) this.logoSprite.spriteFrame = sf;
+        }
     }
 
     // ============================================================
@@ -140,6 +167,10 @@ export class TopUpController extends Component {
         // second click shows the panel" symptom.
         this.panel.active = true;
         this.panel.setSiblingIndex(999);
+        // Refresh localized logo every open — covers first-boot ordering
+        // where MenuController's SF slots may not have been populated
+        // in onLoad but ARE ready by the time the player opens topup.
+        this._refreshLocalizedLogo();
         this.wire();
         this.paintBalance(this.cachedBalance);
         // Background refresh; paint updates when it lands.
@@ -266,7 +297,10 @@ export class TopUpController extends Component {
         if (this.mockNoticeLabel) this.mockNoticeLabel.string = t('topup.mockNotice');
 
         // ---- Close button ----
-        if (this.closeButton) {
+        // Guard against a Button reference whose backing Node was
+        // destroyed (Cocos leaves the component reference truthy but
+        // .node becomes null → `.off()` on null throws).
+        if (this.closeButton && this.closeButton.node) {
             this.closeButton.node.off('click');
             this.closeButton.node.on('click', () => this.hide(), this);
             const lab = this.closeButton.getComponentInChildren(Label);
@@ -315,7 +349,7 @@ export class TopUpController extends Component {
             }
             // Buy button + inner label — the label IS the price now
             // (per design: player taps the price to buy).
-            if (this.skuBuyButtons[i]) {
+            if (this.skuBuyButtons[i] && this.skuBuyButtons[i].node) {
                 const btn = this.skuBuyButtons[i];
                 btn.node.off('click');
                 // Capture SKU so the click handler knows what to buy.
@@ -379,6 +413,7 @@ export class TopUpController extends Component {
                     this.paintBalance(res.balance);
                     this.showToast(
                         t('topup.successBody', { n: res.gemsAdded.toString() }),
+                        'info',
                     );
                     log(`[TopUp] purchase ok — sku=${sku.id} +${res.gemsAdded} gems, balance=${res.balance}, kind=${receipt.paymentKind}`);
                     // Step 3: acknowledge / consume — best-effort, don't
@@ -398,7 +433,7 @@ export class TopUpController extends Component {
                     log(`[TopUp] purchase cancelled by user (sku=${sku.id})`);
                     return;
                 }
-                this.showToast(t('topup.failBody', { reason: err.message }));
+                this.showToast(t('topup.failBody', { reason: err.message }), 'error');
                 console.warn('[TopUp] purchase failed:', err.message);
             });
     }
@@ -408,8 +443,15 @@ export class TopUpController extends Component {
     // ============================================================
 
     /** Fade-in + auto-hide toast for success/error/in-flight messages.
-     *  Silently no-ops if the toast node isn't wired. */
-    private showToast(text: string): void {
+     *  Preferred path is the unified ToastManager (drop one component
+     *  into the scene and it handles all in-game toasts). Falls back
+     *  to the legacy per-panel toastNode / toastLabel when ToastManager
+     *  isn't wired. */
+    private showToast(text: string, kind: 'info' | 'error' = 'info'): void {
+        if (ToastManager.instance) {
+            ToastManager.instance.show(text, kind);
+            return;
+        }
         if (!this.toastNode || !this.toastLabel) return;
         this.toastLabel.string = text;
         this.toastNode.active = true;
