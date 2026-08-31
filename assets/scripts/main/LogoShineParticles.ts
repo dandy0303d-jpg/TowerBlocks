@@ -54,8 +54,11 @@ export class LogoShineParticles extends Component {
     @property({ tooltip: '粒子水平漂移的最大幅度（像素）— 各粒子在 ±half 内随机取一个值' })
     particleHorizontalDrift: number = 40;
 
-    @property({ type: Color, tooltip: '粒子颜色（alpha 值会被淡入/淡出覆盖）' })
+    @property({ type: Color, tooltip: '粒子颜色（alpha 值会被淡入/淡出覆盖）— 仅在"彩虹模式=关"时生效' })
     particleColor: Color = new Color(255, 255, 255, 255);
+
+    @property({ tooltip: '彩虹模式：每个粒子从预置调色板中随机取一种颜色（RGB 高饱和 + 亮丽），覆盖上面的 particleColor' })
+    rainbow: boolean = true;
 
     @property({ tooltip: 'spawn x 附近的水平抖动幅度（像素）— 让粒子不整齐排列' })
     spawnJitterX: number = 12;
@@ -67,6 +70,21 @@ export class LogoShineParticles extends Component {
      *  `emit`, shared across ALL particles so Cocos can dynamic-batch
      *  them into one draw call. Released on disable. */
     private particleFrame: SpriteFrame | null = null;
+
+    /** Rainbow palette — 8 vivid tints picked so each particle reads
+     *  as a distinct colour against the warm cream logo backdrop.
+     *  Mixed warm (red/orange/yellow/pink) + cool (green/cyan/blue/
+     *  purple) so any spawn batch feels multicoloured, not tonal. */
+    private static readonly RAINBOW_PALETTE: readonly Color[] = [
+        new Color(255, 100, 120, 255),   // pink
+        new Color(255, 160,  90, 255),   // orange
+        new Color(255, 220, 100, 255),   // yellow
+        new Color(140, 230, 130, 255),   // green
+        new Color(100, 220, 230, 255),   // cyan
+        new Color(120, 160, 255, 255),   // blue
+        new Color(200, 130, 255, 255),   // purple
+        new Color(255, 130, 220, 255),   // magenta
+    ];
 
     onDisable(): void {
         // Destroy any in-flight particle nodes still under this one.
@@ -168,9 +186,15 @@ export class LogoShineParticles extends Component {
         s.type = Sprite.Type.SIMPLE;
         s.sizeMode = Sprite.SizeMode.CUSTOM;
         s.spriteFrame = frame;
-        // Starting colour: whatever's set on the emitter, but alpha
-        // forced to 0 so the fade-in tween takes it to full opacity.
-        const c = this.particleColor;
+        // Starting colour: rainbow mode picks a random tint from the
+        // preset palette (high-saturation warm & cool hues); otherwise
+        // fall back to the authored `particleColor`. Alpha is forced
+        // to 0 so the fade-in tween takes it to full opacity.
+        const c = this.rainbow
+            ? LogoShineParticles.RAINBOW_PALETTE[
+                Math.floor(Math.random() * LogoShineParticles.RAINBOW_PALETTE.length)
+              ]
+            : this.particleColor;
         s.color = new Color(c.r, c.g, c.b, 0);
         const driftX = (Math.random() - 0.5) * this.particleHorizontalDrift;
         const fallY  = -this.particleFallDistance * (0.6 + Math.random() * 0.4);

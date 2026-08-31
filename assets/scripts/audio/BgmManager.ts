@@ -47,7 +47,7 @@ export class BgmManager extends Component {
     // ---- Global tuning ----
 
     @property({ range: [0, 1, 0.05], slide: true, tooltip: 'BGM 主音量' })
-    masterVolume = 0.5;
+    masterVolume = 0.25;
 
     @property({ tooltip: '取消勾选可整体静音 BGM' })
     bgmEnabled = true;

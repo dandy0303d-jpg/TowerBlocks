@@ -50,6 +50,9 @@ export class LoadingController extends Component {
     @property({ type: Label, tooltip: '"加载资源"文字 Label（进度条左侧，可选）。脚本会用 i18n 覆盖里面的字，不拖也没关系。' })
     loadingTextLabel: Label | null = null;
 
+    @property({ type: Sprite, tooltip: 'Loading 页面 Logo Sprite — 脚本会按当前语言 swap spriteFrame（复用 MenuController 里配好的 10 张 logo SF，不需要在这里再拖一遍）— 可空' })
+    loadingLogoSprite: Sprite | null = null;
+
     @property({ type: GameController, tooltip: 'GameController（用它的 warmupFxActivate/Cleanup）' })
     gameController: GameController = null!;
 
@@ -89,6 +92,15 @@ export class LoadingController extends Component {
         const sysCode = sys.languageCode ?? sys.language ?? 'en';
         const picked = initFromSystemLang(sysCode);
         console.log(`[Loading] system lang = "${sysCode}" → game lang = "${picked}"`);
+        // Swap the loading-panel logo to the localized art. Reuses the
+        // 10 SpriteFrame slots authored on MenuController so we don't
+        // need to duplicate them here. Silent no-op if either the
+        // MenuController reference or the loading Sprite is unwired.
+        if (this.loadingLogoSprite && this.menuController
+            && typeof this.menuController.getLocalizedLogoSpriteFrame === 'function') {
+            const sf = this.menuController.getLocalizedLogoSpriteFrame(picked);
+            if (sf) this.loadingLogoSprite.spriteFrame = sf;
+        }
         // Show the loading panel immediately so the frame after Cocos
         // splash doesn't flash the (unwarmed) main menu. Also walk the
         // ancestor chain to force each parent active — guards against
