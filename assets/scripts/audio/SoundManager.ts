@@ -127,6 +127,15 @@ export class SoundManager extends Component {
     // `_ttGlobalHookInstalled`. Firing BEFORE the original ensures
     // the sound plays even if the user's own click handler navigates
     // away or throws.
+    /** Buttons registered here are exempt from the global click SFX.
+     *  Use for on-screen game-action buttons (硬降 / 变形 / 塔旋转)
+     *  where the action itself already fires its own SFX and stacking
+     *  a `ui_click` on top makes the audio muddy. */
+    private static _suppressedButtons: WeakSet<Button> = new WeakSet();
+    public static suppressClickSound(btn: Button | null | undefined): void {
+        if (btn) SoundManager._suppressedButtons.add(btn);
+    }
+
     private static _globalHookInstalled = false;
     private static installGlobalButtonClickSound(): void {
         if (SoundManager._globalHookInstalled) return;
@@ -139,13 +148,15 @@ export class SoundManager extends Component {
         }
         proto._onTouchEnded = function (...args: any[]) {
             try {
-                // Only play if the button is actually interactable and
-                // the touch was inside it. `_pressed` is set true only
-                // when the touch started AND stays inside the button;
-                // if the user swiped out and released elsewhere,
-                // `_pressed` is false and Cocos won't emit CLICK
-                // either, so we skip the sound too.
-                if (this.interactable !== false && this._pressed) {
+                // Only play if the button is actually interactable, the
+                // touch was inside it, AND the button hasn't been
+                // suppressed by SoundManager.suppressClickSound(). The
+                // suppression list covers game-action buttons (硬降 /
+                // 变形 / 塔旋转) whose own SFX would otherwise stack
+                // with ui_click and read as muddy overlapping audio.
+                if (this.interactable !== false
+                    && this._pressed
+                    && !SoundManager._suppressedButtons.has(this)) {
                     SoundManager.instance?.play('ui_click');
                 }
             } catch (e) { /* never let a SFX error break button flow */ }

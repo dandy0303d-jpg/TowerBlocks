@@ -260,7 +260,9 @@ function loadControl(): ControlMode {
         const v = localStorage?.getItem(STORAGE_KEY_CONTROL);
         if (v === 'legacy' || v === 'dragFling' || v === 'buttons') return v;
     } catch (_) { /* ignore */ }
-    return 'dragFling';
+    // Default per design: Classic (虚拟按钮) — most approachable for
+    // first-time players who might not discover swipe/fling gestures.
+    return 'buttons';
 }
 let controlMode: ControlMode = loadControl();
 export function getControlMode(): ControlMode { return controlMode; }
