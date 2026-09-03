@@ -100,7 +100,6 @@ export const JA: Record<string, string> = {
     'fate.start':        'スタート',
     'fate.cellCount':    '{n} マス',
     'fate.endlessSub':   'エンドレス',
-    'fate.levelSub':     'ステージ {n}',
     'fate.endlessMid':   'エンドレス · {layer} 層',
     'fate.subtitle':     '{tag} · {n} マス',
     'fate.hint':         '運命を変える：広告視聴で新しい運命ブロックに交換',
@@ -124,7 +123,7 @@ export const JA: Record<string, string> = {
     'pause.title':       '⏸ 一時停止',
     'pause.hint':        'タップで再開',
     'pause.continue':    '▶ 続ける',
-    'pause.home':        '< ホーム',
+    'pause.home':        '■ ホーム',
 
     // ---------- DEV ボタン ----------
     'debug.forceWin':    '強制クリア',
@@ -180,7 +179,6 @@ export const JA: Record<string, string> = {
     'result.win':        'クリア ✓',
     'result.retry':      'リトライ',
     'result.endlessRetry': 'もう一度',
-    'result.nextLevel':  '次のステージ',
     'result.replay':     'リプレイ',
     'result.levelSelect':'ステージ',
     'result.home':       'ホーム',
@@ -278,4 +276,5 @@ export const JA: Record<string, string> = {
     'lock.blind':        'エンドレスで {n} 層達成でブラインドモード解放',
     'lock.leaderboard':  'エンドレスで {n} 層達成でランキング解放',
     'level.next':        '次のステージ',
+    'level.floor':       '{n}階',
 };

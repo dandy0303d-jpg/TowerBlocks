@@ -746,8 +746,18 @@ export class GameState {
     //  Input commands
     // ============================================================
 
-    moveCylinder(dir: -1 | 1): void {
-        if (!this.canAcceptInput()) return;
+    /** Rotate the tower one column in `dir`.
+     *  Returns:
+     *   - true  : the piece actually moved, OR a storm was active so we
+     *             panned the camera instead (both count as "the tower
+     *             visually responded" — caller can play rotate_tower).
+     *   - false : the falling piece is jammed against a stack cell and
+     *             can't move (caller should play rotate_blocked). Input
+     *             gating (canAcceptInput false) also returns false — a
+     *             no-op call also counts as "blocked" for SFX purposes
+     *             since the tower didn't move; keeps the audio honest. */
+    moveCylinder(dir: -1 | 1): boolean {
+        if (!this.canAcceptInput()) return false;
         // Storms (hail / rocket / gatling) freeze piece play — the input
         // pans the camera even if a piece is technically alive. Critical
         // for gatling: bullets target `lastSpawnCenterCol`, and the
@@ -757,12 +767,14 @@ export class GameState {
         // fixed, and the visual/collision would desync.
         if (!this.current || this.hail.mode || this.rocket.mode || this.gatling.mode || this.mortar.mode) {
             this.lastSpawnCenterCol = (this.lastSpawnCenterCol ?? 0) + dir;
-            return;
+            return true;
         }
         if (!collides(this.state.board, this.current, dir, 0, this.current.shape)) {
             this.current.x = wrap(this.current.x + dir);
             this.tryResetLockDelay();
+            return true;
         }
+        return false;
     }
 
     tryRotate(dir: 1 | -1): void {

@@ -87,7 +87,6 @@ export const FR: Record<string, string> = {
     'fate.start':        'Commencer',
     'fate.cellCount':    '{n} cases',
     'fate.endlessSub':   'Infini',
-    'fate.levelSub':     'Niveau {n}',
     'fate.endlessMid':   'Infini · Étage {layer}',
     'fate.subtitle':     '{tag} · {n} cases',
     'fate.hint':         'Reroll : regarde une pub pour changer',
@@ -106,7 +105,7 @@ export const FR: Record<string, string> = {
     'pause.title':       '⏸ En pause',
     'pause.hint':        'Touche Continuer pour reprendre',
     'pause.continue':    '▶ Continuer',
-    'pause.home':        '< Accueil',
+    'pause.home':        '■ Accueil',
 
     'debug.forceWin':    'Gagner',
 
@@ -156,7 +155,6 @@ export const FR: Record<string, string> = {
     'result.win':        'Réussi ✓',
     'result.retry':      'Réessayer',
     'result.endlessRetry': 'Rejouer',
-    'result.nextLevel':  'Niveau suivant',
     'result.replay':     'Rejouer',
     'result.levelSelect':'Niveaux',
     'result.home':       'Accueil',
@@ -250,4 +248,5 @@ export const FR: Record<string, string> = {
     'lock.blind':        'Atteins {n} étages en Mode Infini pour déverrouiller le Mode Aveugle',
     'lock.leaderboard':  'Atteins {n} étages en Mode Infini pour déverrouiller le Classement',
     'level.next':        'Niveau suivant',
+    'level.floor':       'Étage {n}',
 };

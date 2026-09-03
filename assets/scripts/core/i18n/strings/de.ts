@@ -89,7 +89,6 @@ export const DE: Record<string, string> = {
     'fate.start':        'Start',
     'fate.cellCount':    '{n} Felder',
     'fate.endlessSub':   'Endlos',
-    'fate.levelSub':     'Level {n}',
     'fate.endlessMid':   'Endlos · Ebene {layer}',
     'fate.subtitle':     '{tag} · {n} Felder',
     'fate.hint':         'Schicksal ändern: Werbung ansehen für neues Stück',
@@ -108,7 +107,7 @@ export const DE: Record<string, string> = {
     'pause.title':       '⏸ Pausiert',
     'pause.hint':        'Tippe Weiter um fortzufahren',
     'pause.continue':    '▶ Weiter',
-    'pause.home':        '< Start',
+    'pause.home':        '■ Start',
 
     'debug.forceWin':    'Gewinnen',
 
@@ -158,7 +157,6 @@ export const DE: Record<string, string> = {
     'result.win':        'Geschafft ✓',
     'result.retry':      'Erneut',
     'result.endlessRetry': 'Nochmal',
-    'result.nextLevel':  'Nächstes Level',
     'result.replay':     'Wiederholen',
     'result.levelSelect':'Level',
     'result.home':       'Start',
@@ -252,4 +250,5 @@ export const DE: Record<string, string> = {
     'lock.blind':        'Erreiche {n} Ebenen im Endlos-Modus, um den Blind-Modus freizuschalten',
     'lock.leaderboard':  'Erreiche {n} Ebenen im Endlos-Modus, um die Rangliste freizuschalten',
     'level.next':        'Nächstes Level',
+    'level.floor':       'Etage {n}',
 };

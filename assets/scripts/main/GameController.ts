@@ -672,10 +672,25 @@ export class GameController extends Component {
                         // Server does best-of merging, so replaying an
                         // easier level doesn't downgrade the score.
                         const clearedCount = LevelProgress.maxClearedIdx + 1;
-                        log(`[TowerBlocks] submitting level score ${clearedCount} to leaderboard`);
-                        submitScore('level', clearedCount).catch(err => {
-                            console.warn('[TowerBlocks] leaderboard submit failed:', err.message);
-                        });
+                        // Gate: only report once the player has reached
+                        // FLOOR 10 or below (i.e. cleared level index ≥ 89
+                        // in a 99-floor tower). Cleared levels 1..89 stay
+                        // off the board — early floors are trivial for
+                        // everyone and would swamp the leaderboard with
+                        // noise. Threshold uses flatLevels.length so it
+                        // adapts if the total floor count changes; falls
+                        // back to 99 when the array isn't wired.
+                        const totalFloors = this.flatLevels?.length ?? 99;
+                        const currentFloor = totalFloors - this._activeLevelIdx;
+                        const LEADERBOARD_FLOOR_THRESHOLD = 10;
+                        if (currentFloor <= LEADERBOARD_FLOOR_THRESHOLD) {
+                            log(`[TowerBlocks] submitting level score ${clearedCount} to leaderboard (floor ${currentFloor})`);
+                            submitScore('level', clearedCount).catch(err => {
+                                console.warn('[TowerBlocks] leaderboard submit failed:', err.message);
+                            });
+                        } else {
+                            log(`[TowerBlocks] floor ${currentFloor} above threshold ${LEADERBOARD_FLOOR_THRESHOLD}, skipping leaderboard submit`);
+                        }
                     }
                     // `level_win` SFX intentionally NOT played here —
                     // line_clear + shatter audio is still playing and
@@ -767,6 +782,16 @@ export class GameController extends Component {
             HapticsManager.impact('medium');
                 },
                 onMortarLanded: (_r, _c, _color) => {
+                    // Every mortar drop locks a tile into the stack — play
+                    // the piece_lock cue so it feels like the block just
+                    // landed (mortar's visual outcome IS a locked stack
+                    // tile, so the audio matches).
+                    SoundManager.instance?.play('piece_lock');
+                    // First drop of each storm ALSO plays mortar_land
+                    // (the "storm's first hit landed" cue) + a heavier
+                    // haptic. Subsequent drops in the same storm get the
+                    // piece_lock above only — keeps the audio busy but
+                    // not overwhelming when many drops rain at once.
                     if (!this._mortarLandSfxArmed) return;
                     this._mortarLandSfxArmed = false;
                     SoundManager.instance?.play('mortar_land');
@@ -1646,6 +1671,20 @@ export class GameController extends Component {
         SoundManager.suppressClickSound(this.authoredRotatePieceButton);
     }
 
+    /** Central "player tried to rotate the tower one column" side-effects.
+     *  Called from every input path (buttons, keyboard, touch drag/fling,
+     *  legacy swipe). Picks the SFX based on whether the piece actually
+     *  moved — a rotate that got jammed by the falling piece plays
+     *  rotate_blocked instead of rotate_tower so the audio matches what
+     *  the player sees. Haptic is fired unconditionally (feels right for
+     *  both "click" and "thunk"). */
+    private _tryRotateTower(dir: 1 | -1): void {
+        if (!this.gameState) return;
+        const moved = this.gameState.moveCylinder(dir);
+        SoundManager.instance?.play(moved ? 'rotate_tower' : 'rotate_blocked');
+        HapticsManager.impact('light');
+    }
+
     private _rotateButtonHold(dir: 1 | -1): void {
         if (!this.gameState) return;
         // First tap: single step immediately. The repeat interval is
@@ -1653,9 +1692,7 @@ export class GameController extends Component {
         // fires the initial move and never enters continuous mode —
         // fixes the "one tap rotates 2 columns" bug where the interval's
         // 80 ms firing beat the TOUCH_END clear on average taps.
-        this.gameState.moveCylinder(dir);
-        SoundManager.instance?.play('rotate_tower');
-        HapticsManager.impact('light');
+        this._tryRotateTower(dir);
         // Clear any leftover handles from a previous press.
         if (this._btnHoldHandle !== null) clearInterval(this._btnHoldHandle);
         if (this._btnHoldDelayHandle !== null) clearTimeout(this._btnHoldDelayHandle);
@@ -1663,9 +1700,7 @@ export class GameController extends Component {
             this._btnHoldDelayHandle = null;
             this._btnHoldHandle = setInterval(() => {
                 if (!this.gameState) return;
-                this.gameState.moveCylinder(dir);
-                SoundManager.instance?.play('rotate_tower');
-                HapticsManager.impact('light');
+                this._tryRotateTower(dir);
             }, GameController.HOLD_REPEAT_MS);
         }, GameController.BTN_HOLD_START_MS);
     }
@@ -2092,17 +2127,13 @@ export class GameController extends Component {
         if (this.leftHeld > 0 &&
             now - this.leftHeld >= GameController.DAS_DELAY &&
             now - this.leftLastFire >= GameController.REPEAT_INTERVAL) {
-            this.gameState.moveCylinder(-1);
-            SoundManager.instance?.play('rotate_tower');
-            HapticsManager.impact('light');
+            this._tryRotateTower(-1);
             this.leftLastFire = now;
         }
         if (this.rightHeld > 0 &&
             now - this.rightHeld >= GameController.DAS_DELAY &&
             now - this.rightLastFire >= GameController.REPEAT_INTERVAL) {
-            this.gameState.moveCylinder(+1);
-            SoundManager.instance?.play('rotate_tower');
-            HapticsManager.impact('light');
+            this._tryRotateTower(+1);
             this.rightLastFire = now;
         }
     }
@@ -3287,15 +3318,11 @@ export class GameController extends Component {
         const now = Date.now();
         switch (evt.keyCode) {
             case KeyCode.ARROW_LEFT:
-                this.gameState.moveCylinder(-1);
-                SoundManager.instance?.play('rotate_tower');
-            HapticsManager.impact('light');
+                this._tryRotateTower(-1);
                 if (this.leftHeld === 0) { this.leftHeld = now; this.leftLastFire = now; }
                 break;
             case KeyCode.ARROW_RIGHT:
-                this.gameState.moveCylinder(+1);
-                SoundManager.instance?.play('rotate_tower');
-            HapticsManager.impact('light');
+                this._tryRotateTower(+1);
                 if (this.rightHeld === 0) { this.rightHeld = now; this.rightLastFire = now; }
                 break;
             case KeyCode.ARROW_UP:
@@ -3355,11 +3382,11 @@ export class GameController extends Component {
         let handled = true;
         switch (e.code) {
             case 'ArrowLeft':
-                this.gameState.moveCylinder(-1);
+                this._tryRotateTower(-1);
                 if (this.leftHeld === 0) { this.leftHeld = now; this.leftLastFire = now; }
                 break;
             case 'ArrowRight':
-                this.gameState.moveCylinder(+1);
+                this._tryRotateTower(+1);
                 if (this.rightHeld === 0) { this.rightHeld = now; this.rightLastFire = now; }
                 break;
             // Single-shot keys — ignore browser auto-repeat by checking e.repeat.
@@ -4273,9 +4300,7 @@ export class GameController extends Component {
         if (absX < absY) return;
         this.touchIsContinuous = true;
         this.touchLastDir = dx > 0 ? -1 : 1;
-        this.gameState.moveCylinder(this.touchLastDir);
-        SoundManager.instance?.play('rotate_tower');
-        HapticsManager.impact('light');
+        this._tryRotateTower(this.touchLastDir);
         const startedAt = Date.now();
         let bumped = false;
         const spin = (): void => {
@@ -4283,9 +4308,7 @@ export class GameController extends Component {
                 this.clearTouchHoldTimers();
                 return;
             }
-            this.gameState.moveCylinder(this.touchLastDir);
-            SoundManager.instance?.play('rotate_tower');
-            HapticsManager.impact('light');
+            this._tryRotateTower(this.touchLastDir as 1 | -1);
             if (!bumped && Date.now() - startedAt >= GameController.HOLD_FAST_AFTER_MS) {
                 bumped = true;
                 if (this.touchHoldRepeatHandle !== null) clearInterval(this.touchHoldRepeatHandle);
@@ -4330,16 +4353,12 @@ export class GameController extends Component {
         const dx = loc.x - this.touchStartX;
         const targetCumCol = -Math.trunc(dx / GameController.PX_PER_COL_DRAG);
         while (this._touchDragCumCol < targetCumCol) {
-            this.gameState.moveCylinder(1);
-            SoundManager.instance?.play('rotate_tower');
-            HapticsManager.impact('light');
+            this._tryRotateTower(1);
             this._touchDragCumCol++;
             this.touchIsContinuous = true;
         }
         while (this._touchDragCumCol > targetCumCol) {
-            this.gameState.moveCylinder(-1);
-            SoundManager.instance?.play('rotate_tower');
-            HapticsManager.impact('light');
+            this._tryRotateTower(-1);
             this._touchDragCumCol--;
             this.touchIsContinuous = true;
         }
@@ -4377,9 +4396,7 @@ export class GameController extends Component {
             }
             if (absX >= GameController.TAP_MAX_PX && absX >= absY) {
                 const dir: 1 | -1 = dx > 0 ? -1 : 1;
-                this.gameState.moveCylinder(dir);
-                SoundManager.instance?.play('rotate_tower');
-                HapticsManager.impact('light');
+                this._tryRotateTower(dir);
                 this.touchActive = false;
                 return;
             }
@@ -4458,15 +4475,11 @@ export class GameController extends Component {
         //    tap-tap-tap so the fling doesn't merge into a continuous
         //    buzz on iOS (fixed-duration system vibrate).
         while (this._flingAccum >= 1) {
-            this.gameState.moveCylinder(1);
-            SoundManager.instance?.play('rotate_tower');
-            HapticsManager.impact('light');
+            this._tryRotateTower(1);
             this._flingAccum -= 1;
         }
         while (this._flingAccum <= -1) {
-            this.gameState.moveCylinder(-1);
-            SoundManager.instance?.play('rotate_tower');
-            HapticsManager.impact('light');
+            this._tryRotateTower(-1);
             this._flingAccum += 1;
         }
         // 3. Apply linear friction — magnitude decreases at
