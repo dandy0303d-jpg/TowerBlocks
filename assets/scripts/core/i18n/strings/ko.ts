@@ -106,7 +106,6 @@ export const KO: Record<string, string> = {
     'fate.start':        '시작',
     'fate.cellCount':    '{n}칸',
     'fate.endlessSub':   '무한 모드',
-    'fate.levelSub':     '스테이지 {n}',
     'fate.endlessMid':   '무한 모드 · {layer}층',
     'fate.subtitle':     '{tag} · {n}칸',
     'fate.hint':         '운명을 바꿔라: 광고를 보고 새 운명 블록으로 교체',
@@ -162,7 +161,7 @@ export const KO: Record<string, string> = {
     'pause.title':       '⏸ 일시정지',
     'pause.hint':        '탭하여 게임으로 돌아가기',
     'pause.continue':    '▶ 계속',
-    'pause.home':        '< 홈',
+    'pause.home':        '■ 홈',
 
     // ---------- DEV buttons ----------
     'debug.forceWin':    '강제 클리어',
@@ -175,7 +174,6 @@ export const KO: Record<string, string> = {
     'result.win':        '클리어 ✓',
     'result.retry':      '다시 시도',
     'result.endlessRetry': '다시 하기',
-    'result.nextLevel':  '다음 스테이지',
     'result.replay':     '다시 플레이',
     'result.levelSelect':'스테이지',
     'result.home':       '홈',
@@ -277,4 +275,5 @@ export const KO: Record<string, string> = {
     'lock.blind':        '무한 모드에서 {n}층 달성 시 블라인드 모드 해금',
     'lock.leaderboard':  '무한 모드에서 {n}층 달성 시 랭킹 해금',
     'level.next':        '다음 스테이지',
+    'level.floor':       '{n}층',
 };

@@ -101,7 +101,6 @@ export const ZH: Record<string, string> = {
     'fate.start':        '直接开始',
     'fate.cellCount':    '共 {n} 格',
     'fate.endlessSub':   '无尽模式',
-    'fate.levelSub':     '关卡 {n}',
     'fate.endlessMid':   '无尽模式 · {layer} 层',
     'fate.subtitle':     '{tag} · 共 {n} 格',
     'fate.hint':         '逆天改命：观看广告随机换一个本命方块',
@@ -126,7 +125,7 @@ export const ZH: Record<string, string> = {
     'pause.title':       '⏸ 已暂停',
     'pause.hint':        '点击继续回到游戏',
     'pause.continue':    '▶ 继续',
-    'pause.home':        '< 主页',
+    'pause.home':        '■ 主页',
 
     // ---------- DEV 按钮 ----------
     'debug.forceWin':    '一键通关',
@@ -182,7 +181,6 @@ export const ZH: Record<string, string> = {
     'result.win':        '过关 ✓',
     'result.retry':      '重试',
     'result.endlessRetry': '再来一局',
-    'result.nextLevel':  '下一关',
     'result.replay':     '重玩',
     'result.levelSelect':'选关',
     'result.home':       '主页',
@@ -302,4 +300,5 @@ export const ZH: Record<string, string> = {
     'lock.blind':        '无尽模式达到 {n} 层后解锁闭眼模式',
     'lock.leaderboard':  '无尽模式达到 {n} 层后解锁排行榜',
     'level.next':        '下一关',
+    'level.floor':       '第 {n} 层',
 };

@@ -96,7 +96,6 @@ export const ES: Record<string, string> = {
     'fate.start':        'Comenzar',
     'fate.cellCount':    '{n} celdas',
     'fate.endlessSub':   'Infinito',
-    'fate.levelSub':     'Nivel {n}',
     'fate.endlessMid':   'Infinito · Capa {layer}',
     'fate.subtitle':     '{tag} · {n} celdas',
     'fate.hint':         'Rerroll: ver anuncio para cambiar la pieza',
@@ -120,7 +119,7 @@ export const ES: Record<string, string> = {
     'pause.title':       '⏸ Pausado',
     'pause.hint':        'Toca Continuar para volver',
     'pause.continue':    '▶ Continuar',
-    'pause.home':        '< Inicio',
+    'pause.home':        '■ Inicio',
 
     // ---------- DEV ----------
     'debug.forceWin':    'Ganar',
@@ -176,7 +175,6 @@ export const ES: Record<string, string> = {
     'result.win':        '¡Completado! ✓',
     'result.retry':      'Reintentar',
     'result.endlessRetry': 'Jugar de nuevo',
-    'result.nextLevel':  'Siguiente nivel',
     'result.replay':     'Repetir',
     'result.levelSelect':'Niveles',
     'result.home':       'Inicio',
@@ -272,4 +270,5 @@ export const ES: Record<string, string> = {
     'lock.blind':        'Alcanza {n} capas en Modo Infinito para desbloquear el Modo Ciego',
     'lock.leaderboard':  'Alcanza {n} capas en Modo Infinito para desbloquear la Clasificación',
     'level.next':        'Siguiente nivel',
+    'level.floor':       'Piso {n}',
 };

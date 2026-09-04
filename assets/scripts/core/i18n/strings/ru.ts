@@ -88,7 +88,6 @@ export const RU: Record<string, string> = {
     'fate.start':        'Старт',
     'fate.cellCount':    '{n} клеток',
     'fate.endlessSub':   'Бесконечный',
-    'fate.levelSub':     'Уровень {n}',
     'fate.endlessMid':   'Бесконечный · Слой {layer}',
     'fate.subtitle':     '{tag} · {n} клеток',
     'fate.hint':         'Изменить судьбу: смотри рекламу для замены блока',
@@ -107,7 +106,7 @@ export const RU: Record<string, string> = {
     'pause.title':       '⏸ Пауза',
     'pause.hint':        'Нажми Продолжить чтобы вернуться',
     'pause.continue':    '▶ Продолжить',
-    'pause.home':        '< Домой',
+    'pause.home':        '■ Домой',
 
     'debug.forceWin':    'Победа',
 
@@ -157,7 +156,6 @@ export const RU: Record<string, string> = {
     'result.win':        'Пройдено ✓',
     'result.retry':      'Заново',
     'result.endlessRetry': 'Ещё раз',
-    'result.nextLevel':  'Следующий уровень',
     'result.replay':     'Реплей',
     'result.levelSelect':'Уровни',
     'result.home':       'Домой',
@@ -251,4 +249,5 @@ export const RU: Record<string, string> = {
     'lock.blind':        'Достигни {n} слоёв в Бесконечном режиме, чтобы открыть Слепой режим',
     'lock.leaderboard':  'Достигни {n} слоёв в Бесконечном режиме, чтобы открыть Рейтинг',
     'level.next':        'Следующий уровень',
+    'level.floor':       'Этаж {n}',
 };
