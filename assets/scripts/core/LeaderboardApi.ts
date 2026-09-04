@@ -57,19 +57,49 @@ export interface RefreshResult {
 /** Full profile shape returned by GET /player/:uuid/profile.
  *  bestScores values are 0 when the player has no submitted run
  *  for that mode yet. */
+/** Per-slot state for the server-authoritative daily-free reroll
+ *  counters. See DailyFreeApi for the atomic consume endpoint. */
+export interface DailyFreeSlotState {
+    /** How many free uses the player consumed today for this slot. */
+    used:      number;
+    /** Max free uses per day (config; identical across players today
+     *  but exposed per-slot so future A/B testing is trivial). */
+    max:       number;
+    /** Convenience — max - used, clamped ≥ 0. */
+    remaining: number;
+}
+
+export interface DailyFreeState {
+    magic:   DailyFreeSlotState;
+    fate:    DailyFreeSlotState;
+    /** ISO timestamp when the counters reset (server midnight UTC).
+     *  Client can use this to show "resets in N hours" if desired. */
+    resetAt: string;
+}
+
 export interface PlayerProfileResult {
     uuid:       string;
     name:       string;
     avatarIdx:  number;
     bestScores: { level: number; endless: number; blind: number };
+    /** ISO timestamp when the player can next change their nickname,
+     *  or null if they can change immediately (never changed / cooldown
+     *  already elapsed). Server enforces the 7-day rule authoritatively. */
+    nicknameNextChangeAt?: string | null;
+    /** Server-authoritative daily free reroll counters for the two
+     *  ad-gated placements. Missing on older server builds — clients
+     *  fall back to client-side counters in that case. */
+    dailyFree?: DailyFreeState;
 }
 
 /** Response from the PUT profile endpoint — same shape as the
- *  register call plus avatarIdx (never the bestScores block). */
+ *  register call plus avatarIdx (never the bestScores block). Plus
+ *  the updated `nicknameNextChangeAt` when a name change succeeded. */
 export interface PlayerProfileUpdateResult {
     uuid:      string;
     name:      string;
     avatarIdx: number;
+    nicknameNextChangeAt?: string | null;
 }
 
 /** Fetch the top N entries for `mode`. Backend caps at 500 regardless

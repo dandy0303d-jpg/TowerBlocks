@@ -731,7 +731,17 @@ export class MenuController extends Component {
             // request (wallet fetch) so a banned player hits the 403
             // + modal BEFORE the main menu shows. Fire-and-forget —
             // non-ban errors don't block boot.
-            fetchWallet().catch((err) => {
+            // Boot wallet fetch — primary purpose is to trigger the
+            // banned-user check (which happens inside the auth path
+            // before this promise resolves). Bonus: use the response
+            // to paint the mode-select topup button's balance label so
+            // it shows the real number instead of the authored "99999"
+            // placeholder. Fire-and-forget — non-ban errors don't
+            // block boot.
+            fetchWallet().then((w) => {
+                this._cachedGemBalance = w.gems;
+                this.paintBalanceButton(w.gems);
+            }).catch((err) => {
                 if (!getBannedState()) {
                     console.warn(`[MenuController] boot wallet fetch failed (non-ban): ${err?.message}`);
                 }
@@ -891,6 +901,16 @@ export class MenuController extends Component {
         // endless run shouldn't accidentally route into blind mode.
         this.blindModeActive = false;
         BgmManager.instance?.play('menu');
+        // Balance button — paint cached value immediately (avoids the
+        // "99999" placeholder flash on return-to-home), then re-fetch
+        // in the background to catch any changes (paid refresh spent
+        // gems, ad reward credited on server, IAP completed while
+        // player was in-game, etc.).
+        this.paintBalanceButton(this._cachedGemBalance);
+        fetchWallet().then((w) => {
+            this._cachedGemBalance = w.gems;
+            this.paintBalanceButton(w.gems);
+        }).catch(() => { /* silent — cached value is fine */ });
     }
 
     public showLevelSelect(): void {
@@ -1230,7 +1250,16 @@ export class MenuController extends Component {
             // Step 3+4: pop the fate preview modal; onDone (after holdMs)
             // triggers assembly.
             if (hud && typeof hud.showFatePreview === 'function' && nextRawLvl) {
-                hud.showFatePreview(nextRawLvl, advance, holdMs, t('level.next'));
+                // Title reads "第 {n} 层" (Floor {n}). The tower is climbed
+                // from the TOP down — first level is the top floor, last
+                // level is floor 1 — so the floor number is
+                // (totalLevels − levelIdx). With 99 levels: level 0 → 99F,
+                // level 1 → 98F, …, level 98 → 1F. Use flatLevels.length
+                // rather than hard-coding 99 so adding/removing levels
+                // Just Works.
+                const totalFloors = flatLevels ? flatLevels.length : 99;
+                const floorNum    = totalFloors - nextIdx;
+                hud.showFatePreview(nextRawLvl, advance, holdMs, t('level.floor', { n: floorNum }));
             } else {
                 this.scheduleOnce(advance, holdMs / 1000);
             }

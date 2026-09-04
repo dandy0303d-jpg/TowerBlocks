@@ -36,6 +36,8 @@ import { FontManager } from '../core/FontManager';
 import { SoundManager } from '../audio/SoundManager';
 import { t, subscribe as subscribeI18n } from '../core/i18n/I18n';
 import { fetchRefreshCost, purchaseRefresh, RefreshType } from '../core/RefreshApi';
+import { consumeDailyFree } from '../core/DailyFreeApi';
+import { PlayerProfile } from '../core/PlayerProfile';
 import { IS_DEV_BUILD } from '../core/BuildConfig';
 
 /** 5-row × 3-col pixel-font bitmap patterns for digits 0-9. Each row is
@@ -2130,12 +2132,22 @@ export class HudController extends Component {
         }
     }
 
+    /** Fallback max free picker refreshes shown when the server hasn't
+     *  reported a real number yet (fresh boot / offline). Must match
+     *  the "/3" denominator in the picker.refresh i18n string. */
+    private static readonly DEFAULT_FREE_REFRESHES = 3;
+
     private updateRefreshButtonLabel(): void {
-        // 1st refresh is free; subsequent ones cost an ad watch (UI gate
-        // not implemented yet — we just keep refreshing for now and the
-        // label communicates the future cost).
-        const txt = this.refreshesUsedThisFull === 0
-            ? t('picker.refresh')
+        // Read the server-authoritative daily-free counter from
+        // PlayerProfile. null = server hasn't reported yet — show the
+        // optimistic default (3); the atomic consume call on click
+        // will correct it if the server disagrees.
+        const serverRemaining = PlayerProfile.dailyFreeRemaining('magic');
+        const remaining = (typeof serverRemaining === 'number')
+            ? serverRemaining
+            : HudController.DEFAULT_FREE_REFRESHES;
+        const txt = remaining > 0
+            ? t('picker.refresh',   { n: remaining })
             : t('picker.adRefresh');
         if (this.authoredPickerRefreshLabel) this.authoredPickerRefreshLabel.string = txt;
         if (this.refreshBtnLabel) this.refreshBtnLabel.string = txt;
@@ -2430,11 +2442,31 @@ export class HudController extends Component {
     private onRefreshClicked(): void {
         const g = this.gameController?.gameState;
         if (!g) return;
-        // TODO(ads): when refreshesUsedThisFull > 0, gate behind a successful
-        // ad-watch callback. For now we always allow the refresh.
-        g.refreshEnergyPicker();
-        this.refreshesUsedThisFull++;
-        this.updateRefreshButtonLabel();
+        // Server-authoritative daily-free gate. POST /player/daily-free/consume
+        // atomically checks-and-decrements — on 200 we grant the refresh
+        // and update the cached remaining count; on 429 the slot is
+        // exhausted for today and we log (UI can later fall back to a
+        // paid or ad path).
+        void (async () => {
+            try {
+                const r = await consumeDailyFree('magic');
+                PlayerProfile.setDailyFreeRemaining('magic', r.remaining);
+                g.refreshEnergyPicker();
+                this.refreshesUsedThisFull++;
+                this.updateRefreshButtonLabel();
+            } catch (err) {
+                const msg = String((err as any)?.message ?? err);
+                // 429 = daily quota used up. Refresh the label so it
+                // switches to the ad-watch state (remaining=0).
+                if (msg.includes('HTTP 429')) {
+                    PlayerProfile.setDailyFreeRemaining('magic', 0);
+                    this.updateRefreshButtonLabel();
+                    console.log('[Picker] daily-free exhausted — showing ad-watch label');
+                    return;
+                }
+                console.warn('[Picker] daily-free consume failed:', msg);
+            }
+        })();
     }
 
     // ============================================================
@@ -3020,9 +3052,15 @@ export class HudController extends Component {
                 if (s[r][c]) cellCount++;
             }
         }
+        // Level mode: show the floor number instead of the level order.
+        // Game convention — no "levels", only "floors": level order 1 is
+        // the TOP of the 99-floor tower (floor 99), level order 99 is the
+        // bottom (floor 1). Hardcode 100 (= totalLevels + 1) since
+        // HudController doesn't have flatLevels; if you ever change the
+        // total level count away from 99, update the 100 below.
         const prefix = this.fateIsEndlessEntry
             ? t('fate.endlessSub')
-            : t('fate.levelSub', { n: this.fateLevelOrder || '?' });
+            : t('level.floor', { n: this.fateLevelOrder ? (100 - this.fateLevelOrder) : '?' });
         this.fateSubLab.string = t('fate.subtitle', { tag: prefix, n: cellCount });
     }
 

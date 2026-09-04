@@ -98,7 +98,6 @@ export const EN: Record<string, string> = {
     'fate.start':        'Start',
     'fate.cellCount':    '{n} cells',
     'fate.endlessSub':   'Endless',
-    'fate.levelSub':     'Level {n}',
     'fate.endlessMid':   'Endless · Layer {layer}',
     'fate.subtitle':     '{tag} · {n} cells',
     'fate.hint':         'Reroll: watch an ad to swap for a random fate piece',
@@ -123,7 +122,7 @@ export const EN: Record<string, string> = {
     'pause.title':       '⏸ Paused',
     'pause.hint':        'Tap Continue to resume',
     'pause.continue':    '▶ Continue',
-    'pause.home':        '< Home',
+    'pause.home':        '■ Home',
 
     // ---------- DEV buttons ----------
     'debug.forceWin':    'Force Win',
@@ -179,7 +178,6 @@ export const EN: Record<string, string> = {
     'result.win':        'Cleared ✓',
     'result.retry':      'Retry',
     'result.endlessRetry': 'Play Again',
-    'result.nextLevel':  'Next Level',
     'result.replay':     'Replay',
     'result.levelSelect':'Levels',
     'result.home':       'Home',
@@ -296,4 +294,5 @@ export const EN: Record<string, string> = {
     'lock.blind':        'Reach {n} layers in Endless to unlock Blind mode',
     'lock.leaderboard':  'Reach {n} layers in Endless to unlock Leaderboard',
     'level.next':        'Next Level',
+    'level.floor':       'Floor {n}',
 };

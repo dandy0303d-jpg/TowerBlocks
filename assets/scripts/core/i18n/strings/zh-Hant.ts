@@ -98,7 +98,6 @@ export const ZH_HANT: Record<string, string> = {
     'fate.start':        '直接開始',
     'fate.cellCount':    '共 {n} 格',
     'fate.endlessSub':   '無盡模式',
-    'fate.levelSub':     '關卡 {n}',
     'fate.endlessMid':   '無盡模式 · {layer} 層',
     'fate.subtitle':     '{tag} · 共 {n} 格',
     'fate.hint':         '逆天改命：觀看廣告隨機換一個本命方塊',
@@ -122,7 +121,7 @@ export const ZH_HANT: Record<string, string> = {
     'pause.title':       '⏸ 已暫停',
     'pause.hint':        '點擊繼續回到遊戲',
     'pause.continue':    '▶ 繼續',
-    'pause.home':        '< 主頁',
+    'pause.home':        '■ 主頁',
 
     // ---------- DEV 按鈕 ----------
     'debug.forceWin':    '一鍵通關',
@@ -178,7 +177,6 @@ export const ZH_HANT: Record<string, string> = {
     'result.win':        '過關 ✓',
     'result.retry':      '重試',
     'result.endlessRetry': '再來一局',
-    'result.nextLevel':  '下一關',
     'result.replay':     '重玩',
     'result.levelSelect':'選關',
     'result.home':       '主頁',
@@ -276,4 +274,5 @@ export const ZH_HANT: Record<string, string> = {
     'lock.blind':        '無盡模式達到 {n} 層後解鎖閉眼模式',
     'lock.leaderboard':  '無盡模式達到 {n} 層後解鎖排行榜',
     'level.next':        '下一關',
+    'level.floor':       '第 {n} 層',
 };

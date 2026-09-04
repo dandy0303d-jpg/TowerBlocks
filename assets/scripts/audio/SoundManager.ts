@@ -24,6 +24,7 @@ const { ccclass, property } = _decorator;
 
 export type SfxKey =
     | 'rotate_tower'   // 塔旋转 (cylinder move)
+    | 'rotate_blocked' // 塔被卡住 (moveCylinder returned false — falling piece jams the rotation)
     | 'piece_lock'     // 方块落地 (piece lands)
     | 'piece_rotate'   // 方块旋转 (tryRotate)
     | 'hard_drop'      // 硬降 (spacebar / swipe down)
@@ -51,6 +52,9 @@ export class SoundManager extends Component {
 
     @property({ type: AudioClip, tooltip: '塔旋转音效' })
     rotateTower: AudioClip | null = null;
+
+    @property({ type: AudioClip, tooltip: '塔被卡住音效（下落方块顶住了塔，无法旋转时播放）' })
+    rotateBlocked: AudioClip | null = null;
 
     @property({ type: AudioClip, tooltip: '方块落地音效（咚）' })
     pieceLock: AudioClip | null = null;
@@ -189,7 +193,8 @@ export class SoundManager extends Component {
 
     private clipFor(key: SfxKey): AudioClip | null {
         switch (key) {
-            case 'rotate_tower':  return this.rotateTower;
+            case 'rotate_tower':   return this.rotateTower;
+            case 'rotate_blocked': return this.rotateBlocked;
             case 'piece_lock':    return this.pieceLock;
             case 'piece_rotate':  return this.pieceRotate;
             case 'hard_drop':     return this.hardDrop;
