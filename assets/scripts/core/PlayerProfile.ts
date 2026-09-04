@@ -23,6 +23,7 @@
 
 import { sys } from 'cc';
 import { registerPlayer, updatePlayerProfile, fetchPlayerProfile, refreshPlayerToken } from './LeaderboardApi';
+import type { DailyFreeState } from './LeaderboardApi';
 import { setBearerToken } from './Http';
 
 const UUID_KEY    = 'tt.player.uuid';
@@ -72,6 +73,13 @@ class Profile {
     private _name: string | null = null;
     private _accountType: AccountType | null | undefined = undefined;   // undefined = not loaded
     private _avatarIdx: number | null = null;   // null = never picked → renderer falls back to uuid hash
+
+    /** Server-authoritative daily-free reroll counters. `null` = not
+     *  yet fetched (fresh boot, offline). HUD callers should call
+     *  DailyFreeApi.consume() rather than reading this directly for
+     *  the atomic check-and-increment; this cache exists so the UI
+     *  can render "N left today" labels without a round-trip. */
+    private _dailyFree: DailyFreeState | null = null;
 
     /** Current uuid. If `ensureRegistered()` hasn't succeeded yet,
      *  returns a lazily-generated local UUID (offline fallback). */
@@ -201,6 +209,10 @@ class Profile {
         const p = await fetchPlayerProfile();
         this._name = p.name;
         this._avatarIdx = p.avatarIdx;
+        // Cache the server-authoritative daily-free counters (optional
+        // field — older servers won't include it). HUD reads via
+        // dailyFreeRemaining() below.
+        if (p.dailyFree) this._dailyFree = p.dailyFree;
         sys.localStorage.setItem(NAME_KEY, p.name);
         sys.localStorage.setItem(AVATAR_KEY, String(p.avatarIdx));
         return {
@@ -208,6 +220,27 @@ class Profile {
             avatarIdx: p.avatarIdx,
             bestScores: p.bestScores,
         };
+    }
+
+    /** Remaining daily-free rerolls for a given slot, per the server's
+     *  last known state. Returns `null` when server hasn't reported
+     *  yet (fresh boot / offline) — UI should treat null as "unknown,
+     *  optimistically show max and let the atomic consume call
+     *  correct it". Returns 0 when the slot is exhausted for today. */
+    dailyFreeRemaining(kind: 'magic' | 'fate'): number | null {
+        if (!this._dailyFree) return null;
+        return this._dailyFree[kind]?.remaining ?? null;
+    }
+
+    /** Overwrite the local cache of a slot's remaining count after a
+     *  successful DailyFreeApi.consume — keeps HUD labels fresh
+     *  without needing a full profile refetch. */
+    setDailyFreeRemaining(kind: 'magic' | 'fate', remaining: number): void {
+        if (!this._dailyFree) return;
+        const slot = this._dailyFree[kind];
+        if (!slot) return;
+        slot.remaining = Math.max(0, remaining);
+        slot.used = Math.max(0, slot.max - slot.remaining);
     }
 
     /**
