@@ -18,6 +18,7 @@ import {
     director,
     Font,
     tween,
+    Tween,
     log,
 } from 'cc';
 import { ensureDimBackdrop } from './UiHelpers';
@@ -27,7 +28,7 @@ import { ToastManager } from './ToastManager';
 // at runtime (string-lookup) — direct import would create a circular
 // dependency (HudController → MenuController → HudController) that
 // Rollup rejects at build time.
-import { ITEM_KEYS, ITEM_BASE_PROBS, MagicItemKey, ENERGY_FULL_THRESHOLD, COLORS, SHAPES, PieceType, CellValue, COLS } from '../core/Constants';
+import { ITEM_KEYS, ITEM_BASE_PROBS, MagicItemKey, ENERGY_FULL_THRESHOLD, COLORS, SHAPES, PieceType, CellValue, COLS, Rarity, rarityForKey } from '../core/Constants';
 import { FATE_SHAPES, fateIndexOfShape, pickFateIndex, pickFateIndex4Connected, FATE_SHAPES_4CONNECTED_INDICES, fateShapeAsCustomPiece } from '../core/FateShapes';
 import { CustomPieceDef, LevelData } from '../core/Types';
 import { getKeysMode, subscribe as subscribeSettings } from '../core/Settings';
@@ -35,7 +36,7 @@ import { BgmManager } from '../audio/BgmManager';
 import { FontManager } from '../core/FontManager';
 import { SoundManager } from '../audio/SoundManager';
 import { t, subscribe as subscribeI18n } from '../core/i18n/I18n';
-import { fetchRefreshCost, purchaseRefresh, RefreshType } from '../core/RefreshApi';
+import { purchaseRefresh, RefreshType, REFRESH_COST_TIERS, MAX_PAID_REFRESHES_PER_MODAL } from '../core/RefreshApi';
 import { consumeDailyFree } from '../core/DailyFreeApi';
 import { PlayerProfile } from '../core/PlayerProfile';
 import { IS_DEV_BUILD } from '../core/BuildConfig';
@@ -98,19 +99,9 @@ function itemDesc(key: MagicItemKey): string {
     return t(`desc.${key}`);
 }
 
-/** Rarity tier — drives the picker card's colour, border, and badge so
- *  players can read "did I roll something good?" at a glance. Thresholds
- *  align with ITEM_BASE_PROBS: utility items at the top of the pool are
- *  普通, mid-pool items are 稀有, bottom-pool family tier-3 entries are
- *  史诗. Computed at module load. */
-type Rarity = 'common' | 'uncommon' | 'rare' | 'epic';
-function rarityForKey(key: MagicItemKey): Rarity {
-    const p = ITEM_BASE_PROBS[key] ?? 0;
-    if (p >= 0.10) return 'common';
-    if (p >= 0.05) return 'uncommon';
-    if (p >= 0.02) return 'rare';
-    return 'epic';
-}
+// Rarity type + rarityForKey helper live in core/Constants.ts (single
+// source of truth) so GameState's picker roll can share them for pity
+// boosting without duplicating the threshold table here.
 /** Tuple-to-Color helper — avoids `new Color(...tuple)` spread, which
  *  Cocos Creator's `Color` constructor signature doesn't accept cleanly
  *  in strict TS. */
@@ -231,6 +222,15 @@ export class HudController extends Component {
     @property({ type: Label, tooltip: '层高 Label（右上角）' })
     authoredScoreLabel: Label | null = null;
 
+    @property({ type: Label, tooltip: '关卡计时 Label（暂停按钮下方，格式 MM:SS，仅关卡/收集模式显示）— 通关后 0.8s tween 到屏幕中央 + 前缀 "通关时间：" 展示。可空——不拖则关卡计时器不显示' })
+    authoredLevelTimerLabel: Label | null = null;
+
+    @property({ type: Node, tooltip: '关卡计时 Label 的容器 Node（可选，通常放暂停按钮同级）— tween-to-center 时会移动此 Node。留空时会 tween Label 自己的 node。仅关卡/收集模式显示' })
+    authoredLevelTimerContainer: Node | null = null;
+
+    @property({ type: Sprite, tooltip: '层高 Label 背景 Sprite（可选，纯装饰底图；不拖也没关系）— 通常放在 Label 的同级 sibling，UITransform 铺满 Label 的容器' })
+    authoredScoreBgSprite: Sprite | null = null;
+
     // ============================================================
     //  Authored HUD — 本命方块 (fate piece) modal
     //  Drag the scene nodes into these slots to replace the
@@ -256,6 +256,9 @@ export class HudController extends Component {
 
     @property({ type: Button, tooltip: '逆天改命按钮（点击 → 换一个随机形状）' })
     authoredFateRerollButton: Button | null = null;
+
+    @property({ type: Label, tooltip: '逆天改命按钮上的 Label（脚本按每日剩余次数写"逆天改命 (n/3)" / 用完切"🎬 看广告改命"）— 可空，会自动 getComponentInChildren 找' })
+    authoredFateRerollLabel: Label | null = null;
 
     @property({ type: Button, tooltip: '直接开始按钮（点击 → 确认当前形状进入游戏）' })
     authoredFateStartButton: Button | null = null;
@@ -476,8 +479,62 @@ export class HudController extends Component {
     private pickerSlotStarFills: Sprite[][] = [];   // 2 × 3: filled-star overlays per slot, toggled by tier
     private pickerSlotKeys: (MagicItemKey | null)[] = [null, null];
     private refreshBtnLabel!: Label;
+
+    /** Cached "rest" position of the level timer container (its authored
+     *  local position, snapshot on wire). showLevelClearTime tweens the
+     *  container to (0,0) → hides after modal; if the player replays the
+     *  same level, we restore back to this position on next start. */
+    private _levelTimerRestPos = new Vec3();
+    /** Cached authored scale (mirror of _levelTimerRestPos). Reset needs
+     *  to restore this too — the center-hold animation scales to 5x, and
+     *  without restore the next level's timer would stay 5x and clip out
+     *  of the top-strip. */
+    private _levelTimerRestScale = new Vec3(1, 1, 1);
+    /** True once showLevelClearTime has captured a live snapshot of the
+     *  container's position + scale (i.e., the player has actually cleared
+     *  a level this session). When false, resetLevelTimerPosition MUST
+     *  NOT restore pos/scale — Vec3.ZERO default would snap the container
+     *  to screen center. Cleared after reset restores, and stays false
+     *  across fail/exit paths that never trigger showLevelClearTime. */
+    private _levelTimerSnapshotCaptured: boolean = false;
+    /** True during the "timer disappeared, waiting for fate modal to
+     *  pop" window (the POST_HIDE_MS gap at the end of the level-clear
+     *  animation). refreshHud reads this to skip its per-frame active
+     *  toggle — otherwise the next frame would flip container.active
+     *  back to true and undo the "timer visibly leaves the screen"
+     *  beat the user asked for. Cleared in resetLevelTimerPosition. */
+    private _levelTimerForceHidden: boolean = false;
+    /** Pending setTimeout IDs for the level-clear animation. If a new
+     *  level starts (or the HUD tears down) before the animation
+     *  finishes, we cancel these so a stray callback doesn't fire
+     *  mid-fresh-level and re-tween the container off-position. */
+    private _levelClearTimeouts: ReturnType<typeof setTimeout>[] = [];
+    /** Frozen-time snapshot (whole seconds) painted while the container
+     *  is tweening / displayed as the clear-time modal. When set,
+     *  refreshHud stops updating the label so it doesn't tick past the
+     *  winning time. */
+    private _levelTimerFrozenSec: number | null = null;
+    /** Last integer-second value the timer label was painted to. Skip
+     *  the string write when unchanged — Label.string setter triggers a
+     *  full render-data rebuild, and MM:SS at 60fps would burn cycles
+     *  writing the same string 59 times per tick. */
+    private _levelTimerLastSec = -1;
     private refreshesUsedThisFull = 0;       // resets when picker closes
     private hooksWired = false;
+
+    /** True while the magic picker is in an OPEN session (energy full
+     *  → player still hasn't picked). Set on the FIRST onEnergyPickerOpen
+     *  after a close, cleared on onEnergyPickerClose. Used to gate the
+     *  per-session paid-refresh counter reset — refreshes reopen the
+     *  picker via `hooks.onEnergyPickerOpen` too, but we want to keep
+     *  the tier counter across refreshes within one session. */
+    private _pickerSessionActive: boolean = false;
+
+    /** Mirror of setHudVisible's last `on` value. refreshHud checks
+     *  this before flipping timer container visibility so a stale
+     *  gameState.mode === 'level' doesn't leave the level timer
+     *  visible after the player returns to the main menu. */
+    private _hudOn: boolean = false;
 
     // ---------- 本命方块 (fate piece) entry modal ----------
     private fateOverlay!: Node;
@@ -585,6 +642,12 @@ export class HudController extends Component {
         const fateActive = this.authoredFateOverlay?.active
             || (this.fateOverlay && this.fateOverlay.active);
         if (fateActive) this.refreshFateSubtitle();
+        // Fate reroll button label ("逆天改命 (n/3)") also carries
+        // dynamic count that trackI18nLabel can't re-interpolate —
+        // repaint unconditionally so language switch mid-session picks
+        // up the new locale even for buttons off-screen. Cheap:
+        // updateFateRerollButtonLabel is a single string write.
+        this.updateFateRerollButtonLabel();
     }
 
     /** Show or hide all HUD-built child nodes. Used by MenuController to
@@ -603,6 +666,7 @@ export class HudController extends Component {
      *  re-enable the modal node (visible as orphaned title / buttons
      *  floating over the live game scene). */
     public setHudVisible(on: boolean): void {
+        this._hudOn = on;
         // Energy bar is still built programmatically (buildEnergyBar
         // adds an 'Energy' child under this.node) — keep the name-based
         // toggle for that until it's Sprite-ified in a later batch.
@@ -626,11 +690,21 @@ export class HudController extends Component {
         if (this.authoredDebugWinButton) {
             this.authoredDebugWinButton.node.active = on && IS_DEV_BUILD;
         }
-        // Score container / label — respect the endless-only rule.
-        // When on=true, only show if we're in endless mode; otherwise
-        // keep hidden so it doesn't flash visible for one frame before
-        // refreshHud fires. When on=false (going to menu), always hide.
-        const scoreTarget = this.authoredScoreLabel?.node ?? null;
+        // Score container — respect the endless-only rule. When on=true,
+        // only show if we're in endless mode; otherwise keep hidden so
+        // it doesn't flash visible for one frame before refreshHud fires.
+        // When on=false (going to menu), always hide.
+        //
+        // Toggle the BG SPRITE node (typically the Label's parent, since
+        // the Label sits inside the bg pill in the authored hierarchy).
+        // Falls back to the Label's own node if the bg sprite isn't
+        // wired, matching the pre-bg behaviour. Hiding the bg cascades
+        // to the Label child via Cocos active-in-hierarchy — no need to
+        // toggle both explicitly, and it guarantees the pill can't be
+        // visible without the number (or vice versa).
+        const scoreTarget = this.authoredScoreBgSprite?.node
+                         ?? this.authoredScoreLabel?.node
+                         ?? null;
         if (scoreTarget) {
             const mode = this.gameController?.gameState?.mode;
             // Endless AND blind mode both use the height-based scoring
@@ -639,6 +713,19 @@ export class HudController extends Component {
             scoreTarget.active = on && showsHeight;
         }
         if (this.authoredNextPreviewBox) this.authoredNextPreviewBox.active = on;
+        // Level timer container follows HUD visibility, gated further
+        // by "level mode" inside refreshHud. Force-hide on `on=false`
+        // so returning to the main menu doesn't leave a stale timer
+        // pill on screen even if gameState.mode is still 'level'.
+        const timerNode = this.authoredLevelTimerContainer
+            ?? this.authoredLevelTimerLabel?.node
+            ?? null;
+        if (timerNode) {
+            // Only force-hide on false — on=true is handled by the
+            // per-frame refreshHud paint (which additionally checks
+            // mode === 'level' | 'collect').
+            if (!on) timerNode.active = false;
+        }
         // Virtual on-screen keys: only show during gameplay AND when user
         // has enabled them in Settings.
         const vkeys = this.node.getChildByName('VirtualKeys');
@@ -680,11 +767,27 @@ export class HudController extends Component {
             ...prev,
             onEnergyPickerOpen: (choices) => {
                 prev.onEnergyPickerOpen?.(choices);
+                // Fresh-session detection: this hook fires both on the
+                // energy-bar-full first open AND on every refresh
+                // (refreshEnergyPicker calls it too). Reset the paid-
+                // refresh tier counter ONLY on a fresh open — refreshes
+                // must keep the counter climbing so 10 → 15 → 20 →
+                // 已达上限 actually escalates instead of resetting to
+                // 10 every click. refreshesUsedThisFull is per-session
+                // too and gets reset here safely because it's a "count
+                // of past clicks THIS session" metric.
+                if (!this._pickerSessionActive) {
+                    this._paidRefreshUsed.magic = 0;
+                    this._pickerSessionActive = true;
+                }
                 this.refreshesUsedThisFull = 0;
                 this.showPicker(choices);
             },
             onEnergyPickerClose: () => {
                 prev.onEnergyPickerClose?.();
+                // Session ends → next open is fresh → will reset paid
+                // counter above.
+                this._pickerSessionActive = false;
                 this.hidePicker();
             },
         };
@@ -718,12 +821,15 @@ export class HudController extends Component {
 
         // Score display was removed (both modes no longer score). The
         // left slot of Row 2 is now mode-dependent:
-        //   • Endless — shows 层高 (cumulative full rows = tower height)
-        //   • Level / Collect — hidden (the mode label + lines tell the story)
-        // The score field still exists internally so item snapshots /
-        // rewind don't churn; it just isn't rendered.
+        //   • Endless / Blind — shows 层高 (cumulative full rows = tower height)
+        //   • Level / Collect — HIDDEN (the mode label + lines tell the story)
+        // Toggle the BG SPRITE node (typically the Label's parent) so
+        // hiding cascades to the Label + pill together; fall back to the
+        // Label's own node when bg isn't wired. Otherwise the pill would
+        // stay visible in level mode while only the number disappears.
         if (this.scoreLabel) {
-            const scoreTarget = this.scoreLabel.node;
+            const scoreTarget = this.authoredScoreBgSprite?.node
+                             ?? this.scoreLabel.node;
             // Blind mode uses endless mechanics (height-based scoring),
             // so show 层高 there too.
             if (g.mode === 'endless' || g.mode === 'blind') {
@@ -732,6 +838,46 @@ export class HudController extends Component {
             } else {
                 this.scoreLabel.string = '';
                 scoreTarget.active = false;
+            }
+        }
+        // Level timer paint — only in level / collect modes. Value is
+        // frozen (label stops updating) between showLevelClearTime and
+        // the next reset, so the "通关时间：xx:xx" modal doesn't tick
+        // past the winning number. Endless / blind hide the whole
+        // container. Skip the string write when the integer second
+        // hasn't changed (Label.string setter triggers a full re-tesselate;
+        // at 60fps this would burn cycles writing the same string).
+        // Format: MM:SS with each part zero-padded to 2 digits, and MM
+        // uncapped (55min55sec → "55:55", 105min3sec → "105:03").
+        if (this.authoredLevelTimerLabel) {
+            const containerNode = this.authoredLevelTimerContainer
+                ?? this.authoredLevelTimerLabel.node;
+            // Gate on BOTH gameplay-is-visible AND mode is level/collect.
+            // Additionally respect _levelTimerForceHidden — set true in
+            // showLevelClearTime's hide-at-end callback so the "timer
+            // disappears" beat isn't clobbered by this per-frame toggle
+            // flipping it back on. Cleared in resetLevelTimerPosition
+            // when the next level starts.
+            const isLevelMode = g.mode === 'level' || g.mode === 'collect';
+            const wantActive = this._hudOn && isLevelMode && !this._levelTimerForceHidden;
+            containerNode.active = wantActive;
+            if (wantActive) {
+                const totalSec = this._levelTimerFrozenSec ?? g.levelElapsedSec;
+                if (totalSec !== this._levelTimerLastSec) {
+                    this._levelTimerLastSec = totalSec;
+                    const mm = Math.floor(totalSec / 60).toString().padStart(2, '0');
+                    const ss = (totalSec % 60).toString().padStart(2, '0');
+                    this.authoredLevelTimerLabel.string = `${mm}:${ss}`;
+                }
+                // (Per-frame position enforcement was removed — it was
+                // stepping on the author's ability to set the initial
+                // position in the editor. Rest snapshot now happens
+                // JUST BEFORE the tween-to-center starts, so
+                // resetLevelTimerPosition restores to whatever the
+                // container was actually at when the win fired —
+                // Widget / Layout / manual moves all respected.)
+            } else {
+                this._levelTimerLastSec = -1;
             }
         }
         // Lines counter — also gone. Endless tracks 层高 (left slot);
@@ -815,6 +961,23 @@ export class HudController extends Component {
      *  gets a soft warning — the game runs, that element just won't
      *  do anything. */
     private wireAuthoredHudTop(): void {
+        // Level timer container — cache its authored local position so
+        // showLevelClearTime can tween to (0,0) and resetLevelTimerPosition
+        // can restore for the next level run. Also clear the frozen-ms
+        // snapshot so a fresh scene load starts ticking again.
+        const timerNode = this.authoredLevelTimerContainer
+            ?? this.authoredLevelTimerLabel?.node
+            ?? null;
+        // Rest position/scale snapshot moved to showLevelClearTime —
+        // capturing at wire time was too early (Widget / Layout may
+        // not have run yet) AND it locked the container's initial
+        // position to whatever the first frame happened to compute.
+        // Snapshotting at tween-start captures the ACTUAL live
+        // position the container had just before we moved it, so
+        // resetLevelTimerPosition restores to exactly that.
+        this._levelTimerFrozenSec = null;
+        this._levelTimerLastSec = -1;
+
         // Score / 层高 label — read by refreshHud() each frame.
         if (this.authoredScoreLabel) {
             this.scoreLabel = this.authoredScoreLabel;
@@ -1138,14 +1301,14 @@ export class HudController extends Component {
         // places it in the scene). Falls back to HUD root if the
         // @property slot wasn't wired.
         const nextBox = this.authoredNextPreviewBox ?? root;
-        const nextBoxTx = nextBox.getComponent(UITransform);
-        const ROW_GAP = 8;
         const HG_WRAP_WIDTH  = 180;     // matches gatling/meteor readouts
         const HG_WRAP_HEIGHT = 80;      // matches gatling/meteor readouts (12px digits)
-        const bottomY = nextBoxTx
-            ? -nextBoxTx.contentSize.height * nextBoxTx.anchorPoint.y
-            : 0;
-        const hgTopY = bottomY - ROW_GAP;
+        // Hardcoded local position relative to nextBox (or HUD root
+        // fallback). Was previously derived from nextBox's UITransform
+        // + ROW_GAP so it hugged the bottom edge — swapped to a fixed
+        // offset because the authored NEXT box's height moved and the
+        // derived position drifted off. Y = -147 is where art wants it.
+        const hgTopY = -147;
 
         const { root: hgWrap, gfx: hgGfx } =
             this.buildPixelCountReadout(nextBox, 'HourglassCountdown', 0, hgTopY, HG_WRAP_WIDTH, HG_WRAP_HEIGHT);
@@ -2153,6 +2316,63 @@ export class HudController extends Component {
         if (this.refreshBtnLabel) this.refreshBtnLabel.string = txt;
     }
 
+    /** Sibling of updateRefreshButtonLabel — repaints the Fate modal's
+     *  "逆天改命" button. Reads the server's remaining fate-reroll count
+     *  from PlayerProfile and picks the i18n string:
+     *    remaining > 0  → t('fate.reroll',    { n: remaining })  e.g. "逆天改命 (2/3)"
+     *    remaining == 0 → t('fate.reroll.ad')                    e.g. "🎬 看广告改命"
+     *  Called on wire, on showFateModal open, after each successful
+     *  free reroll consume (which decrements remaining), and on
+     *  language change. Idempotent — silent no-op if the label isn't
+     *  wired / can't be found. */
+    private updateFateRerollButtonLabel(): void {
+        if (!this.authoredFateRerollLabel) return;
+        const serverRemaining = PlayerProfile.dailyFreeRemaining('fate');
+        // Same optimistic-default fallback as the picker: null (server
+        // hasn't reported yet — fresh boot / offline) shows the max
+        // count so the button reads "逆天改命 (3/3)" rather than a
+        // placeholder. Atomic consume corrects it if the server
+        // disagrees.
+        const remaining = (typeof serverRemaining === 'number')
+            ? serverRemaining
+            : HudController.DEFAULT_FREE_REFRESHES;
+        this.authoredFateRerollLabel.string = remaining > 0
+            ? t('fate.reroll',    { n: remaining })
+            : t('fate.reroll.ad');
+    }
+
+    /** Free reroll click handler — server-authoritative atomic
+     *  check-and-decrement via POST /player/daily-free/consume, mirrors
+     *  onRefreshClicked for the magic picker.
+     *   - 200 → grant the local reroll (onFateReroll) + repaint label
+     *           with the new remaining count
+     *   - 429 → daily quota exhausted; force the cached count to 0 so
+     *           the label flips to the ad-watch state. Ad-watch flow
+     *           itself is TODO — for now the button stops working until
+     *           tomorrow's server reset (paid refresh button still
+     *           functions independently).
+     *  Network/other errors log without changing UI state so a flaky
+     *  connection doesn't burn the daily count. */
+    private onFateFreeRerollClicked(): void {
+        void (async () => {
+            try {
+                const r = await consumeDailyFree('fate');
+                PlayerProfile.setDailyFreeRemaining('fate', r.remaining);
+                this.onFateReroll();
+                this.updateFateRerollButtonLabel();
+            } catch (err) {
+                const msg = String((err as any)?.message ?? err);
+                if (msg.includes('HTTP 429')) {
+                    PlayerProfile.setDailyFreeRemaining('fate', 0);
+                    this.updateFateRerollButtonLabel();
+                    console.log('[FateModal] daily-free exhausted — label switched to ad-watch');
+                    return;
+                }
+                console.warn('[FateModal] daily-free consume failed:', msg);
+            }
+        })();
+    }
+
     // ---- Authored (Sprite-based) picker path ----
     private _pickerAuthoredWired: boolean = false;
     /** Cached keys for the 2 authored slots — used by onSlotClicked (which
@@ -2195,8 +2415,11 @@ export class HudController extends Component {
             + `itemIconHourglass wired=${!!this.itemIconHourglass}, `
             + `itemStarSlot wired=${!!this.itemStarSlot}, `
             + `itemStarFilled wired=${!!this.itemStarFilled}`);
-        // Fetch + paint the paid-refresh cost every time the picker
-        // opens (server may have rebalanced).
+        // Paint the paid-refresh button label from local tier state
+        // (no server round-trip needed). Counter reset happens ONLY on
+        // a fresh session open (see wireGameStateHooks.onEnergyPickerOpen),
+        // NOT here — showAuthoredPicker also fires on every refresh,
+        // and resetting here would defeat the 10 → 15 → 20 escalation.
         this.refreshPaidRefreshLabel('magic');
         // Static labels.
         if (this.authoredPickerTitleLabel)    this.authoredPickerTitleLabel.string    = t('picker.title');
@@ -2697,10 +2920,24 @@ export class HudController extends Component {
             this.authoredFateRerollButton.node.off('click');
             this.authoredFateRerollButton.node.on('click', () => {
                 console.log('[FateModal] REROLL clicked');
-                this.onFateReroll();
+                this.onFateFreeRerollClicked();
             }, this);
-            const lab = this.authoredFateRerollButton.getComponentInChildren(Label);
-            if (lab) this.trackI18nLabel(lab, 'fate.reroll');
+            // Cache the inner Label so updateFateRerollButtonLabel() has a
+            // paint target without a getComponentInChildren scan every
+            // repaint. Auto-fall-back if the author didn't wire the
+            // dedicated @property (older scenes). NOT tracked via
+            // trackI18nLabel — that helper writes a STATIC t(key) with
+            // no params, which would burn the literal "{n}/3" placeholder
+            // back into the label every language change. Lang refresh
+            // routes through onLangChanged → updateFateRerollButtonLabel
+            // so the "{n}" gets its real number.
+            if (!this.authoredFateRerollLabel) {
+                this.authoredFateRerollLabel =
+                    this.authoredFateRerollButton.getComponentInChildren(Label);
+            }
+            // Initial paint so the button doesn't flash "{n}/3" between
+            // scene load and the first modal open.
+            this.updateFateRerollButtonLabel();
         }
         // Paid refresh (spend gems). Cost is fetched from the server
         // on every fate-modal open (see `refreshFatePaidCost`). Click
@@ -2927,6 +3164,188 @@ export class HudController extends Component {
         return new Color(r, g, b, 255);
     }
 
+    // ============================================================
+    //  Level timer — showLevelClearTime / resetLevelTimerPosition
+    // ============================================================
+
+    /** Timing constants for the level-clear timer animation. Tweak
+     *  these to change how the celebration feels; MenuController /
+     *  GameController don't need to know about them.
+     *
+     *  Design timeline (per user spec):
+     *    1. Colored blocks clear (win FX finishes)
+     *    2. Gray tower scatter STARTS + level_win SFX plays + timer
+     *       starts moving to center + scaling up → ALL SIMULTANEOUS
+     *    3. Timer sits at center for 2 seconds (scatter has already
+     *       finished during step 3 — ~0.6s scatter vs 2s hold)
+     *    4. Timer DISAPPEARS (container hidden)
+     *    5. Short beat so the disappearance reads as its own moment
+     *    6. Fate modal pops
+     *
+     *  Pre-hold was removed because MenuController now calls
+     *  showLevelClearTime AT the scatter-start beat itself, so the
+     *  drain-fx wait already lives upstream.  */
+    private static readonly LEVEL_CLEAR_MOVE_MS       = 300;   // duration of the move-to-center tween
+    private static readonly LEVEL_CLEAR_CENTER_HOLD_MS = 2000; // sit at center for this long
+    private static readonly LEVEL_CLEAR_POST_HIDE_MS  = 250;   // gap between timer-disappear and fate modal
+    private static readonly LEVEL_CLEAR_CENTER_SCALE  = 1.5;   // font enlargement while centered
+    /** Total ms from showLevelClearTime call to onComplete callback.
+     *  Exported so callers that want to schedule dependent animations
+     *  (fate preview modal, scatter FX) can align without hard-coding
+     *  the individual pieces. */
+    public static readonly LEVEL_CLEAR_TOTAL_MS =
+        HudController.LEVEL_CLEAR_MOVE_MS
+      + HudController.LEVEL_CLEAR_CENTER_HOLD_MS
+      + HudController.LEVEL_CLEAR_POST_HIDE_MS;
+
+    /** GameController.onLevelWin calls this with the frozen elapsed
+     *  time. Sequence:
+     *    t=0            : freeze value + return
+     *    t=0.8s         : swap label to "通关时间：MM:SS", start move
+     *                     + scale tween (300ms → center, scale 5x)
+     *    t=1.1s..3.1s   : sit at center, scaled 5x
+     *    t=3.1s         : fire onComplete callback (caller uses this to
+     *                     defer the fate-preview modal so it appears
+     *                     AFTER the celebration lands)
+     *
+     *  Value is FROZEN via _levelTimerFrozenMs so the per-frame paint
+     *  loop stops re-reading GameState (which might tick past on a
+     *  technicality). Restore happens via resetLevelTimerPosition when
+     *  the next level starts. */
+    /** Signature now takes WHOLE SECONDS (matches GameState.levelElapsedSec).
+     *  Was previously milliseconds — audit call sites when merging. */
+    public showLevelClearTime(elapsedSec: number, onComplete?: () => void): void {
+        if (!this.authoredLevelTimerLabel) {
+            if (onComplete) {
+                const h = setTimeout(onComplete, HudController.LEVEL_CLEAR_TOTAL_MS);
+                this._levelClearTimeouts.push(h);
+            }
+            return;
+        }
+        this._levelTimerFrozenSec = elapsedSec;
+        const mm = Math.floor(elapsedSec / 60).toString().padStart(2, '0');
+        const ss = (elapsedSec % 60).toString().padStart(2, '0');
+        this._levelTimerLastSec = elapsedSec;
+
+        const container = this.authoredLevelTimerContainer
+            ?? this.authoredLevelTimerLabel.node;
+        const targetScale = HudController.LEVEL_CLEAR_CENTER_SCALE;
+        // Start the tween IMMEDIATELY (no pre-hold — caller sits on
+        // the FX-drain wait upstream and only calls us at the moment
+        // scatter/level_win are firing). Snapshot the CURRENT live
+        // position / scale RIGHT NOW so resetLevelTimerPosition can
+        // restore to exactly where the timer was just before we moved
+        // it. Live-position snapshot means Widget / Layout / manual
+        // tweaks upstream all just work.
+        this._levelTimerRestPos.set(
+            container.position.x, container.position.y, container.position.z,
+        );
+        this._levelTimerRestScale.set(
+            container.scale.x, container.scale.y, container.scale.z,
+        );
+        this._levelTimerSnapshotCaptured = true;
+        this.authoredLevelTimerLabel.string = `通关时间：${mm}:${ss}`;
+        // Bump the timer container to the last sibling of its parent so
+        // it renders ON TOP of everything else in the HUD (Energy bar,
+        // NEXT preview, etc.). Without this, the Energy Node — which
+        // was built programmatically and appended late — was covering
+        // the enlarged center-display timer. Sibling index is restored
+        // implicitly on the next level start (the container's parent
+        // rebuilds sibling order via its own layout / authoring).
+        if (container.parent) {
+            container.setSiblingIndex(container.parent.children.length - 1);
+        }
+        Tween.stopAllByTarget(container);
+        tween(container)
+            .to(HudController.LEVEL_CLEAR_MOVE_MS / 1000,
+                { position: new Vec3(0, 0, 0), scale: new Vec3(targetScale, targetScale, targetScale) },
+                { easing: 'quadOut' })
+            .start();
+        console.log(`[LevelTimer] moving to center — from (${container.position.x.toFixed(1)},${container.position.y.toFixed(1)}) scale=${container.scale.x.toFixed(2)}`);
+        // At (move + center-hold) — the "2s at center" is over. HIDE
+        // the container so the timer visibly leaves the screen, THEN
+        // wait POST_HIDE_MS so the disappearance reads as its own beat
+        // (fate modal doesn't crash-cut over the timer). onComplete
+        // fires at the end of that gap so the caller opens the modal
+        // AFTER the timer is fully gone.
+        const hideAtMs = HudController.LEVEL_CLEAR_MOVE_MS + HudController.LEVEL_CLEAR_CENTER_HOLD_MS;
+        const hideHandle = setTimeout(() => {
+            if (this.authoredLevelTimerLabel && this.authoredLevelTimerLabel.isValid) {
+                const c = this.authoredLevelTimerContainer
+                    ?? this.authoredLevelTimerLabel.node;
+                // Set the force-hidden flag BEFORE toggling — refreshHud
+                // reads this flag and skips its own active toggle so we
+                // don't get flipped back on the very next frame.
+                this._levelTimerForceHidden = true;
+                c.active = false;
+            }
+        }, hideAtMs);
+        this._levelClearTimeouts.push(hideHandle);
+        // onComplete fires POST_HIDE_MS after the hide — caller uses
+        // this to trigger the next-level fate preview. Handle is
+        // tracked so resetLevelTimerPosition can cancel it if the
+        // next level starts before the animation finishes (prevents
+        // stale callbacks from firing mid-fresh-level).
+        if (onComplete) {
+            const doneHandle = setTimeout(onComplete, HudController.LEVEL_CLEAR_TOTAL_MS);
+            this._levelClearTimeouts.push(doneHandle);
+        }
+    }
+
+    /** Snap the timer container back to its authored rest position +
+     *  scale, un-freeze the value, cancel any pending animation
+     *  timeouts AND kill any in-flight center tween. Called from
+     *  GameController.startLevel on every fresh level. Idempotent —
+     *  safe to call even when the timer never moved.
+     *
+     *  The 位置不对 bug was: a pending setTimeout scheduled by
+     *  showLevelClearTime would still fire AFTER reset, kicking off a
+     *  new tween that re-moved the container to (0,0). Fix: track the
+     *  setTimeout handles and cancel them here. */
+    public resetLevelTimerPosition(): void {
+        // Cancel every pending showLevelClearTime handle so no lingering
+        // callback fires after the reset. Iterate + splice to release
+        // the array; we won't need the handles again.
+        for (const h of this._levelClearTimeouts) clearTimeout(h);
+        this._levelClearTimeouts.length = 0;
+
+        this._levelTimerFrozenSec = null;
+        this._levelTimerLastSec = -1;
+        // Clear the force-hidden latch — a fresh level should let the
+        // per-frame refreshHud take back over toggling visibility.
+        this._levelTimerForceHidden = false;
+        if (!this.authoredLevelTimerLabel) return;
+        const container = this.authoredLevelTimerContainer
+            ?? this.authoredLevelTimerLabel.node;
+        // Kill any in-flight tween (from the move-to-center animation)
+        // — the tween writes to position/scale every frame and would
+        // immediately undo the snap-back below.
+        Tween.stopAllByTarget(container);
+        // Only restore position/scale if we actually captured a snapshot
+        // from a previous showLevelClearTime run. Fail / exit paths that
+        // never trigger the win animation leave the flag false — in
+        // that case the container is still at its authored position
+        // and we MUST NOT overwrite it (default _levelTimerRestPos is
+        // Vec3.ZERO, which would snap the container to screen center).
+        if (this._levelTimerSnapshotCaptured) {
+            const before = { x: container.position.x, y: container.position.y };
+            // Use the (x, y, z) scalar overload — the Readonly<Vec3>
+            // overload has a documented bug in some Cocos 3.x builds
+            // where it partially updates the internal cached vec but
+            // doesn't notify the transform system. Scalar form is
+            // universally supported and always emits the
+            // transform-changed signal.
+            container.setPosition(this._levelTimerRestPos.x, this._levelTimerRestPos.y, this._levelTimerRestPos.z);
+            container.setScale(this._levelTimerRestScale.x, this._levelTimerRestScale.y, this._levelTimerRestScale.z);
+            console.log(`[LevelTimer] reset — pos ${before.x.toFixed(1)},${before.y.toFixed(1)} → ${this._levelTimerRestPos.x.toFixed(1)},${this._levelTimerRestPos.y.toFixed(1)} scale → ${this._levelTimerRestScale.x.toFixed(2)}`);
+            // Clear the flag — the snapshot has been "spent". A future
+            // level clear will capture a fresh one before its tween.
+            this._levelTimerSnapshotCaptured = false;
+        } else {
+            console.log(`[LevelTimer] reset — no snapshot captured, leaving authored pos/scale alone`);
+        }
+    }
+
     /** Show the modal for a level. The caller provides callbacks: `onStart`
      *  fires with the picked CustomPieceDef when the player taps 直接开始,
      *  `onCancel` fires if the modal is dismissed without confirming. */
@@ -2982,10 +3401,21 @@ export class HudController extends Component {
         // dim and leak into the modal.
         this.fateOverlay.setSiblingIndex(999);
         this.fateOverlay.active = true;
-        // Async: fetch the current gem cost + paint the paid-refresh
-        // button label. Runs after the modal is on screen so the user
-        // sees a placeholder ("💎 …") until the number lands.
+        // Reset the per-modal paid-refresh tier counter so this fresh
+        // open starts back at tier 0 (10 gems). Cap is
+        // MAX_PAID_REFRESHES_PER_MODAL — after that the button greys
+        // out and shows "已达上限" until the modal is reopened.
+        this._paidRefreshUsed.fate = 0;
+        // Paint the paid-refresh button label. Fate uses local tier
+        // state (no server round-trip), so this is synchronous — the
+        // player sees "10 (3/3)" the first frame the modal appears.
         this.refreshPaidRefreshLabel('fate');
+        // Repaint the FREE reroll button so "(n/3)" reflects the
+        // latest server count. Kept in sync from consume/lang/wire
+        // paths, but re-run on open too so back-to-back modal opens
+        // pick up any external mutation (e.g. profile refresh between
+        // opens).
+        this.updateFateRerollButtonLabel();
     }
 
     private hideFateModal(): void {
@@ -3067,68 +3497,115 @@ export class HudController extends Component {
     // ============================================================
     //  Paid refresh (spend gems to re-roll)
     // ============================================================
-    /** Cost cache — set from server on modal open, read on button click.
-     *  Kept as `null` when the fetch is in flight or failed so the
-     *  click handler can bail rather than firing a purchase with a
-     *  stale/zero cost. */
-    private _paidRefreshCost: Partial<Record<RefreshType, number>> = {};
+    /** Per-modal count of successful paid refreshes, keyed by type.
+     *  Read as the tier index into REFRESH_COST_TIERS for the NEXT
+     *  purchase (used=0 → cost=10, used=1 → cost=15, used=2 → cost=20).
+     *  Reset to 0 when the corresponding modal opens (fate in
+     *  showFateModal, magic in showAuthoredPicker). Applies to both
+     *  fate + magic — same escalation table. Client-side counter is
+     *  UX only; server also enforces via the `tier` parameter to
+     *  POST /refresh/purchase. */
+    private _paidRefreshUsed: Record<RefreshType, number> = { fate: 0, magic: 0 };
 
-    /** Fetch the server-configured cost for `type` and paint it onto
-     *  the corresponding button label. Called from showFateModal /
-     *  showAuthoredPicker. Silent no-op if the button isn't wired. */
+    /** Paint the paid-refresh button label for the given type from
+     *  local tier state — no server round-trip. Called on modal open
+     *  (via `refreshPaidRefreshLabel(type)`) and after every successful
+     *  purchase to advance the price display. Grays out the button at
+     *  cap so the "no more paid refreshes this modal" state reads
+     *  visually and doesn't fire on subsequent taps.
+     *
+     *  Cost tiers are hard-coded in REFRESH_COST_TIERS so the server
+     *  charge (via `purchaseRefresh(type, tier)`) matches what the
+     *  player just saw on the button. Same rule for fate + magic. */
     private refreshPaidRefreshLabel(type: RefreshType): void {
         const btn = type === 'fate'
             ? this.authoredFatePaidRefreshButton
             : this.authoredPickerPaidRefreshButton;
-        const lab = type === 'fate'
-            ? (this.authoredFatePaidRefreshLabel ?? btn?.getComponentInChildren(Label) ?? null)
-            : (this.authoredPickerPaidRefreshLabel ?? btn?.getComponentInChildren(Label) ?? null);
-        if (!btn) return;
-        // Placeholder text while fetch is in flight. Just the number,
-        // no gem icon — icon should live on the button prefab as a
-        // separate Sprite child, not baked into the label.
-        if (lab) lab.string = '…';
-        this._paidRefreshCost[type] = undefined;
-        fetchRefreshCost(type)
-            .then((r) => {
-                this._paidRefreshCost[type] = r.gems;
-                if (lab) lab.string = `${r.gems}`;
-            })
-            .catch((err) => {
-                console.warn(`[HUD] fetchRefreshCost(${type}) failed:`, err?.message);
-                if (lab) lab.string = '?';
-            });
-    }
-
-    /** Fate paid refresh click — spend gems on the server, then trigger
-     *  the local re-roll on success. Toast the error on failure. */
-    private onFatePaidRefreshClicked(): void {
-        const cost = this._paidRefreshCost.fate;
-        if (cost === undefined) {
-            console.warn('[FateModal] paid refresh clicked before cost loaded');
+        const authoredLab = type === 'fate'
+            ? this.authoredFatePaidRefreshLabel
+            : this.authoredPickerPaidRefreshLabel;
+        if (!btn) {
+            console.warn(`[${type === 'fate' ? 'FateModal' : 'Picker'}] refreshPaidRefreshLabel: button unwired — nothing to paint`);
             return;
         }
-        purchaseRefresh('fate')
+        // Prefer the explicit @property; fall back to painting EVERY
+        // Label descendant of the button. `getComponentInChildren`
+        // returns just the FIRST label it finds — if the button prefab
+        // has multiple Labels (e.g. a "💎" icon Label + a cost Label),
+        // painting only the first one silently misses the visible cost
+        // label. `getComponentsInChildren` (plural) covers all of them.
+        const labels: Label[] = authoredLab
+            ? [authoredLab]
+            : btn.node.getComponentsInChildren(Label);
+
+        const used      = this._paidRefreshUsed[type];
+        const remaining = Math.max(0, MAX_PAID_REFRESHES_PER_MODAL - used);
+        const exhausted = remaining <= 0;
+        // Clamp past the tier table's end (defensive — never hit at
+        // cap = tiers.length, but keeps things sane if either constant
+        // changes independently).
+        const cost = REFRESH_COST_TIERS[Math.min(used, REFRESH_COST_TIERS.length - 1)];
+
+        const text = exhausted
+            ? '已达上限'
+            : `${cost}  (${remaining}/${MAX_PAID_REFRESHES_PER_MODAL})`;
+        console.log(`[${type === 'fate' ? 'FateModal' : 'Picker'}] refreshPaidRefreshLabel — used=${used} remaining=${remaining} cost=${cost} text="${text}" labelsPainted=${labels.length} authoredWired=${!!authoredLab}`);
+        for (const lab of labels) lab.string = text;
+
+        // Match Cocos Button semantics: interactable=false blocks click
+        // events AND applies the greyed-out transition (whichever kind
+        // is authored on the Button component).
+        btn.interactable = !exhausted;
+    }
+
+    /** Fate paid refresh click — spend gems on the server at the
+     *  current tier, then trigger the local re-roll on success. Toast
+     *  the error on failure. Advances `_paidRefreshUsed.fate` so the
+     *  next click charges the next tier (10 → 15 → 20). */
+    private onFatePaidRefreshClicked(): void {
+        const used = this._paidRefreshUsed.fate;
+        // Belt-and-suspenders: button should be non-interactable at cap
+        // (refreshPaidRefreshLabel handles that), so this guard is just
+        // for safety if something bypasses the button.
+        if (used >= MAX_PAID_REFRESHES_PER_MODAL) {
+            console.log('[FateModal] paid refresh at cap — ignoring click');
+            return;
+        }
+        const tier = used;
+        const cost = REFRESH_COST_TIERS[Math.min(tier, REFRESH_COST_TIERS.length - 1)];
+        purchaseRefresh('fate', tier)
             .then((r) => {
-                console.log(`[FateModal] paid refresh OK — spent=${r.gemsSpent} balance=${r.balance}`);
+                console.log(`[FateModal] paid refresh OK (tier=${tier}) — spent=${r.gemsSpent} balance=${r.balance}`);
+                this._paidRefreshUsed.fate++;
                 this.onFateReroll();
+                // Repaint so the next tier's cost + updated remaining
+                // count show immediately.
+                this.refreshPaidRefreshLabel('fate');
             })
             .catch((err) => this.handlePaidRefreshError(err, cost));
     }
 
-    /** Picker paid refresh click — spend gems, then re-roll the two
-     *  choices via GameState.refreshEnergyPicker (bypasses the free /
-     *  ad-gated path). */
+    /** Picker paid refresh click — same escalating-tier flow as fate.
+     *  Spend gems at the current tier, then re-roll the two choices
+     *  via GameState.refreshEnergyPicker (bypasses the free / ad-gated
+     *  path). Advances `_paidRefreshUsed.magic` so the next click
+     *  charges the next tier (10 → 15 → 20). */
     private onPickerPaidRefreshClicked(): void {
-        const cost = this._paidRefreshCost.magic;
-        if (cost === undefined) {
-            console.warn('[Picker] paid refresh clicked before cost loaded');
+        const used = this._paidRefreshUsed.magic;
+        if (used >= MAX_PAID_REFRESHES_PER_MODAL) {
+            console.log('[Picker] paid refresh at cap — ignoring click');
             return;
         }
-        purchaseRefresh('magic')
+        const tier = used;
+        const cost = REFRESH_COST_TIERS[Math.min(tier, REFRESH_COST_TIERS.length - 1)];
+        purchaseRefresh('magic', tier)
             .then((r) => {
-                console.log(`[Picker] paid refresh OK — spent=${r.gemsSpent} balance=${r.balance}`);
+                console.log(`[Picker] paid refresh OK (tier=${tier}) — spent=${r.gemsSpent} balance=${r.balance}`);
+                this._paidRefreshUsed.magic++;
                 this.gameController?.gameState?.refreshEnergyPicker();
+                // Repaint the button so the next tier + updated
+                // remaining count show immediately.
+                this.refreshPaidRefreshLabel('magic');
             })
             .catch((err) => this.handlePaidRefreshError(err, cost));
     }

@@ -65,7 +65,7 @@ import {
 import { t, subscribe as subscribeI18n } from '../core/i18n/I18n';
 import { LeaderboardRow } from './LeaderboardRow';
 import { getLang, subscribe as subscribeLang } from '../core/i18n/I18n';
-import { fetchTop, fetchMyRank, LeaderboardApiEntry, LeaderboardApiMode, MyRankResult } from '../core/LeaderboardApi';
+import { fetchTop, fetchMyRank, fetchLevelTops, LeaderboardApiEntry, LeaderboardApiMode, LevelTopEntry, MyRankResult } from '../core/LeaderboardApi';
 import { PlayerProfile } from '../core/PlayerProfile';
 
 const { ccclass, property } = _decorator;
@@ -80,6 +80,12 @@ export interface LeaderboardEntry {
     /** True → this is the local player's row (LeaderboardRow toggles
      *  its `youHighlight` node when set). */
     isYou?: boolean;
+    /** Optional pre-formatted string that overrides the numeric `score`
+     *  when the row painter is looking for a score text. Used by the
+     *  level (time) tab to show "MM:SS" instead of raw milliseconds.
+     *  When set, `score` still carries the raw ms so any sort /
+     *  compare code that reads it stays honest. */
+    scoreLabel?: string;
 }
 
 /** Which mode's leaderboard is currently showing. */
@@ -411,6 +417,15 @@ export class LeaderboardController extends Component {
             });
         // Parallel fetch: local player's own rank + score. Uses the
         // same reqId so a tab-switch mid-flight discards this too.
+        //
+        // Skipped for the LEVEL tab — that tab now shows per-level
+        // top-1 across all 99 floors; "my rank" is per-level not global,
+        // so a single row doesn't make sense. Hide the my-rank row
+        // outright for level, restore for endless / blind.
+        if (mode === 'level') {
+            if (this.myRankRow) this.myRankRow.node.active = false;
+            return;
+        }
         fetchMyRank(mode)
             .then((r) => {
                 if (reqId !== this.lastFetchId) return;
@@ -525,8 +540,59 @@ export class LeaderboardController extends Component {
      * keeps the cached / empty list).
      */
     private async fetchEntriesAsync(mode: LeaderboardMode): Promise<LeaderboardEntry[]> {
-        const apiEntries: LeaderboardApiEntry[] = await fetchTop(mode, MAX_ENTRIES);
         const myUuid = PlayerProfile.uuid;
+        // ---- LEVEL tab: per-level top-1 by fastest time ----
+        // fetchLevelTops returns a SPARSE list (levels with no clear yet
+        // are omitted). We paint a full 1..N grid so the player sees
+        // every floor's slot — filled OR "—" — for a stable at-a-glance
+        // read. Rank column carries the floor number (level.order = idx+1
+        // by convention for level mode), name/avatar/time from the top-1.
+        if (mode === 'level') {
+            const tops: LevelTopEntry[] = await fetchLevelTops();
+            // Index the sparse response by levelIdx for O(1) row lookup.
+            const byIdx = new Map<number, LevelTopEntry>();
+            let maxIdx = -1;
+            for (const e of tops) {
+                byIdx.set(e.levelIdx, e);
+                if (e.levelIdx > maxIdx) maxIdx = e.levelIdx;
+            }
+            // Total-floor count — fall back to 99 (Tetri Tower's authored
+            // level count). If a future version bumps flatLevels.length
+            // we could route it through here, but a static 99 is fine
+            // for now — extra empty rows just render "—".
+            const TOTAL_LEVELS = 99;
+            const out: LeaderboardEntry[] = [];
+            for (let idx = 0; idx < TOTAL_LEVELS; idx++) {
+                const top = byIdx.get(idx);
+                if (top) {
+                    const mm = Math.floor(top.elapsedSec / 60).toString().padStart(2, '0');
+                    const ss = (top.elapsedSec % 60).toString().padStart(2, '0');
+                    out.push({
+                        rank:       idx + 1,   // floor number (1..99)
+                        name:       top.name,
+                        score:      top.elapsedSec,     // raw seconds — honest sort field
+                        scoreLabel: `${mm}:${ss}`,     // painter-facing display
+                        avatarIdx:  top.avatarIdx > 0 ? top.avatarIdx : null,
+                        isYou:      top.uuid === myUuid,
+                    });
+                } else {
+                    // No clear yet for this floor — empty placeholder row.
+                    // LeaderboardRow paints "—" for empty name / score.
+                    out.push({
+                        rank:       idx + 1,
+                        name:       '—',
+                        score:      0,
+                        scoreLabel: '—',
+                        avatarIdx:  null,
+                        isYou:      false,
+                    });
+                }
+            }
+            return out;
+        }
+
+        // ---- ENDLESS / BLIND tabs (unchanged): score = height ----
+        const apiEntries: LeaderboardApiEntry[] = await fetchTop(mode, MAX_ENTRIES);
         return apiEntries.map((e) => ({
             rank:  e.rank,
             name:  e.name,
@@ -535,12 +601,8 @@ export class LeaderboardController extends Component {
             // picked. Treat that as "unset" so LeaderboardRow falls
             // back to its rank-cycled variety (visually distinct rows)
             // instead of every default player showing avatar 0.
-            // Real picks (server >= 1) are respected as-is. Trade-off:
-            // a player who explicitly picks avatar 0 renders as their
-            // rank-cycled default; acceptable given avatar 0 IS still
-            // one of the rank-cycle candidates.
             avatarIdx: e.avatarIdx > 0 ? e.avatarIdx : null,
-            isYou: e.uuid === myUuid,           // highlight local player's row
+            isYou: e.uuid === myUuid,
         }));
     }
 }

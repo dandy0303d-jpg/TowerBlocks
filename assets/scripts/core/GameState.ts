@@ -35,6 +35,9 @@ import {
     HOURGLASS_DURATIONS_MS,
     ENDLESS_FATE_MILESTONE,
     WRECKER_TARGETS,
+    ITEM_BASE_PROBS,
+    PITY_BOOST_PER_DRAW,
+    rarityForKey,
 } from './Constants';
 import {
     BoardState,
@@ -254,6 +257,32 @@ export class GameState {
     /** Picker state. While `active`, the game tick freezes — the player must
      *  call `pickEnergyReward(key)` or `refreshEnergyPicker()` to resume. */
     energyPicker: { active: boolean; choices: MagicItemKey[] } = { active: false, choices: [] };
+    /** Cumulative WHOLE SECONDS elapsed in the CURRENT level-mode /
+     *  collect-mode run. Ticks only when the game is actively running
+     *  (not paused, not in a modal / picker) so watch-and-plan opens
+     *  don't burn the clock. Reset to 0 in reset() so each fresh level
+     *  starts at 00:00. Endless / blind modes leave this at 0 (there's
+     *  no "clear time" concept for endless — the HUD reads this field
+     *  only when mode is 'level' | 'collect').
+     *
+     *  Second granularity throughout (display, server payload) — the
+     *  fractional accumulator lives in _elapsedSubSec below so a 60fps
+     *  tick doesn't lose sub-second time to Math.floor rounding. */
+    public levelElapsedSec: number = 0;
+    /** Sub-second accumulator (0..1). Prevents a naive `+= dt` from
+     *  losing precision to Math.floor when advancing levelElapsedSec.
+     *  Reset to 0 in reset(). */
+    private _elapsedSubSec: number = 0;
+
+    /** Pity counter — number of picker draws (opens + refreshes) the
+     *  player has done WITHOUT committing to a pick. Each roll passes
+     *  the current value into rollEnergyChoices() to scale rare/epic
+     *  weights (see PITY_BOOST_PER_DRAW in Constants). Reset to 0 on
+     *  a successful pickEnergyReward, so the moment the player takes
+     *  an item the odds fall back to base ITEM_BASE_PROBS.
+     *  Not persisted across matches — a new GameState starts fresh
+     *  at 0, matching how energyCharge resets per run. */
+    private _pickerDrawStreak: number = 0;
     /** Modal-pause flag — set to true while the shapeshifter picker (or
      *  any other blocking overlay that doesn't route through
      *  `energyPicker.active`) is open. Gates `tick` and `canAcceptInput`
@@ -580,6 +609,8 @@ export class GameState {
         this.endlessFateMilestonesPopped = 0;
         this.endlessCelebrationsFired = 0;
         this.meteorAccumulatedClears = 0;
+        this.levelElapsedSec = 0;
+        this._elapsedSubSec = 0;
         this.bag.reset();
         this.hourglass.reset();
         this.blizzard.reset();
@@ -657,6 +688,24 @@ export class GameState {
         // Shapeshifter picker (and any other blocking modal that flips
         // modalPaused) — same treatment.
         if (this.modalPaused) return;
+
+        // Level timer — accrue only for level / collect modes, and only
+        // when the game is actively running (all pause / picker / modal
+        // gates above have early-returned). `dt` here is MILLISECONDS
+        // (caller in GameController.update does `gameState.tick(dt * 1000)`
+        // to convert Cocos's second-based deltaTime), so divide by 1000
+        // to get seconds. Whole seconds land in levelElapsedSec (what
+        // the HUD + server read); the sub-second remainder rolls up in
+        // _elapsedSubSec so a 60fps tick doesn't lose ~16ms per frame
+        // to floor rounding. Endless / blind leave both at 0.
+        if (this.mode === 'level' || this.mode === 'collect') {
+            this._elapsedSubSec += dt / 1000;
+            const whole = Math.floor(this._elapsedSubSec);
+            if (whole > 0) {
+                this.levelElapsedSec += whole;
+                this._elapsedSubSec -= whole;
+            }
+        }
 
         // Hail/rocket/gatling/mortar storms freeze normal piece movement.
         if (this.hail.mode || this.rocket.mode || this.gatling.mode || this.mortar.mode) {
@@ -904,8 +953,25 @@ export class GameState {
      *  horizontal slice" effects that would feel redundant paired
      *  against each other in the picker. */
     private rollEnergyChoices(): MagicItemKey[] {
-        const pool = [...ENERGY_PICKER_POOL];
-        const out: MagicItemKey[] = [];
+        // Weighted sample with pity boost. Each item's effective weight is
+        //     w_eff(k) = ITEM_BASE_PROBS[k] * (1 + streak * PITY_BOOST_PER_DRAW[rarity(k)])
+        // where `streak` is the number of past picker draws that didn't
+        // end in a pick. Common tier gets a 0 multiplier by convention
+        // (see PITY_BOOST_PER_DRAW), so pity strictly amplifies the
+        // rare / epic tail — commons don't spam harder just because
+        // the player kept refreshing.
+        //
+        // Streak snapshot for THIS roll is taken BEFORE the increment,
+        // so the very first open of a fresh GameState uses the pure
+        // ITEM_BASE_PROBS distribution. Every draw (open + refresh)
+        // ticks the counter; pickEnergyReward resets it to 0.
+        const streak = this._pickerDrawStreak;
+        const boostFor = (k: MagicItemKey): number =>
+            1 + streak * PITY_BOOST_PER_DRAW[rarityForKey(k)];
+
+        // Same family map as before — used to remove sibling tiers
+        // from the pool after the first pick so a roll never surfaces
+        // two hourglass tiers / two mortars / etc. in the same picker.
         const familyOf = (k: MagicItemKey): string | null => {
             if (k === 'mortar5'  || k === 'mortar10'  || k === 'mortar15')     return 'mortar';
             if (k === 'excavator1'    || k === 'excavator2'    || k === 'excavator3'
@@ -916,11 +982,24 @@ export class GameState {
             if (k === 'gatling1'      || k === 'gatling2'      || k === 'gatling3')      return 'gatling';
             return null;
         };
+
+        const pool = [...ENERGY_PICKER_POOL];
+        const out: MagicItemKey[] = [];
         for (let i = 0; i < ENERGY_PICKER_CHOICE_COUNT && pool.length > 0; i++) {
-            const idx = Math.floor(this.rng() * pool.length);
-            const picked = pool[idx];
+            // Compute total effective weight over remaining pool, then
+            // roulette-scan. O(n) per pick; n ≤ 23 so ignore perf.
+            let total = 0;
+            for (const k of pool) total += ITEM_BASE_PROBS[k] * boostFor(k);
+            let r = this.rng() * total;
+            let picked: MagicItemKey = pool[pool.length - 1];   // float-slop fallback
+            let pickedIdx = pool.length - 1;
+            for (let j = 0; j < pool.length; j++) {
+                const w = ITEM_BASE_PROBS[pool[j]] * boostFor(pool[j]);
+                if (r < w) { picked = pool[j]; pickedIdx = j; break; }
+                r -= w;
+            }
             out.push(picked);
-            pool.splice(idx, 1);
+            pool.splice(pickedIdx, 1);
             const fam = familyOf(picked);
             if (fam) {
                 for (let j = pool.length - 1; j >= 0; j--) {
@@ -928,6 +1007,10 @@ export class GameState {
                 }
             }
         }
+        // Tick the streak AFTER using its current value — every draw
+        // (opens AND refreshes) counts as one unlucky pull toward the
+        // next roll's pity boost. Reset lives in pickEnergyReward.
+        this._pickerDrawStreak++;
         return out;
     }
 
@@ -978,6 +1061,11 @@ export class GameState {
             this.energyCharge = 0;
             this.energyPicker.choices = [];
             this.hooks.onEnergyChanged?.(0, ENERGY_FULL_THRESHOLD);
+            // Reset pity — the player committed to an item, so the next
+            // picker opens with base ITEM_BASE_PROBS odds. Rollback path
+            // above (ok === false) intentionally does NOT reset, since
+            // the player didn't actually receive an item.
+            this._pickerDrawStreak = 0;
             this.hooks.onEnergyPickerPicked?.(key);
         }, GameState.PICK_EXECUTE_DELAY_MS);
         // Return true optimistically — the pick has been accepted, even

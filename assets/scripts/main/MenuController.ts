@@ -34,7 +34,7 @@ import { LeaderboardController } from './LeaderboardController';
 import { TopUpController } from './TopUpController';
 import { PlayerProfile } from '../core/PlayerProfile';
 import { setBannedHandler, getBannedState, type BannedState } from '../core/Http';
-import { fetchWallet } from '../core/WalletApi';
+import { fetchWallet, subscribeBalance } from '../core/WalletApi';
 import { BACKEND_BASE_URL } from '../core/BackendConfig';
 import { TutorialProgress } from '../core/TutorialProgress';
 import { TutorialController } from './TutorialController';
@@ -183,7 +183,8 @@ export class MenuController extends Component {
     // ---- Locked-state (gray) sprites ----
     // Endless button uses label-only graying (unlocks quickly at level 10),
     // so no sprite swap for it. Blind + Leaderboard stay locked until
-    // 100 endless layers, so they get authored gray art via these slots.
+    // BLIND_UNLOCK_ENDLESS_LAYERS endless layers, so they get authored
+    // gray art via these slots.
     @property({ type: SpriteFrame, tooltip: '闭眼模式按钮 — 锁定态灰色图（拖 SpriteFrame 进来；留空则不换图）' })
     authoredBlindLockedSprite: SpriteFrame | null = null;
 
@@ -231,8 +232,12 @@ export class MenuController extends Component {
     private static readonly ENDLESS_BEST_KEY = 'cb.endlessBestLayers';
     /** Number of Level-mode clears needed to unlock Endless mode. */
     private static readonly ENDLESS_UNLOCK_LEVEL_COUNT = 10;
-    /** Endless best-height needed to unlock Blind mode + Leaderboard. */
-    private static readonly BLIND_UNLOCK_ENDLESS_LAYERS = 100;
+    /** Endless best-height needed to unlock Blind mode + Leaderboard.
+     *  Both gates share this single threshold — bumping / lowering it
+     *  moves both unlocks together, and the `lock.blind` / `lock.leaderboard`
+     *  i18n strings both template on `{n}` so the toast text follows
+     *  the constant without touching translations. */
+    private static readonly BLIND_UNLOCK_ENDLESS_LAYERS = 50;
 
     @property({ type: Button, tooltip: '设置按钮' })
     modeBtnSettings: Button | null = null;
@@ -579,8 +584,15 @@ export class MenuController extends Component {
 
     /** Cached gem balance for the settings-panel balance button. Painted
      *  immediately on openSettings (may be stale), then refreshed
-     *  asynchronously from the server. */
+     *  asynchronously from the server. Also drives the mode-select
+     *  topup button label — kept in sync via a WalletApi subscription
+     *  registered in onLoad. */
     private _cachedGemBalance: number = 0;
+
+    /** Unsubscribe fn from WalletApi.subscribeBalance — fires on
+     *  onDestroy so a torn-down controller doesn't leak a dangling
+     *  listener across scene reloads. */
+    private balanceUnsub: (() => void) | null = null;
 
     onLoad(): void {
         log('[TowerBlocks] MenuController.onLoad');
@@ -594,6 +606,18 @@ export class MenuController extends Component {
         });
         // Paint the correct logo on first load too.
         this._refreshLocalizedLogo();
+        // Subscribe to wallet balance broadcasts so the mode-select
+        // topup button + settings balance strip repaint the moment
+        // gems change — no matter which surface caused the change
+        // (paid refresh spends gems in-game, top-up IAP credits mid-
+        // session, debug console grant). WalletApi auto-emits from
+        // fetchWallet / topupWallet, and RefreshApi.purchaseRefresh
+        // emits after a successful gem deduction, so callers don't
+        // have to remember to notify us.
+        this.balanceUnsub = subscribeBalance((gems) => {
+            this._cachedGemBalance = gems;
+            this.paintBalanceButton(gems);
+        });
     }
 
     /** Look up the localized logo SpriteFrame for a given i18n code
@@ -629,6 +653,7 @@ export class MenuController extends Component {
 
     onDestroy(): void {
         if (this.langUnsub) { this.langUnsub(); this.langUnsub = null; }
+        if (this.balanceUnsub) { this.balanceUnsub(); this.balanceUnsub = null; }
     }
 
     /** Register a label as i18n-driven. Sets its initial string now and
@@ -1160,8 +1185,8 @@ export class MenuController extends Component {
         this.buildResultPanel(title, subtitle, this.makeFailButtons());
         // Endless/blind: record the just-ended run's cumulative height
         // so the Blind mode + Leaderboard unlock state updates the
-        // instant the player crosses 100 layers, without needing a
-        // server round-trip on next boot.
+        // instant the player crosses BLIND_UNLOCK_ENDLESS_LAYERS, without
+        // needing a server round-trip on next boot.
         if (!isLevel) {
             const layers = this.gameController?.gameState?.endlessProgress?.cumulative ?? 0;
             this._recordEndlessRun(layers);
@@ -1188,34 +1213,57 @@ export class MenuController extends Component {
         const nextIdx = this.currentLevelIdx + 1;
         const hasNext = nextIdx < totalLevels;
 
-        // ---- Game-complete path: no next level. Old-style scatter → level select. ----
+        // ---- Game-complete path: no next level. Show clear-time
+        // celebration (same beat as between-level: scatter + level_win
+        // + timer center animation all together), then go to select. ----
         if (!hasNext) {
-            if (this.hudController) this.hudController.setHudVisible(false);
             const gotoSelect = () => {
-                SoundManager.instance?.play('level_win');
                 this.showLevelSelect();
                 this.setGameplayVisible(false);
             };
+            SoundManager.instance?.play('level_win');
+            const finalHudAny = this.hudController as any;
+            const finalGs = (this.gameController as any)?.gameState;
+            const finalElapsedSec = finalGs?.levelElapsedSec ?? 0;
+            if (finalHudAny && typeof finalHudAny.showLevelClearTime === 'function') {
+                finalHudAny.showLevelClearTime(finalElapsedSec, () => {
+                    // Only hide the HUD AFTER the celebration completes,
+                    // so the centered "通关时间：MM:SS" isn't yanked off
+                    // screen mid-animation.
+                    if (this.hudController) this.hudController.setHudVisible(false);
+                    gotoSelect();
+                });
+            } else {
+                if (this.hudController) this.hudController.setHudVisible(false);
+            }
+            // Scatter runs in parallel with the timer animation (same
+            // as between-level). No completion callback — the timer
+            // onComplete owns the goto-select trigger.
             if (this.gameController
                 && typeof this.gameController.playLevelScatter === 'function') {
-                this.gameController.playLevelScatter(this.exitLevelScatterSec, gotoSelect);
-            } else {
+                const scatterCb = (finalHudAny && typeof finalHudAny.showLevelClearTime === 'function')
+                    ? () => { /* handled by showLevelClearTime.onComplete */ }
+                    : gotoSelect;
+                this.gameController.playLevelScatter(this.exitLevelScatterSec, scatterCb);
+            } else if (!(finalHudAny && typeof finalHudAny.showLevelClearTime === 'function')) {
                 gotoSelect();
             }
             return;
         }
 
         // ---- Between-level path: strict sequential timeline ----
-        //   1. Play level_win SFX
-        //   2. Scatter animation (wait for full completion)
-        //   3. Show fate preview popup for the next level
+        //   1. Stop level BGM
+        //   2. Scatter animation START → play level_win SFX at the
+        //      exact same beat (per design — SFX lands ON the visual
+        //      scatter, not before it)
+        //   3. Show fate preview popup once scatter finishes
         //   4. Popup holds 1 second
         //   5. Popup dismisses → assemble next level's tower
-        // Step 1: stop level BGM immediately on clear (before scatter),
-        //         and play level_win SFX. BGM resumes on preview close
-        //         so the assembly beat has music under it.
+        // Step 1: stop level BGM immediately on clear. level_win SFX
+        // is deferred to step 2 (the playLevelScatter call below), so
+        // it aligns with the scatter animation onset. BGM resumes on
+        // preview close so the assembly beat has music under it.
         BgmManager.instance?.stop();
-        SoundManager.instance?.play('level_win');
 
         const holdMs = 2000; // fate preview visible time — long enough to
                              // read '下一关' + inspect the shape
@@ -1265,12 +1313,50 @@ export class MenuController extends Component {
             }
         };
 
-        // Step 2: scatter animation (SFX moved to popup pop-in above).
-        //         Preview pops only once scatter fully completes.
+        // Step 2: scatter animation + level_win SFX + timer move-to-
+        // center + font enlarge ALL fire at the same beat (per user
+        // spec — sound lands ON the gray-scatter visual and the timer
+        // celebration reads as one composed moment). HudController
+        // handles the timer piece; its onComplete callback fires after
+        // the center-hold (0.3s move + 2s hold = 2.3s) which we use as
+        // the trigger for the fate preview modal. Scatter itself is
+        // fire-and-forget — it's much shorter than the center hold
+        // (~0.6s vs 2.3s), so it finishes well before the fate popup.
+        SoundManager.instance?.play('level_win');
+        // Fire the timer center animation at the same beat.
+        // gameState.levelElapsedSec was frozen the moment running=false
+        // was set in maybeFireLevelWin, so it's identical to the value
+        // GameController already submitted to the leaderboard.
+        const hudAny = this.hudController as any;
+        const gs = (this.gameController as any)?.gameState;
+        const elapsedSec = gs?.levelElapsedSec ?? 0;
+        if (hudAny && typeof hudAny.showLevelClearTime === 'function') {
+            hudAny.showLevelClearTime(elapsedSec, showPreview);
+        }
+        // Scatter runs in parallel — no onDone hook, since
+        // showLevelClearTime.onComplete now owns the fate-preview
+        // trigger. When HUD isn't wired for showLevelClearTime,
+        // fall back to the old scatter-completion → showPreview
+        // sequence so the flow still advances.
         if (this.gameController
             && typeof this.gameController.playLevelScatter === 'function') {
-            this.gameController.playLevelScatter(this.exitLevelScatterSec, showPreview);
-        } else {
+            const scatterCb = (hudAny && typeof hudAny.showLevelClearTime === 'function')
+                ? () => {
+                    // Scatter animation done. Hide the entire boardRoot3D
+                    // immediately so nothing re-paints the tower back
+                    // during the ~1.7s window between scatter end and
+                    // fate preview open. Without this, the per-frame
+                    // paint loop syncs cube visibility from gameState
+                    // and can flip cubes back on (they were set active=
+                    // false one-by-one at scatter tween end, but the
+                    // paint pass overrides that). Killing the root wins
+                    // that race unconditionally. showPreview later does
+                    // the same thing — safe to no-op there once hidden.
+                    if (this.boardRoot3D) this.boardRoot3D.active = false;
+                }
+                : showPreview;
+            this.gameController.playLevelScatter(this.exitLevelScatterSec, scatterCb);
+        } else if (!(hudAny && typeof hudAny.showLevelClearTime === 'function')) {
             showPreview();
         }
     }
