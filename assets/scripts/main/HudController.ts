@@ -2395,23 +2395,33 @@ export class HudController extends Component {
         // — we build those at runtime so no editor rewiring is needed.
         for (let i = 0; i < this.authoredPickerSlotButtons.length; i++) {
             const btn = this.authoredPickerSlotButtons[i];
-            if (!btn) continue;
+            if (!btn?.node) {
+                if (btn) console.warn(`[Picker] slot ${i} button has no node — skipping`);
+                continue;
+            }
             btn.node.off('click');
             btn.node.on('click', () => this.onSlotClicked(i), this);
             this._injectPickerIconAndStars(btn.node, i);
         }
-        // Refresh button.
-        if (this.authoredPickerRefreshButton) {
-            const rb = this.authoredPickerRefreshButton;
+        // Refresh button. Guarded by ?. because after a scene merge the
+        // @property may hold a Button whose underlying node has been
+        // torn down — accessing `.node.off` in that state throws
+        // "Cannot read properties of undefined (reading 'off')".
+        const rb = this.authoredPickerRefreshButton;
+        if (rb?.node) {
             rb.node.off('click');
             rb.node.on('click', () => this.onRefreshClicked(), this);
+        } else if (rb) {
+            console.warn('[Picker] authoredPickerRefreshButton has no node — skipping wire');
         }
         // Paid refresh (spend gems). Cost fetched from server on every
         // picker-open (see `refreshPickerPaidCost`).
-        if (this.authoredPickerPaidRefreshButton) {
-            this.authoredPickerPaidRefreshButton.node.off('click');
-            this.authoredPickerPaidRefreshButton.node.on('click',
-                () => this.onPickerPaidRefreshClicked(), this);
+        const pb = this.authoredPickerPaidRefreshButton;
+        if (pb?.node) {
+            pb.node.off('click');
+            pb.node.on('click', () => this.onPickerPaidRefreshClicked(), this);
+        } else if (pb) {
+            console.warn('[Picker] authoredPickerPaidRefreshButton has no node — skipping wire');
         }
         this._pickerAuthoredWired = true;
     }
