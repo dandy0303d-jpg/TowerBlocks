@@ -26,7 +26,7 @@ export const ZH: Record<string, string> = {
     'hud.back':          '← 主页',
     'hud.height':        '层高',
     'hud.heightValue':   '层高  {n}',
-    'hud.next':          'NEXT',
+    'hud.next':          '下一个',
 
     // ---------- 道具卡 / Picker ----------
     'picker.title':      '⚡ 选 1 个魔法道具',
@@ -111,6 +111,7 @@ export const ZH: Record<string, string> = {
 
     // ---------- 关卡选择 ----------
     'level.name':        '关卡 {n}',
+    'level.clearTime':   '通关时间：{time}',
     'level.enter':       '进入关卡',
 
     // ---------- 闭眼模式 ----------

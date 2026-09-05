@@ -27,7 +27,7 @@ export const JA: Record<string, string> = {
     'hud.back':          '← ホーム',
     'hud.height':        '高さ',
     'hud.heightValue':   '高さ  {n}',
-    'hud.next':          'NEXT',
+    'hud.next':          '次',
 
     // ---------- アイテムピッカー ----------
     'picker.title':      '⚡ 魔法アイテムを 1 つ選択',
@@ -109,6 +109,7 @@ export const JA: Record<string, string> = {
 
     // ---------- ステージ選択 ----------
     'level.name':        'ステージ {n}',
+    'level.clearTime':   'クリア時間：{time}',
     'level.enter':       'ステージ開始',
 
     // ---------- ブラインドモード ----------
@@ -224,6 +225,13 @@ export const JA: Record<string, string> = {
     'settings.account.copied':      'クリップボードにコピー',
     'settings.account.copyFailed':  'コピー失敗',
     'settings.nickname.tooLong':     'ニックネームは最大 {n} 文字',
+    'settings.nickname.profanity':   'ニックネームに禁止語が含まれています',
+    'settings.nickname.reserved':    'このニックネームは予約されています',
+    'settings.nickname.tooShort':    'ニックネームが短すぎます',
+    'settings.nickname.tooLongServer':'ニックネームが長すぎます',
+    'settings.nickname.rejected':    '無効なニックネームです',
+    'settings.nickname.cooldown':    '次回変更まであと {n} 日',
+    'settings.nickname.cooldownReady':'今すぐ変更可能（次回は 7 日待機）',
     'settings.nickname.title':       'ニックネーム変更',
     'settings.nickname.placeholder': '新しいニックネームを入力',
 

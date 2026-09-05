@@ -19,7 +19,7 @@ export const FR: Record<string, string> = {
     'hud.back':          '← Accueil',
     'hud.height':        'Hauteur',
     'hud.heightValue':   'Hauteur  {n}',
-    'hud.next':          'NEXT',
+    'hud.next':          'Suivant',
 
     'picker.title':      '⚡ Choisis 1 objet magique',
     'picker.hint':       'Touche pour valider · Couleur = Rareté',
@@ -94,6 +94,7 @@ export const FR: Record<string, string> = {
     'collect.header':    'Objectifs',
 
     'level.name':        'Niveau {n}',
+    'level.clearTime':   'Temps : {time}',
     'level.enter':       'Entrer',
 
     'blind.fail.prompt': 'Défi échoué. Touche pour continuer.',
@@ -198,6 +199,13 @@ export const FR: Record<string, string> = {
     'settings.account.copied':      'Copié dans le presse-papiers',
     'settings.account.copyFailed':  'Échec de la copie',
     'settings.nickname.tooLong':     'Pseudo max {n} caractères',
+    'settings.nickname.profanity':   'Le pseudo contient des mots interdits',
+    'settings.nickname.reserved':    'Ce pseudo est réservé',
+    'settings.nickname.tooShort':    'Pseudo trop court',
+    'settings.nickname.tooLongServer':'Pseudo trop long',
+    'settings.nickname.rejected':    'Pseudo invalide, essayez un autre',
+    'settings.nickname.cooldown':    'Encore {n} jour(s) avant la prochaine modification',
+    'settings.nickname.cooldownReady':"Modifiable maintenant (puis 7 jours d'attente)",
     'settings.nickname.title':       'Changer de pseudo',
     'settings.nickname.placeholder': 'Nouveau pseudo',
 

@@ -45,15 +45,6 @@ const REFRESH_WINDOW_SEC = 60 * 60 * 24 * 7;
  *  issued the uuid; player hasn't bound a real account yet. */
 export type AccountType = 'anonymous' | 'email' | 'google' | 'apple';
 
-/** Parse an ISO-8601 timestamp into a ms epoch, or return null for
- *  null / undefined / empty / malformed input. Small helper so we
- *  don't scatter `p.field ? Date.parse(...) : null` across the file. */
-function parseIsoToEpoch(iso: string | null | undefined): number | null {
-    if (!iso) return null;
-    const ms = Date.parse(iso);
-    return Number.isFinite(ms) ? ms : null;
-}
-
 /** Fallback UUID generator — used ONLY when the server register call
  *  fails on first launch and we need to keep the game playable
  *  offline. The next launch retries and (eventually) replaces the
@@ -85,19 +76,21 @@ class Profile {
     private _accountType: AccountType | null | undefined = undefined;   // undefined = not loaded
     private _avatarIdx: number | null = null;   // null = never picked → renderer falls back to uuid hash
 
-    /** Server-authoritative timestamp (ms epoch) after which the player
-     *  can change their nickname again. `null` = never on cooldown /
-     *  ready to change now. Populated from GET /player/:uuid/profile
-     *  and refreshed when PUT /player/:uuid/profile succeeds. Backing
-     *  UI (MenuController) reads via `nicknameNextChangeAt` getter. */
-    private _nicknameNextChangeAt: number | null = null;
-
     /** Server-authoritative daily-free reroll counters. `null` = not
      *  yet fetched (fresh boot, offline). HUD callers should call
      *  DailyFreeApi.consume() rather than reading this directly for
      *  the atomic check-and-increment; this cache exists so the UI
      *  can render "N left today" labels without a round-trip. */
     private _dailyFree: DailyFreeState | null = null;
+
+    /** ISO timestamp of the earliest moment the player can rename
+     *  again, per the server's 7-day nickname cooldown. `null` means
+     *  either (a) the player has never been renamed, or (b) the
+     *  cooldown has fully elapsed — in both cases the change is
+     *  allowed. `undefined` means we haven't heard from the server
+     *  yet (fresh boot / offline). Populated by fetchProfile + refreshed
+     *  by every successful setName. */
+    private _nicknameNextChangeAt: string | null | undefined = undefined;
 
     /** Current uuid. If `ensureRegistered()` hasn't succeeded yet,
      *  returns a lazily-generated local UUID (offline fallback). */
@@ -228,22 +221,26 @@ class Profile {
 
     /** Persist a new display name. Server-side validates for
      *  profanity, reserved names, length — a 400 response ('nickname:
-     *  profanity' / 'nickname: reserved' / 'nickname: too-long' /
-     *  'nickname: too-short') REJECTS the change AND leaves local
-     *  state untouched, so the caller can toast an error and prompt
-     *  again with the OLD name still displayed.
+     *  <code>') or 429 cooldown REJECTS the change AND rolls the
+     *  local name back to what it was, so callers can toast an error
+     *  and re-open the prompt with the OLD name.
      *
-     *  Returns a Promise so UI can await + surface errors. Rejects
-     *  with the raw server error string on validation failure or
-     *  network error. */
-    async setName(next: string): Promise<void> {
+     *  Local state is updated optimistically for snappy repaint, then
+     *  rolled back on server rejection. Returns the server-saved name
+     *  on success (may differ from `next` if server truncated). Rejects
+     *  with the raw HTTP error message on failure — callers should
+     *  parse `err.message` for the `nickname: <code>` payload (codes:
+     *  profanity / reserved / too-short / too-long / cooldown). */
+    async setName(next: string): Promise<string | null> {
         const trimmed = next.trim();
-        if (!trimmed) return;
-        // Try the server FIRST — only mutate local state after a
-        // successful round-trip. Prevents the UI from claiming the
-        // new nickname when the server actually rejected it.
-        const prev = this._name;
-        console.log(`[PlayerProfile] setName → "${trimmed}" — validating with server…`);
+        if (!trimmed) return null;
+        // Snapshot the CURRENT persisted name so we can roll back on a
+        // server rejection.
+        const prevName = this.name;
+        // Optimistic local update — most callers repaint immediately.
+        this._name = trimmed;
+        sys.localStorage.setItem(NAME_KEY, trimmed);
+        console.log(`[PlayerProfile] setName → "${trimmed}" — syncing to server…`);
         try {
             const r = await updatePlayerProfile({ name: trimmed });
             // Server may normalise (truncate / strip whitespace) —
@@ -251,27 +248,36 @@ class Profile {
             this._name = r.name;
             sys.localStorage.setItem(NAME_KEY, r.name);
             // Server just armed the 7-day cooldown; adopt its
-            // authoritative next-change timestamp.
-            this._nicknameNextChangeAt = parseIsoToEpoch(r.nicknameNextChangeAt);
+            // authoritative next-change timestamp so the Settings
+            // countdown flips to "6 days" without a fetchProfile
+            // round-trip.
+            if (r.nicknameNextChangeAt !== undefined) {
+                this._nicknameNextChangeAt = r.nicknameNextChangeAt;
+            }
             console.log(`[PlayerProfile] setName saved: "${r.name}" nextChangeAt=${r.nicknameNextChangeAt}`);
-        } catch (err) {
-            const msg = (err as Error)?.message ?? String(err);
-            // 429 nickname:cooldown — server rejected because the
-            // 7-day rule hasn't elapsed. Extract retryAt so the caller
-            // can display exact remaining time. Payload shape:
+            return r.name;
+        } catch (err: any) {
+            const msg = err?.message ?? String(err);
+            // 429 nickname:cooldown — pull retryAt out of the payload
+            // so the local cooldown cache stays in sync with server
+            // (needed by callers that show remaining time).
             //   { error: 'nickname:cooldown', retryAt: '<iso>' }
-            if (msg.startsWith('HTTP 429')) {
+            if (typeof msg === 'string' && msg.startsWith('HTTP 429')) {
                 const bodyStart = msg.indexOf('{');
                 if (bodyStart > 0) {
                     try {
                         const body = JSON.parse(msg.slice(bodyStart));
                         if (body?.error === 'nickname:cooldown' && typeof body.retryAt === 'string') {
-                            this._nicknameNextChangeAt = parseIsoToEpoch(body.retryAt);
+                            this._nicknameNextChangeAt = body.retryAt;
                         }
                     } catch { /* ignore malformed body */ }
                 }
             }
-            console.warn(`[PlayerProfile] setName rejected: ${msg} — keeping "${prev}"`);
+            console.warn(`[PlayerProfile] setName rejected: ${msg} — keeping "${prevName}"`);
+            // Server rejected — roll back local state so UI reflects
+            // the pre-change name after refresh.
+            this._name = prevName;
+            sys.localStorage.setItem(NAME_KEY, prevName);
             throw err;
         }
     }
@@ -317,13 +323,18 @@ class Profile {
         const p = await fetchPlayerProfile();
         this._name = p.name;
         this._avatarIdx = p.avatarIdx;
-        // Adopt server-authoritative nickname cooldown + daily-free
-        // state. Older server builds omit these fields → keep whatever
-        // we had cached (null on cold boot, which is the safe default:
-        // client will optimistically show "can change now" / "3/3" and
-        // the server enforces truth on the next mutating call).
-        this._nicknameNextChangeAt = parseIsoToEpoch(p.nicknameNextChangeAt);
+        // Adopt server-authoritative daily-free state. Older builds
+        // omit this → keep whatever we had cached (null on cold boot,
+        // safe default: client optimistically shows "3/3" and the
+        // atomic consume call corrects it).
         if (p.dailyFree) this._dailyFree = p.dailyFree;
+        // Cache the nickname-cooldown deadline (server-authoritative).
+        // Optional field — older servers omit it entirely, in which
+        // case we leave `_nicknameNextChangeAt` undefined so the UI
+        // knows to hide the countdown rather than showing "0 days".
+        if (p.nicknameNextChangeAt !== undefined) {
+            this._nicknameNextChangeAt = p.nicknameNextChangeAt;
+        }
         sys.localStorage.setItem(NAME_KEY, p.name);
         sys.localStorage.setItem(AVATAR_KEY, String(p.avatarIdx));
         return {
@@ -335,10 +346,31 @@ class Profile {
 
     /** Server-authoritative epoch (ms) when nickname can next be
      *  changed. `null` when the player has never changed a name or
-     *  the cooldown has elapsed. Used by MenuController to render the
-     *  cooldown hint + gate the save button. */
+     *  the cooldown has elapsed. `undefined` folded to `null` so
+     *  callers (channel/app-store MenuController's cooldown gate)
+     *  see a stable number | null shape. */
     get nicknameNextChangeAt(): number | null {
-        return this._nicknameNextChangeAt;
+        if (this._nicknameNextChangeAt == null) return null;
+        const ms = Date.parse(this._nicknameNextChangeAt);
+        return Number.isFinite(ms) ? ms : null;
+    }
+
+    /** Days remaining before the nickname can be changed again, per
+     *  the server-authoritative cooldown. Returns:
+     *    - `0` — the change is allowed right now (either never renamed
+     *      or the 7-day window has fully elapsed).
+     *    - a positive integer (rounded up) — days left in the cooldown.
+     *    - `null` — we haven't heard from the server yet (fresh boot /
+     *      offline) or the server doesn't support the field; callers
+     *      should hide the countdown UI in that case. */
+    nicknameCooldownDaysRemaining(): number | null {
+        if (this._nicknameNextChangeAt === undefined) return null;
+        if (this._nicknameNextChangeAt === null) return 0;
+        const readyAtMs = Date.parse(this._nicknameNextChangeAt);
+        if (!Number.isFinite(readyAtMs)) return null;
+        const deltaMs = readyAtMs - Date.now();
+        if (deltaMs <= 0) return 0;
+        return Math.max(1, Math.ceil(deltaMs / (24 * 60 * 60 * 1000)));
     }
 
     /** Remaining daily-free rerolls for a given slot, per the server's
@@ -363,9 +395,16 @@ class Profile {
     }
 
     /** Update cached cooldown after a successful nickname change or
-     *  when the server rejects a change with `retryAt`. */
-    setNicknameNextChangeAt(epochMs: number | null): void {
-        this._nicknameNextChangeAt = epochMs;
+     *  when the server rejects a change with `retryAt`. Accepts an
+     *  ISO string, epoch ms, or null. Internal storage is ISO for
+     *  simple round-tripping with the server payload. */
+    setNicknameNextChangeAt(next: string | number | null): void {
+        if (next === null || next === undefined) {
+            this._nicknameNextChangeAt = null;
+            return;
+        }
+        this._nicknameNextChangeAt =
+            typeof next === 'number' ? new Date(next).toISOString() : next;
     }
 
     /**

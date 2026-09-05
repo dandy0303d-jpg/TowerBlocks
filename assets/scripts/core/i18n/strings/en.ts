@@ -23,7 +23,7 @@ export const EN: Record<string, string> = {
     'hud.back':          '← Home',
     'hud.height':        'Height',
     'hud.heightValue':   'Height  {n}',
-    'hud.next':          'NEXT',
+    'hud.next':          'Next',
 
     // ---------- Picker ----------
     'picker.title':      '⚡ Pick a Magic Item',
@@ -108,6 +108,7 @@ export const EN: Record<string, string> = {
 
     // ---------- Level select ----------
     'level.name':        'Level {n}',
+    'level.clearTime':   'Clear time: {time}',
     'level.enter':       'Enter Level',
 
     // ---------- Blind mode ----------

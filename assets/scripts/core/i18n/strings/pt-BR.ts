@@ -23,7 +23,7 @@ export const PT_BR: Record<string, string> = {
     'hud.back':          '← Início',
     'hud.height':        'Altura',
     'hud.heightValue':   'Altura  {n}',
-    'hud.next':          'NEXT',
+    'hud.next':          'Próximo',
 
     // ---------- Picker ----------
     'picker.title':      '⚡ Escolha 1 item mágico',
@@ -100,6 +100,7 @@ export const PT_BR: Record<string, string> = {
     'collect.header':    'Objetivos',
 
     'level.name':        'Fase {n}',
+    'level.clearTime':   'Tempo: {time}',
     'level.enter':       'Entrar na fase',
 
     'blind.fail.prompt': 'Desafio falhou. Toque para continuar.',
@@ -204,6 +205,13 @@ export const PT_BR: Record<string, string> = {
     'settings.account.copied':      'Copiado para área de transferência',
     'settings.account.copyFailed':  'Falha ao copiar',
     'settings.nickname.tooLong':     'Nome máximo de {n} caracteres',
+    'settings.nickname.profanity':   'O apelido contém palavras proibidas',
+    'settings.nickname.reserved':    'Esse apelido é reservado',
+    'settings.nickname.tooShort':    'Apelido muito curto',
+    'settings.nickname.tooLongServer':'Apelido muito longo',
+    'settings.nickname.rejected':    'Apelido inválido, tente outro',
+    'settings.nickname.cooldown':    'Faltam {n} dia(s) para o próximo troca',
+    'settings.nickname.cooldownReady':'Pode trocar agora (depois 7 dias de espera)',
     'settings.nickname.title':       'Editar nome',
     'settings.nickname.placeholder': 'Novo nome',
 
