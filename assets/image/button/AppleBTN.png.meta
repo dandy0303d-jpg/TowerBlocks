@@ -11,7 +11,7 @@
     "6c48a": {
       "importer": "texture",
       "uuid": "7f034e3c-0f39-4bb9-9314-95c592647e42@6c48a",
-      "displayName": "Applebtn",
+      "displayName": "AppleBTN",
       "id": "6c48a",
       "name": "texture",
       "userData": {
@@ -35,7 +35,7 @@
     "f9941": {
       "importer": "sprite-frame",
       "uuid": "7f034e3c-0f39-4bb9-9314-95c592647e42@f9941",
-      "displayName": "Applebtn",
+      "displayName": "AppleBTN",
       "id": "f9941",
       "name": "spriteFrame",
       "userData": {

@@ -133,6 +133,38 @@ export const ITEM_KEYS: MagicItemKey[] = [
  *    • Excavator  bottom     → 0.025 + 0.006 + 0.0025 = 0.0335
  *    • Excavator  top        → 0.025 + 0.006 + 0.0025 = 0.0335
  *  Grand total = 1.000. */
+/** Rarity tier — thresholds against ITEM_BASE_PROBS. Utility items
+ *  at the top of the pool (rewind / shapeshifter / hourglass1 / etc.)
+ *  are 普通 (common); mid-pool items are 稀有 (rare); bottom-pool
+ *  family tier-3 entries (rocket3, meteor3, excavator3 etc.) are 史诗
+ *  (epic). Consumed by:
+ *    - HudController.rarityForKey → paints card colour + badge
+ *    - GameState.rollEnergyChoices → applies pity boost per tier */
+export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic';
+
+/** Pity-boost multiplier — per unlucky draw, the item's base weight is
+ *  scaled by `1 + streak * PITY_BOOST_PER_DRAW[rarity]`.
+ *
+ *  "Unlucky draw" = the player rolled the picker (open or refresh)
+ *  WITHOUT committing to a pick. The moment they pick an item via
+ *  pickEnergyReward, `_pickerDrawStreak` resets to 0 and every item
+ *  falls back to its ITEM_BASE_PROBS weight.
+ *
+ *  Common tier stays at 1.0× no matter the streak — the pity kicks
+ *  in specifically to make rare/epic show up MORE, not to spam
+ *  commons. Tune here without touching call sites. Sample math for
+ *  streak = 5 with the defaults below:
+ *    common   × 1.00
+ *    uncommon × 1.75  (1 + 5 × 0.15)
+ *    rare     × 3.00  (1 + 5 × 0.40)
+ *    epic     × 5.00  (1 + 5 × 0.80) */
+export const PITY_BOOST_PER_DRAW: Record<Rarity, number> = {
+    common:   0.00,
+    uncommon: 0.15,
+    rare:     0.40,
+    epic:     0.80,
+};
+
 export const ITEM_BASE_PROBS: Record<MagicItemKey, number> = {
     rewind:        0.120,
     shapeshifter:  0.120,
@@ -158,6 +190,19 @@ export const ITEM_BASE_PROBS: Record<MagicItemKey, number> = {
     meteor2:       0.050,
     meteor3:       0.0125,
 };
+
+/** Compute rarity tier from an item key. Single source of truth for
+ *  every consumer that needs to reason about tier (HUD card border,
+ *  picker pity boost, chest reward log). Thresholds mirror the
+ *  ITEM_BASE_PROBS table above — bump items across a boundary by
+ *  editing their weight, not by adding branches here. */
+export function rarityForKey(key: MagicItemKey): Rarity {
+    const p = ITEM_BASE_PROBS[key] ?? 0;
+    if (p >= 0.10) return 'common';
+    if (p >= 0.05) return 'uncommon';
+    if (p >= 0.02) return 'rare';
+    return 'epic';
+}
 
 /** Mortar tier → number of drops the storm rains. Indexed by the magic-
  *  item key suffix (5/10/15). The fill plan is sliced down to this count
@@ -257,8 +302,11 @@ export const ENDLESS_STREAK_THRESHOLD = 4;   // 4 layers in a row → chest
 /** Every cumulative N filled rows in endless mode, pop the 本命方块 modal
  *  so the player can re-pick the fate shape mid-run. The pick replaces
  *  the bag's custom-shape entry on the next refill (current piece and
- *  the queued next piece keep playing). */
-export const ENDLESS_FATE_MILESTONE   = 12;
+ *  the queued next piece keep playing). Also drives the endless speed
+ *  ramp (Math.floor(cum / N) * 0.1 drop-interval multiplier, capped at
+ *  8.0) — so tuning this affects BOTH the modal cadence AND the
+ *  difficulty curve. */
+export const ENDLESS_FATE_MILESTONE   = 8;
 
 // -------- Level-mode chest progress ----------
 export const LEVEL_CUMULATIVE_INTERVAL = 5;  // every 5 fully-cleared rows → chest
