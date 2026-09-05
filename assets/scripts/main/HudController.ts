@@ -2364,6 +2364,18 @@ export class HudController extends Component {
      *  Network/other errors log without changing UI state so a flaky
      *  connection doesn't burn the daily count. */
     private onFateFreeRerollClicked(): void {
+        // Pre-gate on the cached remaining count so we don't accidentally
+        // reroll on channels/server versions where the /consume endpoint
+        // doesn't 429 when the quota is exhausted. Ad-watch integration
+        // is a separate TODO — for now the "🎬 看广告改命" click just
+        // toasts a hint instead of silently rerolling for free.
+        const cached = PlayerProfile.dailyFreeRemaining('fate');
+        if (cached === 0) {
+            console.log('[FateModal] daily-free exhausted — ad-watch not wired, ignoring click');
+            // TODO(rewarded-ad): call channel's ad SDK, play rewarded
+            // video, on completion call onFateReroll() + refresh label.
+            return;
+        }
         void (async () => {
             try {
                 const r = await consumeDailyFree('fate');
@@ -2685,6 +2697,20 @@ export class HudController extends Component {
     private onRefreshClicked(): void {
         const g = this.gameController?.gameState;
         if (!g) return;
+        // Pre-gate on the cached remaining count so we don't refresh
+        // for free when the quota is already known-exhausted. The
+        // server /consume endpoint SHOULD 429 in that case but doesn't
+        // on all versions — this guard is client-side belt-and-braces
+        // so the "🎬 Watch Ad" label matches actual behaviour.
+        // Ad-watch integration is a separate TODO — for now the click
+        // is a silent noop instead of a free refresh.
+        const cached = PlayerProfile.dailyFreeRemaining('magic');
+        if (cached === 0) {
+            console.log('[Picker] daily-free exhausted — ad-watch not wired, ignoring click');
+            // TODO(rewarded-ad): call channel's ad SDK, play rewarded
+            // video, on completion refreshEnergyPicker() + update label.
+            return;
+        }
         // Server-authoritative daily-free gate. POST /player/daily-free/consume
         // atomically checks-and-decrements — on 200 we grant the refresh
         // and update the cached remaining count; on 429 the slot is

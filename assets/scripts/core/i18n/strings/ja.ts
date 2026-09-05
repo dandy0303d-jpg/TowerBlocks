@@ -98,6 +98,7 @@ export const JA: Record<string, string> = {
     // ---------- 運命ブロックダイアログ ----------
     'fate.modalTitle':   '運命のブロック',
     'fate.reroll':       '運命を変える ({n}/3)',
+    'fate.reroll.ad':    '🎬 広告で運命を変える',
     'fate.start':        'スタート',
     'fate.cellCount':    '{n} マス',
     'fate.endlessSub':   'エンドレス',

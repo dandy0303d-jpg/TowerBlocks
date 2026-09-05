@@ -91,6 +91,7 @@ export const PT_BR: Record<string, string> = {
 
     'fate.modalTitle':   'Peça do Destino',
     'fate.reroll':       'Reroll do Destino ({n}/3)',
+    'fate.reroll.ad':    '🎬 Ver anúncio para rerroll',
     'fate.start':        'Começar',
     'fate.cellCount':    '{n} células',
     'fate.endlessSub':   'Infinito',

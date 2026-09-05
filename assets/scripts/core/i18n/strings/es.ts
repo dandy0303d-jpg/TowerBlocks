@@ -94,6 +94,7 @@ export const ES: Record<string, string> = {
     // ---------- Fate piece ----------
     'fate.modalTitle':   'Pieza del Destino',
     'fate.reroll':       'Rerroll del Destino ({n}/3)',
+    'fate.reroll.ad':    '🎬 Ver anuncio para rerroll',
     'fate.start':        'Comenzar',
     'fate.cellCount':    '{n} celdas',
     'fate.endlessSub':   'Infinito',
