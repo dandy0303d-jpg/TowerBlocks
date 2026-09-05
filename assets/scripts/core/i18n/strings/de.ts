@@ -87,6 +87,7 @@ export const DE: Record<string, string> = {
 
     'fate.modalTitle':   'Schicksalsblock',
     'fate.reroll':       'Schicksal ändern ({n}/3)',
+    'fate.reroll.ad':    '🎬 Werbung ansehen',
     'fate.start':        'Start',
     'fate.cellCount':    '{n} Felder',
     'fate.endlessSub':   'Endlos',

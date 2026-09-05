@@ -104,6 +104,7 @@ export const KO: Record<string, string> = {
     // ---------- Fate piece modal ----------
     'fate.modalTitle':   '운명의 블록',
     'fate.reroll':       '운명을 바꿔라 ({n}/3)',
+    'fate.reroll.ad':    '🎬 광고 보고 운명 바꾸기',
     'fate.start':        '시작',
     'fate.cellCount':    '{n}칸',
     'fate.endlessSub':   '무한 모드',

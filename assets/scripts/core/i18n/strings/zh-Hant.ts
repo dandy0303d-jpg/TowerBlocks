@@ -96,6 +96,7 @@ export const ZH_HANT: Record<string, string> = {
     // ---------- 本命方塊彈窗 ----------
     'fate.modalTitle':   '本命方塊',
     'fate.reroll':       '逆天改命 ({n}/3)',
+    'fate.reroll.ad':    '🎬 看廣告改命',
     'fate.start':        '直接開始',
     'fate.cellCount':    '共 {n} 格',
     'fate.endlessSub':   '無盡模式',
