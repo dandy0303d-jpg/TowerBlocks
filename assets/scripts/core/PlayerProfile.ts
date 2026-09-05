@@ -165,58 +165,73 @@ class Profile {
     }
 
     /** Swap the current player identity to a RECOVERED one — used by
-     *  the "this Apple ID is bound to another account, restore it?"
-     *  UX. Called after /player/login/apple returns the previously-
-     *  linked uuid + a freshly-minted bearer.
+     *  the "this account is bound to another Google/Apple, restore it?"
+     *  UX after a login call succeeds. Called after `/player/login/google`
+     *  or `/player/login/apple` returns the previously-linked uuid +
+     *  a freshly-minted bearer + expiry.
      *
      *  This is destructive — the guest account the caller was on
      *  BEFORE recovery is abandoned (server-side it's still there,
      *  just no longer connected to this device). Not undoable
-     *  without another /login/apple round-trip.
-     *
-     *  We derive expEpochSec by decoding the bearer's middle segment
-     *  (base64url(expEpochSec)) so we don't need the server to return
-     *  it separately.
+     *  without another /login round-trip.
      *
      *  Avatar is deliberately NOT reset — many players change avatar
-     *  BEFORE binding Apple, and we want them to keep it. If the
-     *  recovered account had a different avatar on another device,
-     *  the recovered device's local pick wins locally, and the
-     *  server-side one syncs down on next fetch. */
-    swapToRecoveredAccount(uuid: string, bearer: string): void {
-        // Decode the token's exp claim (second base64url segment).
-        let expEpochSec = 0;
-        try {
-            const parts = bearer.split('.');
-            if (parts.length === 3) {
-                const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
-                const pad = b64.length % 4;
-                const b64Padded = pad ? b64 + '='.repeat(4 - pad) : b64;
-                expEpochSec = parseInt(atob(b64Padded), 10);
+     *  BEFORE binding, and we want them to keep it. If the recovered
+     *  account has a different avatar on another device, the recovered
+     *  device's local pick wins locally, and the server-side one syncs
+     *  down on the next fetchProfile call.
+     *
+     *  Overload for Apple callers (channel/app-store): the Apple GC
+     *  path only had bearer+uuid (no expEpochSec), so it passed the
+     *  raw bearer whose middle segment decodes to the exp claim.
+     *  For clarity we still accept the (uuid, bearer) shape and lazily
+     *  decode the exp when caller doesn't supply one. */
+    swapToRecoveredAccount(
+        uuid: string,
+        bearer: string,
+        expEpochSec?: number,
+        accountType: AccountType = 'google',
+    ): void {
+        // Decode exp from bearer JWT if caller didn't supply one
+        // (channel/app-store's Apple GC path uses this overload).
+        let exp = typeof expEpochSec === 'number' ? expEpochSec : 0;
+        if (exp === 0) {
+            try {
+                const parts = bearer.split('.');
+                if (parts.length === 3) {
+                    const b64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+                    const pad = b64.length % 4;
+                    const b64Padded = pad ? b64 + '='.repeat(4 - pad) : b64;
+                    exp = parseInt(atob(b64Padded), 10);
+                }
+            } catch {
+                // Fall through — the very next auth'd call will 401 and
+                // we'll re-register anonymously via ensureRegistered.
             }
-        } catch {
-            // Fall through; server-side we'll fail the very next
-            // authenticated call and re-register anonymously.
         }
 
-        // In-memory: reset then set new identity.
         this._uuid = uuid;
-        this._name = null;               // name getter will fall back to 'user-<hex>' until updated
-        this._accountType = 'apple';
-        // _avatarIdx intentionally kept
+        // Force the name getter to fall back to the server-side default
+        // ('user-<hex>') until a fetchProfile call comes back with the
+        // real name — the recovered account's name isn't in the login
+        // response.
+        this._name = null;
+        this._accountType = accountType;
+        // Avatar intentionally kept — see docstring.
+        // Nickname cooldown is per-account and lives server-side; clear
+        // the local cache so the settings panel doesn't lie until the
+        // next fetchProfile catches up.
+        this._nicknameNextChangeAt = undefined;
 
-        // Persist to localStorage.
         sys.localStorage.setItem(UUID_KEY, uuid);
-        sys.localStorage.setItem(ACCOUNT_KEY, 'apple');
+        sys.localStorage.setItem(ACCOUNT_KEY, accountType);
         sys.localStorage.setItem(TOKEN_KEY, bearer);
-        sys.localStorage.setItem(TOKEN_EXP_KEY, String(expEpochSec));
-        // Clear the old NAME_KEY so the getter falls back correctly.
+        sys.localStorage.setItem(TOKEN_EXP_KEY, String(exp));
         sys.localStorage.removeItem(NAME_KEY);
 
-        // Wire the new bearer into the Http module for subsequent calls.
         setBearerToken(bearer);
 
-        console.log(`[PlayerProfile] swapped to recovered account: ${uuid} (accountType=apple)`);
+        console.log(`[PlayerProfile] swapped to recovered ${accountType} account: ${uuid}`);
     }
 
     /** Persist a new display name. Server-side validates for
