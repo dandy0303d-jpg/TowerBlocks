@@ -31,7 +31,7 @@ import { SoundManager } from '../audio/SoundManager';
 import { HapticsManager } from '../audio/HapticsManager';
 import { getControlMode, subscribe as subscribeSettings } from '../core/Settings';
 import { LevelProgress } from '../core/LevelProgress';
-import { submitScore } from '../core/LeaderboardApi';
+import { submitScore, submitLevelTime } from '../core/LeaderboardApi';
 // Game Center — channel-specific. On non-iOS these calls resolve
 // with { success:false, kind:'platform-unsupported' } so guarding
 // isn't required; leaving the calls unconditional keeps the two
@@ -684,6 +684,19 @@ export class GameController extends Component {
                 },
                 onLevelWin:     ()  => {
                     log('[TowerBlocks] LEVEL WIN (deferred until effects clear)');
+                    // Fire the pending flag immediately — drainPendingPopups
+                    // still gates on fxStillPlaying (colored-block shatter
+                    // animation), so MenuController.showLevelWin only runs
+                    // after that natural drain wait. THAT is the moment
+                    // scatter + level_win + timer-move-to-center all fire
+                    // simultaneously (see MenuController.showLevelWin —
+                    // the timer animation is now triggered THERE, at the
+                    // scatter-start beat, per user spec:
+                    //   1. Colored blocks clear
+                    //   2. Gray scatter + level_win SFX + timer move all
+                    //      at the same beat
+                    //   3. Timer sits at center 2s
+                    //   4. Fate modal pops
                     this.pendingLevelWin = true;
                     // Persist the completion so the level-select page can
                     // unlock the next level. Endless mode uses idx = -1
@@ -691,21 +704,28 @@ export class GameController extends Component {
                     if (this._activeLevelIdx >= 0) {
                         LevelProgress.markCleared(this._activeLevelIdx);
                         // ---- Leaderboard submission ----
-                        // Score for the level tab = total levels cleared so
-                        // far. `markCleared` already updated maxClearedIdx,
-                        // so `+1` gives the count (indices are 0-based).
-                        // Server does best-of merging, so replaying an
-                        // easier level doesn't downgrade the score.
-                        const clearedCount = LevelProgress.maxClearedIdx + 1;
-                        log(`[TowerBlocks] submitting level score ${clearedCount} to leaderboard`);
-                        submitScore('level', clearedCount).catch(err => {
-                            console.warn('[TowerBlocks] leaderboard submit failed:', err.message);
+                        // Per-level top-time board. Server stores the top-10
+                        // fastest times per level (over-provisioned buffer
+                        // so bans / cheat removals can promote replacements
+                        // without a re-crawl). Payload is WHOLE SECONDS —
+                        // matches HUD display, avoids float noise, and
+                        // sorts identically to milliseconds at this
+                        // granularity. levelElapsedSec is frozen the moment
+                        // running=false is set in maybeFireLevelWin, so
+                        // reading it here (or later in MenuController for
+                        // the timer display) both see the same value.
+                        const elapsedSec = this.gameState?.levelElapsedSec ?? 0;
+                        log(`[TowerBlocks] submitting level clear — idx=${this._activeLevelIdx} elapsedSec=${elapsedSec}`);
+                        submitLevelTime(this._activeLevelIdx, elapsedSec).catch(err => {
+                            console.warn('[TowerBlocks] level time submit failed:', err.message);
                         });
-                        // Report Game Center achievement progress.
-                        // percentComplete = cleared / total * 100.
-                        // GC handles idempotency + monotonic progress
-                        // server-side; reporting 100% shows the native
-                        // "Achievement Unlocked" banner.
+                        // Report Game Center achievement progress
+                        // (channel-specific — Apple only). percentComplete
+                        // = maxClearedIdx+1 / total * 100. GC handles
+                        // idempotency + monotonic progress server-side;
+                        // reporting 100% shows the native "Achievement
+                        // Unlocked" banner.
+                        const clearedCount = LevelProgress.maxClearedIdx + 1;
                         const totalLevels = this.flatLevels.length || 1;
                         const pct = Math.min(100, (clearedCount / totalLevels) * 100);
                         GameCenter.reportAchievement(GC_ACHIEVEMENT.levelMode, pct).then((r) => {
@@ -3449,6 +3469,11 @@ export class GameController extends Component {
             // the completion via LevelProgress.
             this._activeLevelIdx = idx;
             this.gameState.startLevel(lvl);
+            // Snap the HUD level timer back to its top-strip rest
+            // position + un-freeze its value. Otherwise the previous
+            // level's tween-to-center parking would still be in effect
+            // for this fresh run.
+            this.hudController?.resetLevelTimerPosition?.();
             this.boardYOffsetInitialised = false;
             this.lastKnownTotalRows = -1;
             this.prevPieceRef = null;

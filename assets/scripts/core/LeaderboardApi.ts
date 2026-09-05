@@ -140,6 +140,118 @@ export async function fetchMyRank(mode: LeaderboardApiMode): Promise<MyRankResul
     return httpGetJson<MyRankResult>(url, BACKEND_TIMEOUT_MS);
 }
 
+// ---------------------------------------------------------------------------
+// Per-level top-time leaderboard (replaces the count-cleared level board).
+//
+// SERVER API CONTRACT (backend TODO — this repo doesn't ship the server):
+//
+//   POST /leaderboard/level-time/submit
+//     Body: { uuid, name, levelIdx, elapsedSec }
+//     Auth: bearer
+//     Response: { updated: boolean, personalBest: number|null, rank: number|null }
+//
+//     Server behaviour per (uuid, levelIdx):
+//       - Keep the FASTEST elapsedSec the player has ever submitted for
+//         that level (min-of-best merging — resubmitting a slower time
+//         does NOT downgrade the record; returns updated=false).
+//       - Reject elapsedSec < 1 (obvious cheat / clock glitch) with HTTP 400.
+//
+//     Server-side global table per level:
+//       - Store TOP-10 fastest times per levelIdx (over-provisioned so
+//         bans / cheat removals promote #11 into #10 without a re-crawl).
+//       - Return the caller's own rank + best in the response so the
+//         client can paint an inline "you are #7" line without a
+//         second GET.
+//
+//   GET /leaderboard/level-time/tops
+//     Query: none (returns the CURRENT #1 for every level with any entry)
+//     Auth: bearer optional
+//     Response: { entries: LevelTopEntry[] }
+//       LevelTopEntry = { levelIdx, uuid, name, avatarIdx, elapsedSec }
+//       Missing levels (nobody has cleared them yet) are simply omitted
+//       from the array — client fills the row with "—".
+//
+//   All time fields are WHOLE SECONDS (integer). Matches HUD display
+//   and avoids sub-second sort tie-breakers with no user-visible
+//   effect (M:SS granularity is what the leaderboard shows).
+// ---------------------------------------------------------------------------
+
+/** One row of the per-level leaderboard — the top-1 (fastest) player
+ *  for a specific level index, painted onto the LeaderboardController's
+ *  level tab as "Floor X: <name> <MM:SS>". */
+export interface LevelTopEntry {
+    levelIdx:   number;   // 0-based index into the flatLevels array
+    uuid:       string;
+    name:       string;
+    avatarIdx:  number;
+    elapsedSec: number;   // whole seconds; format as MM:SS in UI
+}
+
+export interface LevelTimeSubmitResult {
+    updated:      boolean;
+    personalBest: number | null;  // fastest elapsedSec the player has for this level
+    rank:         number | null;  // caller's rank among top-10 (1-based), null if outside
+}
+
+/** Submit a level-clear time (whole seconds). Server keeps the
+ *  min-of-best per (uuid, levelIdx) — resubmitting a SLOWER time
+ *  won't downgrade the personal best (server returns updated=false).
+ *  Called from GameController.onLevelWin. */
+export async function submitLevelTime(
+    levelIdx: number,
+    elapsedSec: number,
+): Promise<LevelTimeSubmitResult> {
+    console.log(`[Leaderboard] submitLevelTime levelIdx=${levelIdx} elapsedSec=${elapsedSec} uuid=${PlayerProfile.uuid.slice(0, 8)}`);
+    const url = `${BACKEND_BASE_URL}/leaderboard/level-time/submit`;
+    try {
+        const r = await httpPostJson<LevelTimeSubmitResult>(url, {
+            uuid:       PlayerProfile.uuid,
+            name:       PlayerProfile.name,
+            levelIdx,
+            elapsedSec,
+        }, BACKEND_TIMEOUT_MS);
+        console.log(`[Leaderboard] submitLevelTime OK — updated=${r.updated} personalBest=${r.personalBest} rank=${r.rank}`);
+        return r;
+    } catch (err: any) {
+        console.warn(`[Leaderboard] submitLevelTime FAILED: ${err?.message}`);
+        throw err;
+    }
+}
+
+/** Fetch the current #1 (fastest) player for every level. Returns
+ *  a sparse array — levels with zero entries are simply not present.
+ *  Client-side renderer indexes by `levelIdx` for O(1) row lookup
+ *  when painting the 1..99 list. */
+export async function fetchLevelTops(): Promise<LevelTopEntry[]> {
+    const url = `${BACKEND_BASE_URL}/leaderboard/level-time/tops`;
+    const data = await httpGetJson<{ entries: LevelTopEntry[] }>(url, BACKEND_TIMEOUT_MS);
+    return data.entries ?? [];
+}
+
+/** One entry in the local player's own per-level PB list — used by
+ *  the leaderboard's LEVEL tab to show "your fastest clear on this
+ *  floor" in the bottom my-row when the player taps a scroll row. */
+export interface MyLevelTimeEntry {
+    levelIdx:   number;
+    elapsedSec: number;
+}
+
+/** Fetch the local player's personal-best time for every level they've
+ *  cleared. Sparse: levels with no clear are simply omitted (client
+ *  displays "—" in that case). Server derives the caller identity from
+ *  the bearer token, so no uuid param needed.
+ *
+ *  Server contract:
+ *    GET /leaderboard/level-time/mine
+ *      Auth: bearer
+ *      Response: { entries: MyLevelTimeEntry[] }
+ */
+export async function fetchMyLevelTimes(): Promise<MyLevelTimeEntry[]> {
+    const url = `${BACKEND_BASE_URL}/leaderboard/level-time/mine`;
+    const data = await httpGetJson<{ entries: MyLevelTimeEntry[] }>(url, BACKEND_TIMEOUT_MS);
+    return data.entries ?? [];
+}
+
 /** Server-issued anonymous account bootstrap. Called by PlayerProfile
  *  on first launch. Server generates a fresh UUID + default nickname
  *  + bearer token; the token is what future mutating calls carry in
