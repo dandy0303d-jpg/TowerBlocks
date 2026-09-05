@@ -11,6 +11,23 @@
         <action android:name="android.intent.action.MAIN"/>
         <category android:name="android.intent.category.LAUNCHER"/>
       </intent-filter>
+      <!-- Google Web OAuth redirect capture. Google's authorization
+           server redirects the browser to this custom scheme after the
+           user finishes signing in; the intent-filter tells Android to
+           bring us back to the front (launchMode="singleTask" reuses
+           the existing task so no fresh Activity is created).
+           GoogleWebOAuthBridge.handleRedirect (via AppActivity.onNewIntent)
+           reads the query string and hands the code back to TS.
+           Path is /google/callback so a future Apple / other-provider
+           redirect can share the same scheme under a different host. -->
+      <intent-filter android:autoVerify="false">
+        <action android:name="android.intent.action.VIEW"/>
+        <category android:name="android.intent.category.DEFAULT"/>
+        <category android:name="android.intent.category.BROWSABLE"/>
+        <data android:scheme="com.tetritower.oauth"
+              android:host="google"
+              android:pathPrefix="/callback"/>
+      </intent-filter>
     </activity>
     <activity android:name="com.cocos.lib.CocosEditBoxActivity" android:configChanges="orientation|keyboardHidden|screenSize|screenLayout|smallestScreenSize" android:screenOrientation="behind" android:theme="@android:style/Theme.Translucent.NoTitleBar.Fullscreen"/>
   </application>

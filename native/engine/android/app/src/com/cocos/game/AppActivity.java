@@ -48,6 +48,13 @@ public class AppActivity extends CocosActivity {
         // DO OTHER INITIALIZATION BELOW
         SDKWrapper.shared().init(this);
 
+        // Google Web OAuth bridge — handles the account-bind flow via
+        // Chrome Custom Tabs (no Google Sign-In SDK / GMS dependency).
+        // install() only stashes a WeakReference to this Activity; the
+        // Custom Tabs intent is only launched when TS calls startAuth().
+        // Companion onNewIntent() below forwards the OAuth redirect back
+        // to the bridge for parsing.
+        com.cocos.game.GoogleWebOAuthBridge.install(this);
     }
 
     @Override
@@ -82,6 +89,19 @@ public class AppActivity extends CocosActivity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         SDKWrapper.shared().onNewIntent(intent);
+        // Google Web OAuth redirect capture. We use launchMode="singleTask"
+        // + an intent-filter on our custom oauth scheme (see AndroidManifest),
+        // so when Google's redirect fires and Android routes it to us, this
+        // is where it lands. Gate by scheme so we only forward genuinely
+        // Google-oauth intents to the bridge (any other deep-link
+        // integration keeps its own path). setIntent so a subsequent
+        // getIntent() reflects the new intent, matching Android norms.
+        if (intent != null
+                && intent.getData() != null
+                && "com.tetritower.oauth".equals(intent.getData().getScheme())) {
+            setIntent(intent);
+            com.cocos.game.GoogleWebOAuthBridge.handleRedirect(intent);
+        }
     }
 
     @Override

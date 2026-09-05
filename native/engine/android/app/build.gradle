@@ -116,4 +116,14 @@ dependencies {
         implementation 'com.google.android.libraries.play.games:inputmapping:1.1.0-beta'
         implementation "org.jetbrains.kotlin:kotlin-stdlib:1.4.10"
     }
+
+    // =========================================================
+    // Google Web OAuth (channel-agnostic)
+    // =========================================================
+    // Chrome Custom Tabs — used by GoogleWebOAuthBridge.kt to open
+    // the Google OAuth consent screen without the Google Sign-In SDK.
+    // This lets the account-bind flow work even on devices that ship
+    // without Google Play Services (GMS). androidx.browser is ~50 KB
+    // and has no transitive GMS dependency.
+    implementation 'androidx.browser:browser:1.8.0'
 }
