@@ -23,6 +23,7 @@ export const RU: Record<string, string> = {
     'hud.next':          'Далее',
 
     'picker.title':      '⚡ Выбери 1 магический предмет',
+    'refresh.limitReached':'Достигнут лимит',
     'picker.hint':       'Нажми для подтверждения · Цвет = Редкость',
     'picker.refresh':    '🔄 Бесплатный реролл ({n}/3)',
     'picker.adRefresh':  '🎬 Смотри рекламу для реролла',

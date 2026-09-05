@@ -1317,8 +1317,8 @@ export class HudController extends Component {
         // fallback). Was previously derived from nextBox's UITransform
         // + ROW_GAP so it hugged the bottom edge — swapped to a fixed
         // offset because the authored NEXT box's height moved and the
-        // derived position drifted off. Y = -147 is where art wants it.
-        const hgTopY = -147;
+        // derived position drifted off. Y = -156 is where art wants it.
+        const hgTopY = -156;
 
         const { root: hgWrap, gfx: hgGfx } =
             this.buildPixelCountReadout(nextBox, 'HourglassCountdown', 0, hgTopY, HG_WRAP_WIDTH, HG_WRAP_HEIGHT);
@@ -3557,7 +3557,7 @@ export class HudController extends Component {
         const cost = REFRESH_COST_TIERS[Math.min(used, REFRESH_COST_TIERS.length - 1)];
 
         const text = exhausted
-            ? '已达上限'
+            ? t('refresh.limitReached')
             : `${cost}  (${remaining}/${MAX_PAID_REFRESHES_PER_MODAL})`;
         console.log(`[${type === 'fate' ? 'FateModal' : 'Picker'}] refreshPaidRefreshLabel — used=${used} remaining=${remaining} cost=${cost} text="${text}" labelsPainted=${labels.length} authoredWired=${!!authoredLab}`);
         for (const lab of labels) lab.string = text;

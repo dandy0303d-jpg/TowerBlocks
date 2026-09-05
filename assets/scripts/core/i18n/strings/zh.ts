@@ -30,6 +30,7 @@ export const ZH: Record<string, string> = {
 
     // ---------- 道具卡 / Picker ----------
     'picker.title':      '⚡ 选 1 个魔法道具',
+    'refresh.limitReached':'已达上限',
     'picker.hint':       '点击卡片确认 · 颜色 = 稀有度',
     'picker.refresh':    '🔄 免费刷新 ({n}/3)',
     'picker.adRefresh':  '🎬 看广告再刷一次',

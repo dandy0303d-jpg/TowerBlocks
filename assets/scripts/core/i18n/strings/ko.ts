@@ -26,6 +26,7 @@ export const KO: Record<string, string> = {
 
     // ---------- Picker ----------
     'picker.title':      '⚡ 마법 아이템을 1개 선택',
+    'refresh.limitReached':'상한 도달',
     'picker.hint':       '카드를 탭하여 확인 · 색상 = 등급',
     'picker.refresh':    '🔄 무료 리롤 ({n}/3)',
     'picker.adRefresh':  '🎬 광고 보고 한 번 더',

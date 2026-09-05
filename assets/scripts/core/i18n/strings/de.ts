@@ -24,6 +24,7 @@ export const DE: Record<string, string> = {
     'hud.next':          'Nächste',
 
     'picker.title':      '⚡ Wähle 1 Zauberitem',
+    'refresh.limitReached':'Limit erreicht',
     'picker.hint':       'Tippen zum Bestätigen · Farbe = Seltenheit',
     'picker.refresh':    '🔄 Kostenloser Reroll ({n}/3)',
     'picker.adRefresh':  '🎬 Werbung ansehen für Reroll',
