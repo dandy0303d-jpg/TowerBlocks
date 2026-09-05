@@ -86,6 +86,7 @@ export const RU: Record<string, string> = {
 
     'fate.modalTitle':   'Блок Судьбы',
     'fate.reroll':       'Изменить судьбу ({n}/3)',
+    'fate.reroll.ad':    '🎬 Реклама для реролла',
     'fate.start':        'Старт',
     'fate.cellCount':    '{n} клеток',
     'fate.endlessSub':   'Бесконечный',

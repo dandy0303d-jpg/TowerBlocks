@@ -8488,7 +8488,7 @@
     "_contentSize": {
       "__type__": "cc.Size",
       "width": 750,
-      "height": 1334.0000000000002
+      "height": 1334
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -9642,7 +9642,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 21.096500000000027,
+      "x": 24.230000000000025,
       "y": -0.8689999999999412,
       "z": 0
     },
@@ -9681,7 +9681,7 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 65.551,
+      "width": 102.498,
       "height": 57.672
     },
     "_anchorPoint": {
@@ -9711,13 +9711,13 @@
       "b": 247,
       "a": 255
     },
-    "_string": "99",
+    "_string": "10(3/3)",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
-    "_actualFontSize": 25,
-    "_fontSize": 25,
+    "_actualFontSize": 30,
+    "_fontSize": 30,
     "_fontFamily": "Arial",
-    "_lineHeight": 25,
+    "_lineHeight": 30,
     "_overflow": 2,
     "_enableWrapText": false,
     "_font": null,
@@ -9774,7 +9774,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": -31.714,
+      "x": -47.019,
       "y": -1.361,
       "z": 0
     },
@@ -10303,17 +10303,17 @@
     "_string": "看广告改变命运",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
-    "_actualFontSize": 25,
-    "_fontSize": 25,
+    "_actualFontSize": 31,
+    "_fontSize": 30,
     "_fontFamily": "Arial",
     "_lineHeight": 40,
     "_overflow": 2,
-    "_enableWrapText": false,
+    "_enableWrapText": true,
     "_font": null,
     "_isSystemFontUsed": true,
     "_spacingX": 0,
     "_isItalic": false,
-    "_isBold": false,
+    "_isBold": true,
     "_isUnderline": false,
     "_underlineHeight": 2,
     "_cacheMode": 0,
@@ -10578,7 +10578,7 @@
     "_contentSize": {
       "__type__": "cc.Size",
       "width": 750,
-      "height": 1334.0000000000002
+      "height": 1334
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -12237,7 +12237,7 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 749.9999999999999,
+      "width": 750,
       "height": 1334
     },
     "_anchorPoint": {
@@ -13476,7 +13476,7 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 749.9999999999999,
+      "width": 750,
       "height": 1334
     },
     "_anchorPoint": {
@@ -33171,7 +33171,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": -96.554,
+      "x": -118.46900000000001,
       "y": -306.182,
       "z": 0
     },
@@ -33357,7 +33357,7 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 388.9,
+      "width": 345.07,
       "height": 76
     },
     "_anchorPoint": {
@@ -33474,7 +33474,7 @@
     "_right": 0,
     "_top": 0,
     "_bottom": 0,
-    "_horizontalCenter": -96.554,
+    "_horizontalCenter": -118.46900000000001,
     "_verticalCenter": 0,
     "_isAbsLeft": true,
     "_isAbsRight": true,
@@ -33522,7 +33522,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 200.641,
+      "x": 177.94299999999998,
       "y": -308.304,
       "z": 0
     },
@@ -33576,7 +33576,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 29.018,
+      "x": 33.594,
       "y": -0.1514999999999791,
       "z": 0
     },
@@ -33615,7 +33615,7 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 88.68300000000002,
+      "width": 131.979,
       "height": 60.989000000000004
     },
     "_anchorPoint": {
@@ -33645,7 +33645,7 @@
       "b": 243,
       "a": 255
     },
-    "_string": "99",
+    "_string": "10(3/3)",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
     "_actualFontSize": 30,
@@ -33715,7 +33715,7 @@
     "_right": 0,
     "_top": 0,
     "_bottom": 0,
-    "_horizontalCenter": 29.018,
+    "_horizontalCenter": 33.594,
     "_verticalCenter": 0,
     "_isAbsLeft": true,
     "_isAbsRight": true,
@@ -33750,7 +33750,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": -38.166,
+      "x": -59.145,
       "y": 0,
       "z": 0
     },
@@ -33850,7 +33850,7 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 173,
+      "width": 218.39600000000002,
       "height": 76
     },
     "_anchorPoint": {
@@ -33886,7 +33886,7 @@
     },
     "_type": 1,
     "_fillType": 0,
-    "_sizeMode": 1,
+    "_sizeMode": 0,
     "_fillCenter": {
       "__type__": "cc.Vec2",
       "x": 0,
@@ -33967,7 +33967,7 @@
     "_right": 0,
     "_top": 0,
     "_bottom": 0,
-    "_horizontalCenter": 200.641,
+    "_horizontalCenter": 177.94299999999998,
     "_verticalCenter": 0,
     "_isAbsLeft": true,
     "_isAbsRight": true,

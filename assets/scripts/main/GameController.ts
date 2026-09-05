@@ -796,10 +796,12 @@ export class GameController extends Component {
                     HapticsManager.impact('medium');
                 },
                 // Meteor shower per-DOT launch — fires each time a
-                // DOT piece spawns (rocket / gatling parity).
+                // DOT piece spawns. SFX only; no haptic (per-DOT
+                // haptic buzz was too busy alongside the rain audio;
+                // rocket/gatling still buzz because they're
+                // one-shot launches, not a shower).
                 onMeteorFire:  ()     => {
                     SoundManager.instance?.play('meteor_fire');
-                    HapticsManager.impact('medium');
                 },
                 // Mortar drop lock — play SFX only on the FIRST drop
                 // of each storm. Subsequent drops in the same storm
