@@ -58,6 +58,7 @@ import {
     Button,
     Prefab,
     ScrollView,
+    Widget,
     instantiate,
     log,
 } from 'cc';
@@ -65,7 +66,7 @@ import {
 import { t, subscribe as subscribeI18n } from '../core/i18n/I18n';
 import { LeaderboardRow } from './LeaderboardRow';
 import { getLang, subscribe as subscribeLang } from '../core/i18n/I18n';
-import { fetchTop, fetchMyRank, fetchLevelTops, LeaderboardApiEntry, LeaderboardApiMode, LevelTopEntry, MyRankResult } from '../core/LeaderboardApi';
+import { fetchTop, fetchMyRank, fetchLevelTops, fetchMyLevelTimes, LeaderboardApiEntry, LeaderboardApiMode, LevelTopEntry, MyLevelTimeEntry, MyRankResult } from '../core/LeaderboardApi';
 import { PlayerProfile } from '../core/PlayerProfile';
 
 const { ccclass, property } = _decorator;
@@ -86,6 +87,17 @@ export interface LeaderboardEntry {
      *  When set, `score` still carries the raw ms so any sort /
      *  compare code that reads it stays honest. */
     scoreLabel?: string;
+    /** Optional pre-formatted string that overrides the numeric `rank`
+     *  in the row's rank Label. Used by the level tab to show
+     *  "关卡 1" / "Level 1" instead of a bare "1" — because on that
+     *  tab the "rank" column is really a floor identifier, not a
+     *  ranking position. */
+    rankLabel?: string;
+    /** True → suppress the top-3 gold/silver/bronze badge nodes even
+     *  when `rank` is 1/2/3. Level tab uses this because its rank
+     *  column is the floor number, not a ranking — a trophy on floor
+     *  1/2/3 would be misleading. */
+    hideBadges?: boolean;
 }
 
 /** Which mode's leaderboard is currently showing. */
@@ -173,6 +185,17 @@ export class LeaderboardController extends Component {
      *  from a fetch we no longer care about (e.g. user tab-switched
      *  before it resolved) don't overwrite fresher data. */
     private lastFetchId: number = 0;
+
+    /** Level tab — cache of the local player's personal-best time for
+     *  every level they've cleared. Populated once per level-tab open
+     *  via fetchMyLevelTimes(). Key: levelIdx (0-based). Value:
+     *  elapsedSec. Missing key = player hasn't cleared that floor. */
+    private myLevelTimes: Map<number, number> = new Map();
+
+    /** Level tab — currently-selected floor index (0-based) whose PB
+     *  is shown in the bottom my-rank row. Defaults to 0 (floor 1) on
+     *  first open; changes when the player taps a row. */
+    private selectedLevelIdx: number = 0;
 
     // ============================================================
     //  Lifecycle
@@ -418,12 +441,28 @@ export class LeaderboardController extends Component {
         // Parallel fetch: local player's own rank + score. Uses the
         // same reqId so a tab-switch mid-flight discards this too.
         //
-        // Skipped for the LEVEL tab — that tab now shows per-level
-        // top-1 across all 99 floors; "my rank" is per-level not global,
-        // so a single row doesn't make sense. Hide the my-rank row
-        // outright for level, restore for endless / blind.
+        // For the LEVEL tab we don't have a single "my rank" (rank is
+        // per-floor), so instead we fetch the player's PB for every
+        // level they've cleared and paint the my-row for the currently-
+        // selected floor. First open defaults to floor 1 (selectedLevelIdx=0);
+        // subsequent taps on a scroll row update the selection.
         if (mode === 'level') {
-            if (this.myRankRow) this.myRankRow.node.active = false;
+            fetchMyLevelTimes()
+                .then((entries) => {
+                    if (reqId !== this.lastFetchId) return;
+                    if (this.currentMode !== mode) return;
+                    this.myLevelTimes.clear();
+                    for (const e of entries) this.myLevelTimes.set(e.levelIdx, e.elapsedSec);
+                    this.paintLevelMyRankRow();
+                })
+                .catch((err) => {
+                    console.warn(`[Leaderboard] fetchMyLevelTimes failed:`, err.message);
+                    // Still paint with whatever we have (probably empty).
+                    this.paintLevelMyRankRow();
+                });
+            // Paint immediately with any prior cache so the row isn't
+            // blank while the fetch is in flight.
+            this.paintLevelMyRankRow();
             return;
         }
         fetchMyRank(mode)
@@ -455,7 +494,9 @@ export class LeaderboardController extends Component {
             // Local player's own avatar — read from PlayerProfile
             // instead of the server, so the row updates instantly
             // after a fresh pick without waiting for a re-fetch.
-            avatarIdx: PlayerProfile.avatarIdx,
+            // Resolves the uuid-hash fallback for guests who haven't
+            // explicitly picked, matching what the Settings avatar shows.
+            avatarIdx: this.resolveMyAvatarIdx(),
         }, this.avatarFrames);
         // Overwrite the rank / score Labels with placeholder strings
         // when the player hasn't scored in this mode yet — populate()
@@ -467,19 +508,95 @@ export class LeaderboardController extends Component {
         }
     }
 
+    /** Resolve the local player's avatar index for row rendering.
+     *  Matches the fallback the Settings avatar Sprite uses (uuid
+     *  hash → index) when the player hasn't explicitly picked one,
+     *  so the "my row" avatar in the leaderboard always agrees with
+     *  the avatar shown on the settings panel + throughout the app. */
+    private resolveMyAvatarIdx(): number | null {
+        const picked = PlayerProfile.avatarIdx;
+        if (picked !== null) return picked;
+        const frames = this.avatarFrames;
+        if (!frames.length) return null;
+        const u = PlayerProfile.uuid;
+        let h = 0;
+        for (let i = 0; i < u.length; i++) h = (h * 31 + u.charCodeAt(i)) | 0;
+        return Math.abs(h) % frames.length;
+    }
+
+    /** Paint the bottom my-rank row for the LEVEL tab — shows the
+     *  local player's PB for `selectedLevelIdx`. Called after a fresh
+     *  fetch and after a row-click updates the selection. */
+    private paintLevelMyRankRow(): void {
+        const row = this.myRankRow;
+        if (!row) return;
+        row.node.active = true;
+        const idx = this.selectedLevelIdx;
+        const secs = this.myLevelTimes.get(idx);
+        const hasPB = typeof secs === 'number';
+        const mm = hasPB ? Math.floor(secs! / 60).toString().padStart(2, '0') : '';
+        const ss = hasPB ? (secs! % 60).toString().padStart(2, '0') : '';
+        row.populate({
+            rank:       idx + 1,
+            rankLabel:  t('level.name', { n: idx + 1 }),
+            name:       PlayerProfile.name,
+            score:      hasPB ? secs! : 0,
+            scoreLabel: hasPB ? `${mm}:${ss}` : '—',
+            avatarIdx:  this.resolveMyAvatarIdx(),
+            isYou:      true,
+            hideBadges: true,
+        }, this.avatarFrames);
+    }
+
+    /** Handle a row tap on the LEVEL tab — update the selected floor,
+     *  repaint the bottom my-rank row AND the scroll rows so the
+     *  selection highlight moves to the tapped row. No-op for other tabs. */
+    private onLevelRowClicked(entry: LeaderboardEntry): void {
+        if (this.currentMode !== 'level') return;
+        // entry.rank is 1-based floor number; convert to 0-based index.
+        this.selectedLevelIdx = Math.max(0, entry.rank - 1);
+        this.paintLevelMyRankRow();
+        // Repaint scroll rows so youHighlight moves to the tapped row.
+        // Use the cached entries (they're already loaded — the tap only
+        // happens after the fetch resolved and painted rows).
+        const cached = this.cachedEntries['level'];
+        if (cached) this.paintRows(cached);
+    }
+
     /** Sync paint helper — pool + tail-hide + force Layout. Called
      *  both from the immediate cached-paint path and the async
      *  fetch-resolved path. */
     private paintRows(entries: ReadonlyArray<LeaderboardEntry>): void {
         const n = Math.min(entries.length, MAX_ENTRIES);
         this.ensureRowPool(n);
+        // Row click handler — only meaningful for the LEVEL tab; other
+        // tabs get a no-op handler so the pooled rows don't retain a
+        // stale level-mode click callback across tab switches.
+        const isLevel = this.currentMode === 'level';
+        const clickHandler: ((e: LeaderboardEntry) => void) | null =
+            isLevel
+                ? (e) => this.onLevelRowClicked(e)
+                : null;
         for (let i = 0; i < this.rowPool.length; i++) {
             const row = this.rowPool[i];
             if (i < n) {
                 row.node.active = true;
-                row.populate(entries[i], this.avatarFrames);
+                row.onClick = clickHandler;
+                // Level tab: repurpose the youHighlight to mark the
+                // player's CURRENT SELECTION (which floor they tapped),
+                // not the "own row" concept — endless/blind still use it
+                // for "this is your row" and pass through unchanged.
+                let entry = entries[i];
+                if (isLevel) {
+                    const isSelected = (entry.rank - 1) === this.selectedLevelIdx;
+                    if (entry.isYou !== isSelected) {
+                        entry = { ...entry, isYou: isSelected };
+                    }
+                }
+                row.populate(entry, this.avatarFrames);
             } else {
                 row.node.active = false;
+                row.onClick = null;
             }
         }
         // Force the Content Layout to recalculate NOW — see original
@@ -509,6 +626,15 @@ export class LeaderboardController extends Component {
             const inst = instantiate(this.rowPrefab);
             inst.parent = this.content;
             inst.layer  = this.content.layer;
+            // The row prefab root has a cc.Widget (align: horizontal-center
+            // + top) baked in from editor authoring. Left enabled, every
+            // instantiated row snaps to that same anchor inside Content,
+            // stacking all rows on top of each other and making only the
+            // last-painted one visible — this is the "only 1 row shows"
+            // bug on the level tab. Disable the Widget on the pooled
+            // instance so cc.Layout can position rows freely.
+            const w = inst.getComponent(Widget);
+            if (w) w.enabled = false;
             const row = inst.getComponent(LeaderboardRow);
             if (!row) {
                 // Prefab is missing the component — bail out loudly so
@@ -569,22 +695,30 @@ export class LeaderboardController extends Component {
                     const ss = (top.elapsedSec % 60).toString().padStart(2, '0');
                     out.push({
                         rank:       idx + 1,   // floor number (1..99)
+                        rankLabel:  t('level.name', { n: idx + 1 }),  // "关卡 1" / "Level 1"
                         name:       top.name,
                         score:      top.elapsedSec,     // raw seconds — honest sort field
                         scoreLabel: `${mm}:${ss}`,     // painter-facing display
                         avatarIdx:  top.avatarIdx > 0 ? top.avatarIdx : null,
-                        isYou:      top.uuid === myUuid,
+                        // Level tab: isYou is NOT "you own this row" — it's
+                        // "this row is the currently-selected floor". Kept
+                        // false here; paintRows applies the selection-based
+                        // override at render time.
+                        isYou:      false,
+                        hideBadges: true,   // no gold/silver/bronze on floor number
                     });
                 } else {
                     // No clear yet for this floor — empty placeholder row.
                     // LeaderboardRow paints "—" for empty name / score.
                     out.push({
                         rank:       idx + 1,
+                        rankLabel:  t('level.name', { n: idx + 1 }),
                         name:       '—',
                         score:      0,
                         scoreLabel: '—',
                         avatarIdx:  null,
                         isYou:      false,
+                        hideBadges: true,
                     });
                 }
             }

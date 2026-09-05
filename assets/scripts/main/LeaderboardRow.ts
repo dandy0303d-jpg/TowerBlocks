@@ -14,8 +14,15 @@
  * partially-authored prefab still boots without crashing.
  */
 
-import { _decorator, Component, Node, Label, Sprite, SpriteFrame } from 'cc';
+import { _decorator, Component, Node, Label, Sprite, SpriteFrame, Button, EventTouch, Vec2 } from 'cc';
 import type { LeaderboardEntry } from './LeaderboardController';
+
+/** Drag threshold in UI-space pixels — a touch that moves more than
+ *  this between TOUCH_START and TOUCH_END is treated as a scroll
+ *  gesture (not a tap) so scrolling the list never selects a row.
+ *  Only used by the manual-touch fallback; when the prefab has a
+ *  cc.Button the Button handles drag-vs-tap itself. */
+const TAP_DRAG_THRESHOLD = 10;
 
 const { ccclass, property } = _decorator;
 
@@ -46,12 +53,94 @@ export class LeaderboardRow extends Component {
     @property({ type: Node, tooltip: '"我"高亮节点（可空；玩家自己的那行会 setActive(true)）' })
     youHighlight: Node | null = null;
 
+    /** Tap callback — set by LeaderboardController per-mode. Fires when
+     *  the user taps this row without dragging (scroll gestures are
+     *  filtered by TAP_DRAG_THRESHOLD). null → row is non-interactive. */
+    public onClick: ((entry: LeaderboardEntry) => void) | null = null;
+
+    /** Cached last-populated entry — used by the tap handler so click
+     *  callbacks receive the same entry the row is currently showing,
+     *  even if the pool has been re-populated for a different tab. */
+    private _entry: LeaderboardEntry | null = null;
+
+    /** Tap-vs-scroll detection state. */
+    private _touchStartPos: Vec2 = new Vec2();
+    private _isTap: boolean = false;
+
+    /** True if the prefab has a cc.Button on its root — we prefer the
+     *  Button's built-in drag-vs-tap detection (which cooperates with
+     *  ScrollView) over our manual TOUCH_* tracking. */
+    private _hasButton: boolean = false;
+
+    onLoad(): void {
+        // Prefer cc.Button if the prefab carries one — Button emits a
+        // 'click' event only when the tap wasn't a scroll drag, and
+        // it cooperates with the parent ScrollView natively.
+        const btn = this.getComponent(Button);
+        if (btn) {
+            this._hasButton = true;
+            this.node.on('click', this._onButtonClick, this);
+        } else {
+            // Fallback: manual tap detection with our own drag threshold.
+            // Registered once here so pool reuse across tab switches
+            // doesn't re-stack handlers.
+            this.node.on(Node.EventType.TOUCH_START,  this._onTouchStart,  this);
+            this.node.on(Node.EventType.TOUCH_MOVE,   this._onTouchMove,   this);
+            this.node.on(Node.EventType.TOUCH_END,    this._onTouchEnd,    this);
+            this.node.on(Node.EventType.TOUCH_CANCEL, this._onTouchCancel, this);
+        }
+    }
+
+    onDestroy(): void {
+        if (this._hasButton) {
+            this.node.off('click', this._onButtonClick, this);
+        } else {
+            this.node.off(Node.EventType.TOUCH_START,  this._onTouchStart,  this);
+            this.node.off(Node.EventType.TOUCH_MOVE,   this._onTouchMove,   this);
+            this.node.off(Node.EventType.TOUCH_END,    this._onTouchEnd,    this);
+            this.node.off(Node.EventType.TOUCH_CANCEL, this._onTouchCancel, this);
+        }
+    }
+
+    /** cc.Button click handler — Button already filtered out scroll
+     *  drags, so just fire the callback with the last-populated entry. */
+    private _onButtonClick(): void {
+        if (this._entry && this.onClick) this.onClick(this._entry);
+    }
+
+    private _onTouchStart(e: EventTouch): void {
+        this._touchStartPos.set(e.getUILocation());
+        this._isTap = true;
+    }
+
+    private _onTouchMove(e: EventTouch): void {
+        if (!this._isTap) return;
+        const cur = e.getUILocation();
+        if (Vec2.distance(cur, this._touchStartPos) > TAP_DRAG_THRESHOLD) {
+            this._isTap = false;
+        }
+    }
+
+    private _onTouchEnd(_e: EventTouch): void {
+        const wasTap = this._isTap;
+        this._isTap = false;
+        if (!wasTap) return;
+        if (this._entry && this.onClick) this.onClick(this._entry);
+    }
+
+    private _onTouchCancel(_e: EventTouch): void {
+        this._isTap = false;
+    }
+
     /**
      * Fill this row's Labels + avatar from `entry`. Call once per row
      * per show; no per-frame updates.
      */
     public populate(entry: LeaderboardEntry, avatarFrames: SpriteFrame[]): void {
-        if (this.rankLabel)  this.rankLabel.string  = String(entry.rank);
+        this._entry = entry;
+        // rankLabel override lets the level tab print "关卡 1" / "Level 1"
+        // (its column is a floor identifier, not a rank position).
+        if (this.rankLabel)  this.rankLabel.string  = entry.rankLabel ?? String(entry.rank);
         if (this.nameLabel)  this.nameLabel.string  = entry.name;
         // Prefer the pre-formatted string when the caller provides one
         // (level-time tab wants "MM:SS", not raw ms). Otherwise fall
@@ -69,10 +158,12 @@ export class LeaderboardRow extends Component {
 
         // Top-3 badges: hide all, then show the one matching this row's
         // rank (if any). Rank 1 → badgeNodes[0], rank 2 → [1], rank 3 → [2].
+        // Suppressed entirely when the entry sets hideBadges (level tab —
+        // where the "rank" is a floor number, not a ranking position).
         for (let i = 0; i < this.badgeNodes.length; i++) {
             const node = this.badgeNodes[i];
             if (!node) continue;
-            node.active = (entry.rank === i + 1);
+            node.active = !entry.hideBadges && (entry.rank === i + 1);
         }
 
         // "You" highlight — subtle glow / border on the local player's

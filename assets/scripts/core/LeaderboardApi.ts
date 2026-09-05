@@ -230,6 +230,30 @@ export async function fetchLevelTops(): Promise<LevelTopEntry[]> {
     return data.entries ?? [];
 }
 
+/** One entry in the local player's own per-level PB list — used by
+ *  the leaderboard's LEVEL tab to show "your fastest clear on this
+ *  floor" in the bottom my-row when the player taps a scroll row. */
+export interface MyLevelTimeEntry {
+    levelIdx:   number;
+    elapsedSec: number;
+}
+
+/** Fetch the local player's personal-best time for every level they've
+ *  cleared. Sparse: levels with no clear are simply omitted (client
+ *  displays "—" in that case). Server derives the caller identity from
+ *  the bearer token, so no uuid param needed.
+ *
+ *  Server contract:
+ *    GET /leaderboard/level-time/mine
+ *      Auth: bearer
+ *      Response: { entries: MyLevelTimeEntry[] }
+ */
+export async function fetchMyLevelTimes(): Promise<MyLevelTimeEntry[]> {
+    const url = `${BACKEND_BASE_URL}/leaderboard/level-time/mine`;
+    const data = await httpGetJson<{ entries: MyLevelTimeEntry[] }>(url, BACKEND_TIMEOUT_MS);
+    return data.entries ?? [];
+}
+
 /** Server-issued anonymous account bootstrap. Called by PlayerProfile
  *  on first launch. Server generates a fresh UUID + default nickname
  *  + bearer token; the token is what future mutating calls carry in
