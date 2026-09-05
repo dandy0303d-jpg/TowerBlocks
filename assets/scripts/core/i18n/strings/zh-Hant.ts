@@ -29,6 +29,7 @@ export const ZH_HANT: Record<string, string> = {
 
     // ---------- 道具卡 / Picker ----------
     'picker.title':      '⚡ 選 1 個魔法道具',
+    'refresh.limitReached':'已達上限',
     'picker.hint':       '點擊卡片確認 · 顏色 = 稀有度',
     'picker.refresh':    '🔄 免費刷新 ({n}/3)',
     'picker.adRefresh':  '🎬 看廣告再刷一次',

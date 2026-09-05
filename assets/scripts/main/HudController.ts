@@ -1317,8 +1317,8 @@ export class HudController extends Component {
         // fallback). Was previously derived from nextBox's UITransform
         // + ROW_GAP so it hugged the bottom edge — swapped to a fixed
         // offset because the authored NEXT box's height moved and the
-        // derived position drifted off. Y = -147 is where art wants it.
-        const hgTopY = -147;
+        // derived position drifted off. Y = -156 is where art wants it.
+        const hgTopY = -156;
 
         const { root: hgWrap, gfx: hgGfx } =
             this.buildPixelCountReadout(nextBox, 'HourglassCountdown', 0, hgTopY, HG_WRAP_WIDTH, HG_WRAP_HEIGHT);
@@ -2395,23 +2395,33 @@ export class HudController extends Component {
         // — we build those at runtime so no editor rewiring is needed.
         for (let i = 0; i < this.authoredPickerSlotButtons.length; i++) {
             const btn = this.authoredPickerSlotButtons[i];
-            if (!btn) continue;
+            if (!btn?.node) {
+                if (btn) console.warn(`[Picker] slot ${i} button has no node — skipping`);
+                continue;
+            }
             btn.node.off('click');
             btn.node.on('click', () => this.onSlotClicked(i), this);
             this._injectPickerIconAndStars(btn.node, i);
         }
-        // Refresh button.
-        if (this.authoredPickerRefreshButton) {
-            const rb = this.authoredPickerRefreshButton;
+        // Refresh button. Guarded by ?. because after a scene merge the
+        // @property may hold a Button whose underlying node has been
+        // torn down — accessing `.node.off` in that state throws
+        // "Cannot read properties of undefined (reading 'off')".
+        const rb = this.authoredPickerRefreshButton;
+        if (rb?.node) {
             rb.node.off('click');
             rb.node.on('click', () => this.onRefreshClicked(), this);
+        } else if (rb) {
+            console.warn('[Picker] authoredPickerRefreshButton has no node — skipping wire');
         }
         // Paid refresh (spend gems). Cost fetched from server on every
         // picker-open (see `refreshPickerPaidCost`).
-        if (this.authoredPickerPaidRefreshButton) {
-            this.authoredPickerPaidRefreshButton.node.off('click');
-            this.authoredPickerPaidRefreshButton.node.on('click',
-                () => this.onPickerPaidRefreshClicked(), this);
+        const pb = this.authoredPickerPaidRefreshButton;
+        if (pb?.node) {
+            pb.node.off('click');
+            pb.node.on('click', () => this.onPickerPaidRefreshClicked(), this);
+        } else if (pb) {
+            console.warn('[Picker] authoredPickerPaidRefreshButton has no node — skipping wire');
         }
         this._pickerAuthoredWired = true;
     }
@@ -3557,7 +3567,7 @@ export class HudController extends Component {
         const cost = REFRESH_COST_TIERS[Math.min(used, REFRESH_COST_TIERS.length - 1)];
 
         const text = exhausted
-            ? '已达上限'
+            ? t('refresh.limitReached')
             : `${cost}  (${remaining}/${MAX_PAID_REFRESHES_PER_MODAL})`;
         console.log(`[${type === 'fate' ? 'FateModal' : 'Picker'}] refreshPaidRefreshLabel — used=${used} remaining=${remaining} cost=${cost} text="${text}" labelsPainted=${labels.length} authoredWired=${!!authoredLab}`);
         for (const lab of labels) lab.string = text;

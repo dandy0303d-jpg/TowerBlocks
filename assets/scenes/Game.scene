@@ -1527,7 +1527,7 @@
     "_lpos": {
       "__type__": "cc.Vec3",
       "x": 0.22600000000000087,
-      "y": -123.99600000000002,
+      "y": -130.08200000000002,
       "z": 0
     },
     "_lrot": {
@@ -1577,8 +1577,8 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": -9.072,
-      "y": 0,
+      "x": -0.488999999999999,
+      "y": 0.3270000000000004,
       "z": 0
     },
     "_lrot": {
@@ -1616,8 +1616,8 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 238.610789,
-      "height": 45.839999999999996
+      "width": 257.684789,
+      "height": 68.57799999999999
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -1649,10 +1649,10 @@
     "_string": "label",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
-    "_actualFontSize": 31,
-    "_fontSize": 30,
+    "_actualFontSize": 61,
+    "_fontSize": 60,
     "_fontFamily": "Arial",
-    "_lineHeight": 30,
+    "_lineHeight": 60,
     "_overflow": 2,
     "_enableWrapText": true,
     "_font": null,
@@ -1713,7 +1713,7 @@
     "_contentSize": {
       "__type__": "cc.Size",
       "width": 275.98,
-      "height": 64.888
+      "height": 89.23200000000001
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -49892,7 +49892,7 @@
       "__id__": 1166
     },
     "titleLabel": {
-      "__id__": 1175
+      "__id__": 1052
     },
     "logoSprite": {
       "__id__": 1240
