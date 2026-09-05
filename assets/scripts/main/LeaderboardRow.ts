@@ -53,7 +53,13 @@ export class LeaderboardRow extends Component {
     public populate(entry: LeaderboardEntry, avatarFrames: SpriteFrame[]): void {
         if (this.rankLabel)  this.rankLabel.string  = String(entry.rank);
         if (this.nameLabel)  this.nameLabel.string  = entry.name;
-        if (this.scoreLabel) this.scoreLabel.string = entry.score.toLocaleString();
+        // Prefer the pre-formatted string when the caller provides one
+        // (level-time tab wants "MM:SS", not raw ms). Otherwise fall
+        // back to the default numeric-with-thousands-separator format
+        // used by endless / blind ("12,340").
+        if (this.scoreLabel) {
+            this.scoreLabel.string = entry.scoreLabel ?? entry.score.toLocaleString();
+        }
 
         if (this.avatarSprite && avatarFrames.length > 0) {
             const idx = entry.avatarIdx ?? ((entry.rank - 1) % avatarFrames.length);

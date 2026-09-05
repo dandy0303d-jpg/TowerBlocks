@@ -83,11 +83,54 @@ export interface TopupResult {
 }
 
 /** Fetch the current player's wallet. Server upserts an empty row
- *  on first call, so this always returns something (starts at 0). */
+ *  on first call, so this always returns something (starts at 0).
+ *  Auto-broadcasts via emitBalance() so any subscribed UI (main-page
+ *  topup button, settings balance strip, HUD gem badge) repaints
+ *  without every caller needing to remember to notify listeners. */
 export async function fetchWallet(): Promise<WalletState> {
     const uuid = encodeURIComponent(PlayerProfile.uuid);
     const url  = `${BACKEND_BASE_URL}/player/wallet?uuid=${uuid}`;
-    return httpGetJson<WalletState>(url, BACKEND_TIMEOUT_MS);
+    const w = await httpGetJson<WalletState>(url, BACKEND_TIMEOUT_MS);
+    emitBalance(w.gems);
+    return w;
+}
+
+// ---------------------------------------------------------------------------
+//  Balance-change pub/sub
+//
+//  Any UI that shows the current gem balance (main-page topup button,
+//  settings balance strip, HUD gem badge, top-up panel header) can
+//  subscribe here and get a callback whenever the balance changes,
+//  without each surface running its own polling / interval / re-fetch
+//  loop. Fires whenever:
+//    - fetchWallet()      resolves                    (below)
+//    - topupWallet()      credits gems on success     (below)
+//    - purchaseRefresh()  spends gems on success      (RefreshApi.ts)
+//  Callers must invoke the returned unsubscribe fn on onDestroy() /
+//  scene teardown so a stale controller ref doesn't hold the whole
+//  scene alive.
+//
+//  Handlers run in registration order; a throwing handler is caught
+//  so one broken subscriber can't stop the others from firing.
+// ---------------------------------------------------------------------------
+type BalanceListener = (gems: number) => void;
+const balanceListeners = new Set<BalanceListener>();
+
+export function subscribeBalance(fn: BalanceListener): () => void {
+    balanceListeners.add(fn);
+    return () => balanceListeners.delete(fn);
+}
+
+/** Notify every subscribed listener that the balance is now `gems`.
+ *  Public so callers that already know the balance (paid-refresh
+ *  response, IAP receipt validation response, admin console debug
+ *  grant) can broadcast without a fresh fetchWallet round-trip. */
+export function emitBalance(gems: number): void {
+    for (const fn of balanceListeners) {
+        try { fn(gems); } catch (err) {
+            console.warn('[WalletApi] balance listener threw:', (err as Error).message);
+        }
+    }
 }
 
 /** Credit a completed IAP to the player's wallet. Server dedups by
@@ -112,13 +155,17 @@ export async function topupWallet(
     platformReceipt?: string,
 ): Promise<TopupResult> {
     const url = `${BACKEND_BASE_URL}/player/wallet/topup`;
-    return httpPostJson<TopupResult>(url, {
+    const res = await httpPostJson<TopupResult>(url, {
         uuid: PlayerProfile.uuid,
         sku,
         paymentKind,
         transactionId,
         platformReceipt,
     }, BACKEND_TIMEOUT_MS);
+    // Broadcast the post-topup balance so main-page / settings / HUD
+    // labels repaint without waiting for the next fetchWallet.
+    emitBalance(res.balance);
+    return res;
 }
 
 /**
