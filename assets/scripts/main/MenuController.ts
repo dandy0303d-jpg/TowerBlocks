@@ -33,7 +33,7 @@ import { LevelSelectStage3D } from './LevelSelectStage3D';
 import { LeaderboardController } from './LeaderboardController';
 import { TopUpController } from './TopUpController';
 import { PlayerProfile } from '../core/PlayerProfile';
-import { setBannedHandler, getBannedState, type BannedState } from '../core/Http';
+import { setBannedHandler, getBannedState, setBearerToken, type BannedState } from '../core/Http';
 import { fetchWallet, subscribeBalance } from '../core/WalletApi';
 import { BACKEND_BASE_URL } from '../core/BackendConfig';
 import { TutorialProgress } from '../core/TutorialProgress';
@@ -54,6 +54,8 @@ import { deletePlayerSelf } from '../core/PlayerApi';
 import { IS_DEV_BUILD } from '../core/BuildConfig';
 import { fetchConsentStatus } from '../core/ConsentApi';
 import { ConsentModal } from './ConsentModal';
+import { GoogleWebOAuth } from '../channels/google/GoogleWebOAuth';
+import { linkGoogleToCurrentAccount, loginWithGoogle } from '../core/GoogleLinkApi';
 
 const { ccclass, property } = _decorator;
 
@@ -2243,10 +2245,7 @@ export class MenuController extends Component {
         if (this.authoredSettingsGoogleButton) {
             const btn = this.authoredSettingsGoogleButton;
             btn.node.off('click');
-            btn.node.on('click', () => {
-                log('[Settings] Google button clicked — bind/unbind flow TODO');
-                this.refreshAuthoredSettingsValues();
-            }, this);
+            btn.node.on('click', () => this.handleGoogleBindClick(), this);
         }
         if (this.authoredSettingsAppleButton) {
             const btn = this.authoredSettingsAppleButton;
@@ -2760,6 +2759,105 @@ export class MenuController extends Component {
             this.refreshAuthoredSettingsValues();
             log(`[Settings] nickname rejected: ${err?.message}`);
         }
+    }
+
+    // ============================================================
+    //  Google account binding (Settings panel)
+    // ============================================================
+    /** Handler for the Settings-panel Google button. Two paths:
+     *    1. Player is already `google`-linked → future work is unlink;
+     *       for now we just toast "already linked" (unlink flow isn't
+     *       spec'd yet — server has no unbind endpoint).
+     *    2. Player is a guest → open Google Web OAuth via Custom Tabs,
+     *       exchange code → id_token, POST /player/link/google.
+     *       Conflict (this Google account owns another uuid) → confirm
+     *       recovery, POST /player/login/google, swap identity.
+     *  Errors are logged + toasted; the button stays clickable so the
+     *  player can retry after a transient network hiccup. */
+    private async handleGoogleBindClick(): Promise<void> {
+        // Already bound → tell the player, do nothing else. Unlink is
+        // a separate feature the server doesn't support yet; the UI
+        // sprite already reads "bound" for their state.
+        if (PlayerProfile.accountType === 'google') {
+            this.showSettingsToast(t('settings.google.alreadyLinked'), 'info');
+            return;
+        }
+        // Web / iOS / editor preview — Custom Tabs bridge only exists
+        // on native Android. Feature-gate cleanly so no cryptic errors.
+        if (!GoogleWebOAuth.isSupported) {
+            this.showSettingsToast(t('settings.google.unsupported'), 'error');
+            return;
+        }
+        // ---- 1) Open Custom Tabs → wait for id_token ----
+        let idToken: string;
+        try {
+            log('[Settings] Google bind — launching OAuth flow');
+            this.showSettingsToast(t('settings.google.pending'), 'info');
+            idToken = await GoogleWebOAuth.signIn();
+        } catch (err: any) {
+            const msg = err?.message ?? String(err);
+            // Silence user-cancel in the toast — that's expected UX.
+            if (/access_denied|cancel|timeout/i.test(msg)) {
+                log(`[Settings] Google sign-in cancelled: ${msg}`);
+                return;
+            }
+            console.warn('[Settings] Google sign-in FAILED:', msg);
+            this.showSettingsToast(t('settings.google.error'), 'error');
+            return;
+        }
+        // ---- 2) Try to bind to CURRENT uuid ----
+        let link;
+        try {
+            link = await linkGoogleToCurrentAccount(idToken);
+        } catch (err: any) {
+            console.warn('[Settings] /link/google FAILED:', err?.message ?? err);
+            this.showSettingsToast(t('settings.google.error'), 'error');
+            return;
+        }
+        if (link.linked) {
+            // Happy path — mark the profile as google-linked so the
+            // button flips to "bound" state on next repaint.
+            PlayerProfile.setAccountType('google');
+            this.showSettingsToast(t('settings.google.linked'), 'info');
+            this.refreshAuthoredSettingsValues();
+            log('[Settings] Google linked to current uuid');
+            return;
+        }
+        // ---- 3) Conflict — this Google owns ANOTHER uuid ----
+        if (link.alreadyLinked) {
+            log(`[Settings] Google already linked to ${link.linkedUuid ?? '(unknown)'} — offering recovery`);
+            const ok = await this.showConfirm(
+                t('settings.google.recover.title'),
+                t('settings.google.recover.desc'),
+                t('common.confirm'),
+                t('common.cancel'),
+            );
+            if (!ok) {
+                log('[Settings] Google recovery declined by user');
+                return;
+            }
+            try {
+                const rec = await loginWithGoogle(idToken);
+                PlayerProfile.swapToRecoveredAccount(rec.uuid, rec.bearer, rec.expEpochSec, 'google');
+                // Re-fetch server-side profile so the recovered account's
+                // name / avatar / bestScores paint into the settings panel.
+                try {
+                    await PlayerProfile.fetchProfile();
+                } catch (e) {
+                    console.warn('[Settings] fetchProfile after recovery failed:', (e as Error)?.message);
+                }
+                this.showSettingsToast(t('settings.google.recovered'), 'info');
+                this.refreshAuthoredSettingsValues();
+                log(`[Settings] Recovered Google-linked account: ${rec.uuid}`);
+            } catch (err: any) {
+                console.warn('[Settings] /login/google FAILED:', err?.message ?? err);
+                this.showSettingsToast(t('settings.google.error'), 'error');
+            }
+            return;
+        }
+        // Neither linked nor alreadyLinked — shouldn't happen per spec.
+        console.warn('[Settings] /link/google returned unexpected shape:', JSON.stringify(link));
+        this.showSettingsToast(t('settings.google.error'), 'error');
     }
 
     // ============================================================

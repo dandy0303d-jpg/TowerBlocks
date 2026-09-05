@@ -162,6 +162,52 @@ class Profile {
         console.log('[PlayerProfile] in-memory state wiped');
     }
 
+    /** Swap the current player identity to a RECOVERED one — used by
+     *  the "this account is bound to another Google/Apple, restore it?"
+     *  UX after a login call succeeds. Called after `/player/login/google`
+     *  or `/player/login/apple` returns the previously-linked uuid +
+     *  a freshly-minted bearer + expiry.
+     *
+     *  This is destructive — the guest account the caller was on
+     *  BEFORE recovery is abandoned (server-side it's still there,
+     *  just no longer connected to this device). Not undoable
+     *  without another /login round-trip.
+     *
+     *  Avatar is deliberately NOT reset — many players change avatar
+     *  BEFORE binding, and we want them to keep it. If the recovered
+     *  account has a different avatar on another device, the recovered
+     *  device's local pick wins locally, and the server-side one syncs
+     *  down on the next fetchProfile call. */
+    swapToRecoveredAccount(
+        uuid: string,
+        bearer: string,
+        expEpochSec: number,
+        accountType: AccountType = 'google',
+    ): void {
+        this._uuid = uuid;
+        // Force the name getter to fall back to the server-side default
+        // ('user-<hex>') until a fetchProfile call comes back with the
+        // real name — the recovered account's name isn't in the login
+        // response.
+        this._name = null;
+        this._accountType = accountType;
+        // Avatar intentionally kept — see docstring.
+        // Nickname cooldown is per-account and lives server-side; clear
+        // the local cache so the settings panel doesn't lie until the
+        // next fetchProfile catches up.
+        this._nicknameNextChangeAt = undefined;
+
+        sys.localStorage.setItem(UUID_KEY, uuid);
+        sys.localStorage.setItem(ACCOUNT_KEY, accountType);
+        sys.localStorage.setItem(TOKEN_KEY, bearer);
+        sys.localStorage.setItem(TOKEN_EXP_KEY, String(expEpochSec));
+        sys.localStorage.removeItem(NAME_KEY);
+
+        setBearerToken(bearer);
+
+        console.log(`[PlayerProfile] swapped to recovered ${accountType} account: ${uuid}`);
+    }
+
     /** Persist a new display name. Server-side truncates to MAX_NAME_LEN
      *  AND rejects reserved words / profanity via `validateNickname`.
      *  Ignored for empty / whitespace-only strings so accidental clears
