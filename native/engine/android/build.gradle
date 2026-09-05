@@ -9,6 +9,12 @@ buildscript {
     }
     dependencies {
         classpath 'com.android.tools.build:gradle:8.8.0'
+        // Kotlin — required by GoogleWebOAuthBridge.kt (and any
+        // future Kotlin channel bridges). Version must match the
+        // kotlin-stdlib coordinate in app/build.gradle. 2.1.21 is the
+        // last known-good version that plays with AGP 8.8.0 + our
+        // channel-specific SDKs (LevelPlay et al. drag in stdlib 2.x).
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.21"
 
         // NOTE: Do not place your application dependencies here; they belong
         // in the individual module build.gradle files

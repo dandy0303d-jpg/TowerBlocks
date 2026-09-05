@@ -1,6 +1,10 @@
 import org.apache.tools.ant.taskdefs.condition.Os
 
 apply plugin: 'com.android.application'
+// Kotlin — GoogleWebOAuthBridge.kt (account-bind Custom Tabs flow)
+// is Kotlin, so without this plugin the .kt won't compile and
+// AppActivity.java can't find com.cocos.game.GoogleWebOAuthBridge.
+apply plugin: 'kotlin-android'
 
 RES_PATH = RES_PATH.replace("\\", "/")
 COCOS_ENGINE_PATH = COCOS_ENGINE_PATH.replace("\\", "/")
@@ -15,6 +19,13 @@ android {
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
+    }
+    // Kotlin JVM target aligned with the Java options above. Required
+    // once the kotlin-android plugin is applied — otherwise compilation
+    // fails with "inconsistent JVM targets" when Java class files (1.8)
+    // and Kotlin class files (defaults to 1.6) end up in the same jar.
+    kotlinOptions {
+        jvmTarget = '1.8'
     }
 
     defaultConfig {
@@ -126,4 +137,10 @@ dependencies {
     // without Google Play Services (GMS). androidx.browser is ~50 KB
     // and has no transitive GMS dependency.
     implementation 'androidx.browser:browser:1.8.0'
+    // Kotlin stdlib — needed at RUNTIME by GoogleWebOAuthBridge.kt (and
+    // any other Kotlin bridge we add later). Must match the version
+    // pinned in the top-level buildscript's kotlin-gradle-plugin
+    // classpath (2.1.21); mismatched stdlib on some devices trips
+    // "NoSuchMethodError" on Kotlin intrinsics.
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:2.1.21"
 }
