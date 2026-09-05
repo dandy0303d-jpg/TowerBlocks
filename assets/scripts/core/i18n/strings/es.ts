@@ -23,7 +23,7 @@ export const ES: Record<string, string> = {
     'hud.back':          '← Inicio',
     'hud.height':        'Altura',
     'hud.heightValue':   'Altura  {n}',
-    'hud.next':          'NEXT',
+    'hud.next':          'Siguiente',
 
     // ---------- Picker de ítems ----------
     'picker.title':      '⚡ Elige 1 objeto mágico',
@@ -105,6 +105,7 @@ export const ES: Record<string, string> = {
 
     // ---------- Level select ----------
     'level.name':        'Nivel {n}',
+    'level.clearTime':   'Tiempo: {time}',
     'level.enter':       'Entrar al nivel',
 
     // ---------- Blind mode ----------
@@ -220,6 +221,13 @@ export const ES: Record<string, string> = {
     'settings.account.copied':      'Copiado al portapapeles',
     'settings.account.copyFailed':  'Copia fallida',
     'settings.nickname.tooLong':     'El nombre máximo es {n} caracteres',
+    'settings.nickname.profanity':   'El apodo contiene palabras prohibidas',
+    'settings.nickname.reserved':    'Ese apodo está reservado',
+    'settings.nickname.tooShort':    'Apodo demasiado corto',
+    'settings.nickname.tooLongServer':'Apodo demasiado largo',
+    'settings.nickname.rejected':    'Apodo no válido, prueba otro',
+    'settings.nickname.cooldown':    'Faltan {n} día(s) para el próximo cambio',
+    'settings.nickname.cooldownReady':'Puedes cambiar ahora (luego 7 días de espera)',
     'settings.nickname.title':       'Cambiar nombre',
     'settings.nickname.placeholder': 'Nuevo nombre',
 

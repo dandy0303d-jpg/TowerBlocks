@@ -373,6 +373,9 @@ export class HudController extends Component {
     @property({ type: Node, tooltip: 'NEXT 预览的形状画布节点（脚本会往里面加 Graphics 画每帧形状）' })
     authoredNextShapeCanvas: Node | null = null;
 
+    @property({ type: Label, tooltip: 'NEXT 预览框顶部的 "Next" 标题 Label — 脚本用 i18n key hud.next 覆写，本地化跟随语言切换' })
+    authoredNextPreviewTitleLabel: Label | null = null;
+
     private scoreLabel!:   Label;
     private linesLabel!:   Label;
     private modeLabel!:    Label;
@@ -993,6 +996,13 @@ export class HudController extends Component {
         this.linesLabel = this.makeDummyLabel();
         this.modeLabel  = this.makeDummyLabel();
         this.nextLabel  = this.makeDummyLabel();
+
+        // NEXT preview title Label — static i18n text. trackI18nLabel
+        // handles the initial paint + automatic re-paint on language
+        // switch, so we don't have to manage it in the per-frame loop.
+        if (this.authoredNextPreviewTitleLabel) {
+            this.trackI18nLabel(this.authoredNextPreviewTitleLabel, 'hud.next');
+        }
 
         // Pause button + its inner Label (for ⏸ ↔ ▶ swap).
         if (this.authoredPauseButton) {
@@ -3244,7 +3254,7 @@ export class HudController extends Component {
             container.scale.x, container.scale.y, container.scale.z,
         );
         this._levelTimerSnapshotCaptured = true;
-        this.authoredLevelTimerLabel.string = `通关时间：${mm}:${ss}`;
+        this.authoredLevelTimerLabel.string = t('level.clearTime', { time: `${mm}:${ss}` });
         // Bump the timer container to the last sibling of its parent so
         // it renders ON TOP of everything else in the HUD (Energy bar,
         // NEXT preview, etc.). Without this, the Energy Node — which
