@@ -20,7 +20,7 @@ export const RU: Record<string, string> = {
     'hud.back':          '← Домой',
     'hud.height':        'Высота',
     'hud.heightValue':   'Высота  {n}',
-    'hud.next':          'NEXT',
+    'hud.next':          'Далее',
 
     'picker.title':      '⚡ Выбери 1 магический предмет',
     'picker.hint':       'Нажми для подтверждения · Цвет = Редкость',
@@ -95,6 +95,7 @@ export const RU: Record<string, string> = {
     'collect.header':    'Цели сбора',
 
     'level.name':        'Уровень {n}',
+    'level.clearTime':   'Время: {time}',
     'level.enter':       'Войти в уровень',
 
     'blind.fail.prompt': 'Испытание провалено. Нажми для продолжения.',
@@ -199,6 +200,13 @@ export const RU: Record<string, string> = {
     'settings.account.copied':      'Скопировано в буфер',
     'settings.account.copyFailed':  'Ошибка копирования',
     'settings.nickname.tooLong':     'Ник максимум {n} символов',
+    'settings.nickname.profanity':   'Никнейм содержит запрещённые слова',
+    'settings.nickname.reserved':    'Этот никнейм зарезервирован',
+    'settings.nickname.tooShort':    'Никнейм слишком короткий',
+    'settings.nickname.tooLongServer':'Никнейм слишком длинный',
+    'settings.nickname.rejected':    'Недопустимый никнейм',
+    'settings.nickname.cooldown':    'До следующей смены осталось {n} дн.',
+    'settings.nickname.cooldownReady':'Можно сменить сейчас (потом 7 дней ожидания)',
     'settings.nickname.title':       'Изменить ник',
     'settings.nickname.placeholder': 'Новый ник',
 

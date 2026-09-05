@@ -81,6 +81,15 @@ class Profile {
      *  can render "N left today" labels without a round-trip. */
     private _dailyFree: DailyFreeState | null = null;
 
+    /** ISO timestamp of the earliest moment the player can rename
+     *  again, per the server's 7-day nickname cooldown. `null` means
+     *  either (a) the player has never been renamed, or (b) the
+     *  cooldown has fully elapsed — in both cases the change is
+     *  allowed. `undefined` means we haven't heard from the server
+     *  yet (fresh boot / offline). Populated by fetchProfile + refreshed
+     *  by every successful setName. */
+    private _nicknameNextChangeAt: string | null | undefined = undefined;
+
     /** Current uuid. If `ensureRegistered()` hasn't succeeded yet,
      *  returns a lazily-generated local UUID (offline fallback). */
     get uuid(): string {
@@ -153,19 +162,56 @@ class Profile {
         console.log('[PlayerProfile] in-memory state wiped');
     }
 
-    /** Persist a new display name. Server-side truncates to MAX_NAME_LEN.
+    /** Persist a new display name. Server-side truncates to MAX_NAME_LEN
+     *  AND rejects reserved words / profanity via `validateNickname`.
      *  Ignored for empty / whitespace-only strings so accidental clears
-     *  don't wipe the current name. Also fires a fire-and-forget PUT
-     *  to the server so the change survives cross-device play. */
-    setName(next: string): void {
+     *  don't wipe the current name.
+     *
+     *  Returns a Promise that:
+     *    - resolves with the server-saved name on success (may differ
+     *      from `next` if the server truncated it), OR
+     *    - rejects with the raw HTTP error when the server refuses. The
+     *      LOCAL name is rolled back to the previous value AND written
+     *      back to localStorage before rejecting, so a rejected submit
+     *      never leaves the app displaying an invalid name.
+     *
+     *  Callers that want to show a toast should await + catch and parse
+     *  `err.message` for the `nickname: <code>` payload (codes:
+     *  `profanity` / `reserved` / `too-short` / `too-long`). */
+    async setName(next: string): Promise<string | null> {
         const trimmed = next.trim();
-        if (!trimmed) return;
+        if (!trimmed) return null;
+        // Snapshot the CURRENT persisted name so we can roll back on a
+        // server rejection. Reads from getter to make sure we pick up
+        // whatever localStorage holds (not a stale field).
+        const prevName = this.name;
+        // Optimistic local update — most callers repaint immediately.
         this._name = trimmed;
         sys.localStorage.setItem(NAME_KEY, trimmed);
         console.log(`[PlayerProfile] setName → "${trimmed}" — syncing to server…`);
-        updatePlayerProfile({ name: trimmed })
-            .then((r) => console.log(`[PlayerProfile] setName synced: server saved "${r.name}"`))
-            .catch((err) => console.warn(`[PlayerProfile] setName sync FAILED: ${err?.message}`));
+        try {
+            const r = await updatePlayerProfile({ name: trimmed });
+            // Server may have truncated — re-persist whatever the server
+            // ended up storing so getters + storage agree with server.
+            this._name = r.name;
+            sys.localStorage.setItem(NAME_KEY, r.name);
+            // Server arms the 7-day cooldown when a rename succeeds and
+            // returns the new deadline in the same response. Refresh
+            // the local cache so the Settings panel countdown flips to
+            // "6 days" without a fetchProfile round-trip.
+            if (r.nicknameNextChangeAt !== undefined) {
+                this._nicknameNextChangeAt = r.nicknameNextChangeAt;
+            }
+            console.log(`[PlayerProfile] setName synced: server saved "${r.name}"`);
+            return r.name;
+        } catch (err: any) {
+            console.warn(`[PlayerProfile] setName sync FAILED: ${err?.message} — rolling back to "${prevName}"`);
+            // Server rejected — roll back local state so UI reflects the
+            // pre-change name after refresh.
+            this._name = prevName;
+            sys.localStorage.setItem(NAME_KEY, prevName);
+            throw err;
+        }
     }
 
     /** Currently-selected avatar index. `null` means the player hasn't
@@ -213,6 +259,13 @@ class Profile {
         // field — older servers won't include it). HUD reads via
         // dailyFreeRemaining() below.
         if (p.dailyFree) this._dailyFree = p.dailyFree;
+        // Cache the nickname-cooldown deadline (server-authoritative).
+        // Optional field — older servers omit it entirely, in which
+        // case we leave `_nicknameNextChangeAt` undefined so the UI
+        // knows to hide the countdown rather than showing "0 days".
+        if (p.nicknameNextChangeAt !== undefined) {
+            this._nicknameNextChangeAt = p.nicknameNextChangeAt;
+        }
         sys.localStorage.setItem(NAME_KEY, p.name);
         sys.localStorage.setItem(AVATAR_KEY, String(p.avatarIdx));
         return {
@@ -220,6 +273,26 @@ class Profile {
             avatarIdx: p.avatarIdx,
             bestScores: p.bestScores,
         };
+    }
+
+    /** Days remaining before the nickname can be changed again, per
+     *  the server-authoritative cooldown. Returns:
+     *    - `0` — the change is allowed right now (either never renamed
+     *      or the 7-day window has fully elapsed).
+     *    - a positive integer (rounded up) — days left in the cooldown.
+     *    - `null` — we haven't heard from the server yet (fresh boot /
+     *      offline) or the server doesn't support the field; callers
+     *      should hide the countdown UI in that case.
+     *  Callers repaint whenever this returns a different value; there's
+     *  no push notification — settings-panel-open time is a fine cadence. */
+    nicknameCooldownDaysRemaining(): number | null {
+        if (this._nicknameNextChangeAt === undefined) return null;
+        if (this._nicknameNextChangeAt === null) return 0;
+        const readyAtMs = Date.parse(this._nicknameNextChangeAt);
+        if (!Number.isFinite(readyAtMs)) return null;
+        const deltaMs = readyAtMs - Date.now();
+        if (deltaMs <= 0) return 0;
+        return Math.max(1, Math.ceil(deltaMs / (24 * 60 * 60 * 1000)));
     }
 
     /** Remaining daily-free rerolls for a given slot, per the server's

@@ -21,7 +21,7 @@ export const DE: Record<string, string> = {
     'hud.back':          '← Start',
     'hud.height':        'Höhe',
     'hud.heightValue':   'Höhe  {n}',
-    'hud.next':          'NEXT',
+    'hud.next':          'Nächste',
 
     'picker.title':      '⚡ Wähle 1 Zauberitem',
     'picker.hint':       'Tippen zum Bestätigen · Farbe = Seltenheit',
@@ -96,6 +96,7 @@ export const DE: Record<string, string> = {
     'collect.header':    'Sammelziele',
 
     'level.name':        'Level {n}',
+    'level.clearTime':   'Zeit: {time}',
     'level.enter':       'Level starten',
 
     'blind.fail.prompt': 'Herausforderung fehlgeschlagen. Tippen zum Fortfahren.',
@@ -200,6 +201,13 @@ export const DE: Record<string, string> = {
     'settings.account.copied':      'In Zwischenablage kopiert',
     'settings.account.copyFailed':  'Kopieren fehlgeschlagen',
     'settings.nickname.tooLong':     'Nickname max {n} Zeichen',
+    'settings.nickname.profanity':   'Nickname enthält verbotene Wörter',
+    'settings.nickname.reserved':    'Dieser Nickname ist reserviert',
+    'settings.nickname.tooShort':    'Nickname zu kurz',
+    'settings.nickname.tooLongServer':'Nickname zu lang',
+    'settings.nickname.rejected':    'Ungültiger Nickname',
+    'settings.nickname.cooldown':    'Noch {n} Tag(e) bis zur nächsten Änderung',
+    'settings.nickname.cooldownReady':'Jetzt änderbar (danach 7 Tage Sperre)',
     'settings.nickname.title':       'Nickname ändern',
     'settings.nickname.placeholder': 'Neuer Nickname',
 

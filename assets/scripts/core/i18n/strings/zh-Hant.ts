@@ -25,7 +25,7 @@ export const ZH_HANT: Record<string, string> = {
     'hud.back':          '← 主頁',
     'hud.height':        '層高',
     'hud.heightValue':   '層高  {n}',
-    'hud.next':          'NEXT',
+    'hud.next':          '下一個',
 
     // ---------- 道具卡 / Picker ----------
     'picker.title':      '⚡ 選 1 個魔法道具',
@@ -107,6 +107,7 @@ export const ZH_HANT: Record<string, string> = {
 
     // ---------- 關卡選擇 ----------
     'level.name':        '關卡 {n}',
+    'level.clearTime':   '通關時間：{time}',
     'level.enter':       '進入關卡',
 
     // ---------- 閉眼模式 ----------
@@ -222,6 +223,13 @@ export const ZH_HANT: Record<string, string> = {
     'settings.account.copied':      '已複製到剪貼簿',
     'settings.account.copyFailed':  '複製失敗',
     'settings.nickname.tooLong':     '暱稱最多 {n} 個字元',
+    'settings.nickname.profanity':   '暱稱含違禁詞，請換一個',
+    'settings.nickname.reserved':    '此暱稱為系統保留，請換一個',
+    'settings.nickname.tooShort':    '暱稱太短',
+    'settings.nickname.tooLongServer':'暱稱太長',
+    'settings.nickname.rejected':    '暱稱不合法，請換一個',
+    'settings.nickname.cooldown':    '距下次可修改還有 {n} 天',
+    'settings.nickname.cooldownReady':'現在可以修改（下次修改需等 7 天）',
     'settings.nickname.title':       '修改暱稱',
     'settings.nickname.placeholder': '輸入新暱稱',
 

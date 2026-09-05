@@ -367,6 +367,9 @@ export class MenuController extends Component {
     @property({ type: Label, tooltip: '昵称行的"昵称" i18n 表头 Label（走 settings.nickname）— 可空。注意：这不是显示玩家昵称的 Label，那个是 authoredSettingsNicknameLabel。' })
     authoredSettingsNicknameHeaderLabel: Label | null = null;
 
+    @property({ type: Label, tooltip: '昵称冷却状态 Label — 常态显示"距下次可修改还有 N 天"，冷却结束显示"现在可以修改"，服务端还没返回时整个 Node 隐藏。可空。' })
+    authoredSettingsNicknameCooldownLabel: Label | null = null;
+
     @property({ type: Label, tooltip: '音量行左侧的"音乐大小" i18n 标签（走 settings.volume）— 可空' })
     authoredSettingsVolumeLabel: Label | null = null;
 
@@ -2615,9 +2618,93 @@ export class MenuController extends Component {
             eb.string = PlayerProfile.name;
             return;
         }
-        PlayerProfile.setName(trimmed);
-        eb.string = PlayerProfile.name;   // reflects any server-side truncation once we add it
-        log(`[Settings] nickname saved: ${PlayerProfile.name}`);
+        PlayerProfile.setName(trimmed)
+            .then(() => {
+                eb.string = PlayerProfile.name;   // reflects any server-side truncation
+                this.paintNicknameCooldownLabel();
+                log(`[Settings] nickname saved: ${PlayerProfile.name}`);
+            })
+            .catch((err) => {
+                // Server rejected — PlayerProfile already rolled the
+                // local name back; show a toast + restore the EditBox.
+                this.showNicknameRejectionToast(err?.message);
+                eb.string = PlayerProfile.name;
+                this.refreshAuthoredSettingsValues();
+            });
+    }
+
+    /** Parse a nickname-rejection error from the server into an i18n
+     *  toast. Server payloads:
+     *    - HTTP 400 `{error:"nickname: <code>"}` — validation failure
+     *      (codes: profanity / reserved / too-short / too-long)
+     *    - HTTP 429 `{error:"nickname:cooldown", retryAt:"<ISO>"}` —
+     *      inside the 7-day nickname-change cooldown; retryAt gives
+     *      the wall-clock time when the next change becomes possible
+     *  Unknown / network errors fall through to a generic "invalid" toast. */
+    private showNicknameRejectionToast(errMessage: string | undefined): void {
+        const msg = errMessage ?? '';
+        // Server error format is `HTTP <code>: {json body}` (see Http.ts
+        // httpPostJson / httpPutJson error wrapping). Match loosely so
+        // future server-message tweaks don't silently drop the code.
+        const m = /nickname:\s*([a-z_-]+)/i.exec(msg);
+        const code = m ? m[1].toLowerCase() : '';
+
+        // Cooldown is the one case that wants a formatted string with
+        // remaining days — extract retryAt from the JSON body if present.
+        if (code === 'cooldown') {
+            const days = this.parseCooldownDaysRemaining(msg);
+            this.showSettingsToast(t('settings.nickname.cooldown', { n: days }), 'error');
+            return;
+        }
+
+        let key: string;
+        switch (code) {
+            case 'profanity':  key = 'settings.nickname.profanity'; break;
+            case 'reserved':   key = 'settings.nickname.reserved'; break;
+            case 'too-short':  key = 'settings.nickname.tooShort'; break;
+            case 'too-long':   key = 'settings.nickname.tooLongServer'; break;
+            default:           key = 'settings.nickname.rejected'; break;
+        }
+        this.showSettingsToast(t(key), 'error');
+    }
+
+    /** Paint the nickname-cooldown status Label. Shows one of:
+     *    - "距下次可修改还有 N 天" (cooldown active, N > 0)
+     *    - "现在可以修改（下次修改需等 7 天）" (cooldown elapsed / never renamed)
+     *    - hidden (server hasn't reported yet — no misleading "0 days")
+     *  Called from refreshAuthoredSettingsValues on panel open, and again
+     *  after every successful setName so the countdown flips instantly.
+     *  Silent no-op when the authored slot isn't wired. */
+    private paintNicknameCooldownLabel(): void {
+        const lab = this.authoredSettingsNicknameCooldownLabel;
+        if (!lab) return;
+        const days = PlayerProfile.nicknameCooldownDaysRemaining();
+        if (days === null) {
+            // Server hasn't reported yet — hide rather than lie.
+            lab.node.active = false;
+            return;
+        }
+        lab.node.active = true;
+        if (days > 0) {
+            lab.string = t('settings.nickname.cooldown', { n: days });
+        } else {
+            lab.string = t('settings.nickname.cooldownReady');
+        }
+    }
+
+    /** Pull `retryAt` out of an HTTP error message and convert to
+     *  whole days remaining (rounded up so "23 hours left" reads as
+     *  "1 day"). Falls back to 7 (the full cooldown length) if we
+     *  can't parse — better to slightly overstate than mislead the
+     *  player with "0 days". */
+    private parseCooldownDaysRemaining(errMessage: string): number {
+        const isoMatch = /"retryAt"\s*:\s*"([^"]+)"/.exec(errMessage);
+        if (!isoMatch) return 7;
+        const retryAtMs = Date.parse(isoMatch[1]);
+        if (!Number.isFinite(retryAtMs)) return 7;
+        const nowMs = Date.now();
+        const deltaMs = Math.max(0, retryAtMs - nowMs);
+        return Math.max(1, Math.ceil(deltaMs / (24 * 60 * 60 * 1000)));
     }
 
     /** Open the generic input prompt to edit the nickname.
@@ -2654,10 +2741,25 @@ export class MenuController extends Component {
         if (trimmed === currentName) {
             return;   // unchanged, skip the setName round-trip
         }
-        PlayerProfile.setName(trimmed);
-        // Repaint the Settings screen so the new name shows immediately.
+        // Optimistic repaint — PlayerProfile.setName has already updated
+        // the local name; the settings screen will show the new one
+        // immediately. If the server rejects, we roll back below.
         this.refreshAuthoredSettingsValues();
-        log(`[Settings] nickname saved via prompt: ${PlayerProfile.name}`);
+        try {
+            await PlayerProfile.setName(trimmed);
+            // Refresh again post-success so the cooldown Label flips
+            // from "现在可以修改" → "距下次可修改还有 7 天" (the new
+            // cooldown-end timestamp arrived in the setName response).
+            this.paintNicknameCooldownLabel();
+            log(`[Settings] nickname saved via prompt: ${PlayerProfile.name}`);
+        } catch (err: any) {
+            // Server rejected — PlayerProfile already rolled the local
+            // name back to `currentName`. Show a per-code toast + repaint
+            // the settings screen so the reverted name is visible.
+            this.showNicknameRejectionToast(err?.message);
+            this.refreshAuthoredSettingsValues();
+            log(`[Settings] nickname rejected: ${err?.message}`);
+        }
     }
 
     // ============================================================
@@ -2990,6 +3092,7 @@ export class MenuController extends Component {
         if (this.authoredSettingsNicknameLabel) {
             this.authoredSettingsNicknameLabel.string = PlayerProfile.name;
         }
+        this.paintNicknameCooldownLabel();
         // Account row Label — "<账号类型> · <uuid> 📋" so player can
         // copy their UUID for customer support / disputes. Full uuid
         // (not truncated) so the copied string is directly usable.

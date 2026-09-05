@@ -22,7 +22,7 @@ export const KO: Record<string, string> = {
     'hud.back':          '← 홈',
     'hud.height':        '높이',
     'hud.heightValue':   '높이  {n}',
-    'hud.next':          'NEXT',
+    'hud.next':          '다음',
 
     // ---------- Picker ----------
     'picker.title':      '⚡ 마법 아이템을 1개 선택',
@@ -112,6 +112,7 @@ export const KO: Record<string, string> = {
 
     // ---------- Level select ----------
     'level.name':        '스테이지 {n}',
+    'level.clearTime':   '클리어 시간: {time}',
     'level.enter':       '스테이지 진입',
 
     // ---------- Tutorial ----------
@@ -220,6 +221,13 @@ export const KO: Record<string, string> = {
     'settings.account.copied':      '클립보드에 복사됨',
     'settings.account.copyFailed':  '복사 실패',
     'settings.nickname.tooLong':     '닉네임은 최대 {n}자입니다',
+    'settings.nickname.profanity':   '닉네임에 금지어가 포함되어 있습니다',
+    'settings.nickname.reserved':    '예약된 닉네임입니다',
+    'settings.nickname.tooShort':    '닉네임이 너무 짧습니다',
+    'settings.nickname.tooLongServer':'닉네임이 너무 깁니다',
+    'settings.nickname.rejected':    '유효하지 않은 닉네임입니다',
+    'settings.nickname.cooldown':    '다음 변경까지 {n}일 남음',
+    'settings.nickname.cooldownReady':'지금 변경 가능 (다음엔 7일 대기)',
     'settings.nickname.title':       '닉네임 변경',
     'settings.nickname.placeholder': '새 닉네임 입력',
 
