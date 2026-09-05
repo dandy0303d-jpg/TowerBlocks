@@ -19,18 +19,27 @@ export const BACKEND_BASE_URL = 'https://tetritower.konenine.kr';
  *  when the network is flaky. */
 export const BACKEND_TIMEOUT_MS = 8000;
 
-/** Google OAuth 2.0 Web application Client ID. Same value the server
- *  uses to validate incoming ID tokens (server's env: GOOGLE_CLIENT_ID).
- *  Configured in Google Cloud Console → APIs & Services → Credentials.
+/** Google OAuth 2.0 Client ID used by the CLIENT for the Android-based
+ *  authorization flow (Custom Tabs + PKCE + custom-scheme redirect).
+ *  This MUST be the "Android" type client from Google Cloud Console —
+ *  the Web type rejects the `com.tetritower.oauth://` scheme.
  *
- *  Client uses this to construct the authorization URL. Client secret
- *  is intentionally NOT here — PKCE (S256) replaces the secret, so the
- *  code_verifier proves this app initiated the flow without shipping
- *  a shared secret in the APK.
+ *  Android-type clients are validated in Google's backend by package
+ *  name + signing SHA-1, so no client_secret is needed (public client,
+ *  PKCE-protected).
  *
- *  TODO(google-oauth): fill in the real Web Client ID before shipping.
- *  Format: 1234567890-xxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com */
-export const GOOGLE_OAUTH_CLIENT_ID = 'REPLACE_WITH_GOOGLE_WEB_CLIENT_ID.apps.googleusercontent.com';
+ *  The server verifies the resulting id_token's `aud` claim, so the
+ *  server env's GOOGLE_ALLOWED_AUDIENCES list MUST include this ID.
+ *  Server may also list a matching Web Client ID for server-side flows;
+ *  they belong to the same project but are separate Client IDs. */
+export const GOOGLE_OAUTH_CLIENT_ID = '898144979904-2msavmk9b0c63fbi4bl29kl7ud1iknj1.apps.googleusercontent.com';
+
+/** Sister Web Application client for the same Google Cloud project.
+ *  NOT sent from the client; kept here as documentation of the "server
+ *  audience" the backend can also accept when verifying id_tokens (some
+ *  Google flows populate the token's `aud` with this instead of the
+ *  Android ID). Server config: GOOGLE_ALLOWED_AUDIENCES must include it. */
+export const GOOGLE_OAUTH_WEB_CLIENT_ID = '898144979904-6qcfcmp21s5o9lhn7l64mpe9u89u9ekc.apps.googleusercontent.com';
 
 /** OAuth redirect URI — must exactly match the value registered in
  *  Google Cloud Console → OAuth 2.0 Client → Authorized redirect URIs.
