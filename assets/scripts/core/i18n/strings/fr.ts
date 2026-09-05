@@ -22,6 +22,7 @@ export const FR: Record<string, string> = {
     'hud.next':          'Suivant',
 
     'picker.title':      '⚡ Choisis 1 objet magique',
+    'refresh.limitReached':'Limite atteinte',
     'picker.hint':       'Touche pour valider · Couleur = Rareté',
     'picker.refresh':    '🔄 Reroll gratuit ({n}/3)',
     'picker.adRefresh':  '🎬 Voir pub pour rerroll',

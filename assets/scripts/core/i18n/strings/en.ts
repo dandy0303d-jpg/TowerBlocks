@@ -27,6 +27,7 @@ export const EN: Record<string, string> = {
 
     // ---------- Picker ----------
     'picker.title':      '⚡ Pick a Magic Item',
+    'refresh.limitReached':'Limit reached',
     'picker.hint':       'Tap to confirm · Colour = Rarity',
     'picker.refresh':    '🔄 Free Reroll ({n}/3)',
     'picker.adRefresh':  '🎬 Watch Ad to Reroll',

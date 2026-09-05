@@ -27,6 +27,7 @@ export const ES: Record<string, string> = {
 
     // ---------- Picker de ítems ----------
     'picker.title':      '⚡ Elige 1 objeto mágico',
+    'refresh.limitReached':'Límite alcanzado',
     'picker.hint':       'Toca para confirmar · Color = Rareza',
     'picker.refresh':    '🔄 Rerroll gratis ({n}/3)',
     'picker.adRefresh':  '🎬 Ver anuncio y rerrollear',

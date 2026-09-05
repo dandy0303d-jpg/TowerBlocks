@@ -31,6 +31,7 @@ export const JA: Record<string, string> = {
 
     // ---------- アイテムピッカー ----------
     'picker.title':      '⚡ 魔法アイテムを 1 つ選択',
+    'refresh.limitReached':'上限に達しました',
     'picker.hint':       'タップして確定 · 色 = レア度',
     'picker.refresh':    '🔄 無料リロール ({n}/3)',
     'picker.adRefresh':  '🎬 広告視聴でもう一度',
