@@ -3206,7 +3206,7 @@
         "__id__": 182
       }
     ],
-    "_active": false,
+    "_active": true,
     "_components": [
       {
         "__id__": 207
@@ -4614,7 +4614,7 @@
       "a": 255
     },
     "_outlineWidth": 2,
-    "_enableShadow": false,
+    "_enableShadow": true,
     "_shadowColor": {
       "__type__": "cc.Color",
       "r": 0,
@@ -4998,7 +4998,7 @@
       "a": 255
     },
     "_outlineWidth": 2,
-    "_enableShadow": false,
+    "_enableShadow": true,
     "_shadowColor": {
       "__type__": "cc.Color",
       "r": 0,
@@ -5379,7 +5379,7 @@
       "a": 255
     },
     "_outlineWidth": 2,
-    "_enableShadow": false,
+    "_enableShadow": true,
     "_shadowColor": {
       "__type__": "cc.Color",
       "r": 0,
@@ -6499,7 +6499,7 @@
       "a": 255
     },
     "_outlineWidth": 2,
-    "_enableShadow": false,
+    "_enableShadow": true,
     "_shadowColor": {
       "__type__": "cc.Color",
       "r": 0,
@@ -7052,7 +7052,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 258.00000000000006,
+      "x": 285.22299999999996,
       "y": 0,
       "z": 0
     },
@@ -7100,8 +7100,8 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 74.098,
-      "y": 86.803,
+      "x": 48.553,
+      "y": 56.148,
       "z": 0
     },
     "_lrot": {
@@ -7113,8 +7113,8 @@
     },
     "_lscale": {
       "__type__": "cc.Vec3",
-      "x": 2,
-      "y": 2,
+      "x": 1.5,
+      "y": 1.5,
       "z": 1
     },
     "_mobility": 0,
@@ -7262,7 +7262,7 @@
     "_alignFlags": 34,
     "_target": null,
     "_left": 0,
-    "_right": 87,
+    "_right": 29.777000000000072,
     "_top": 0,
     "_bottom": 0,
     "_horizontalCenter": 0,
@@ -7341,7 +7341,7 @@
     "__prefab": null,
     "_alignFlags": 34,
     "_target": null,
-    "_left": 0,
+    "_left": 600.223,
     "_right": 25,
     "_top": 0,
     "_bottom": 0,
@@ -7353,7 +7353,7 @@
     "_isAbsBottom": true,
     "_isAbsHorizontalCenter": true,
     "_isAbsVerticalCenter": true,
-    "_originalWidth": 0,
+    "_originalWidth": 150,
     "_originalHeight": 0,
     "_alignMode": 2,
     "_lockFlags": 0,
