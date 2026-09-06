@@ -71,9 +71,26 @@ class LevelProgressStore {
         this._persist();
     }
 
-    /** Wipe progress. Only used by dev/debug tooling. */
+    /** Wipe progress. Used by dev/debug tooling AND by the Google-
+     *  recovery flow (before scene reload) so the recovered account's
+     *  server-side bestScores can hydrate from a clean slate rather
+     *  than getting max-merged with the outgoing guest's local value. */
     public reset(): void {
         this._maxClearedIdx = -1;
+        this._persist();
+    }
+
+    /** Overwrite `maxClearedIdx` to `idx` (typically from server-side
+     *  `bestScores.level - 1`). Boot code / recovery flow use this to
+     *  hydrate local progress from what the server knows. Callers gate
+     *  this with an `idx > current` check for max-merge, so this method
+     *  doesn't refuse a downward write — that's a policy decision left
+     *  to the caller (same-account recovery = max-merge upward only;
+     *  swap-account recovery calls reset() first, so there's nothing
+     *  local to lose). */
+    public restoreFrom(idx: number): void {
+        if (!Number.isFinite(idx)) return;
+        this._maxClearedIdx = idx;
         this._persist();
     }
 
