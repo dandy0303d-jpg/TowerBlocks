@@ -310,7 +310,7 @@ export const JA: Record<string, string> = {
     'settings.googleRecovery.failed':                                       '復元失敗、再試行してください',
     'settings.googleRecovery.success':                                       'アカウントを復元しました',
     // ---- Progressive unlock tips ----
-    'lock.endless':      '{n} ステージクリアでエンドレスモード解放',
+    'lock.endless':      '{n}階に到達でエンドレスモード解放',
     'lock.blind':        'エンドレスで {n} 層達成でブラインドモード解放',
     'lock.leaderboard':  'エンドレスで {n} 層達成でランキング解放',
     'level.next':        '次のステージ',

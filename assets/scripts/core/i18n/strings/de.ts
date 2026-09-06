@@ -284,7 +284,7 @@ export const DE: Record<string, string> = {
     'settings.googleRecovery.failed':                                       'Wiederherstellung fehlgeschlagen, bitte erneut versuchen',
     'settings.googleRecovery.success':                                       'Konto wiederhergestellt',
     // ---- Progressive unlock tips ----
-    'lock.endless':      'Schaffe {n} Level, um den Endlos-Modus freizuschalten',
+    'lock.endless':      'Erreiche Stockwerk {n}, um den Endlos-Modus freizuschalten',
     'lock.blind':        'Erreiche {n} Ebenen im Endlos-Modus, um den Blind-Modus freizuschalten',
     'lock.leaderboard':  'Erreiche {n} Ebenen im Endlos-Modus, um die Rangliste freizuschalten',
     'level.next':        'Nächstes Level',

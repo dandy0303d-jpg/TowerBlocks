@@ -304,7 +304,7 @@ export const ES: Record<string, string> = {
     'settings.googleRecovery.failed':                                       'Falló la restauración, inténtalo de nuevo',
     'settings.googleRecovery.success':                                       'Cuenta restaurada',
     // ---- Progressive unlock tips ----
-    'lock.endless':      'Supera {n} niveles para desbloquear el Modo Infinito',
+    'lock.endless':      'Alcanza el piso {n} para desbloquear el Modo Infinito',
     'lock.blind':        'Alcanza {n} capas en Modo Infinito para desbloquear el Modo Ciego',
     'lock.leaderboard':  'Alcanza {n} capas en Modo Infinito para desbloquear la Clasificación',
     'level.next':        'Siguiente nivel',

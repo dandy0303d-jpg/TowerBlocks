@@ -308,7 +308,7 @@ export const ZH_HANT: Record<string, string> = {
     'settings.googleRecovery.failed':                                       '恢復失敗，請重試',
     'settings.googleRecovery.success':                                       '帳號已恢復',
     // ---- Progressive unlock tips ----
-    'lock.endless':      '通過 {n} 關後解鎖無盡模式',
+    'lock.endless':      '到達 {n} 層後解鎖無盡模式',
     'lock.blind':        '無盡模式達到 {n} 層後解鎖閉眼模式',
     'lock.leaderboard':  '無盡模式達到 {n} 層後解鎖排行榜',
     'level.next':        '下一關',

@@ -7231,7 +7231,7 @@
       "a": 255
     },
     "_spriteFrame": {
-      "__uuid__": "1a40a27a-4818-47b7-9a00-d7d0fa7f5075@f9941",
+      "__uuid__": "2d68208c-09a6-49c2-9a12-07544e2e3dec@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
     "_type": 0,
@@ -7847,7 +7847,7 @@
       "a": 255
     },
     "_spriteFrame": {
-      "__uuid__": "a25136ac-6180-463f-8c0f-51d93557e479@f9941",
+      "__uuid__": "68b31cda-794f-4e6f-8262-c049564f466d@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
     "_type": 1,
@@ -8268,7 +8268,7 @@
       "a": 255
     },
     "_spriteFrame": {
-      "__uuid__": "c6c6841c-4ffd-44b7-b54b-c1ad97eb5fa2@f9941",
+      "__uuid__": "8802be5b-a94c-4f9f-a9c0-5502ee40a87d@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
     "_type": 0,
@@ -8298,7 +8298,7 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 750.0000000000001,
+      "width": 750,
       "height": 1334
     },
     "_anchorPoint": {
@@ -48286,7 +48286,7 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 1024.0000000000002,
+      "width": 1024,
       "height": 1334
     },
     "_anchorPoint": {
@@ -51311,7 +51311,7 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 1024.0000000000002,
+      "width": 1024,
       "height": 1334
     },
     "_anchorPoint": {
@@ -51365,7 +51365,7 @@
       "__id__": 1203
     },
     "titleLabel": {
-      "__id__": 1052
+      "__id__": 1212
     },
     "logoSprite": {
       "__id__": 1277
