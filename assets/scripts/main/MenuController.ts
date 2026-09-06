@@ -32,6 +32,8 @@ import { TwinkleStars } from './TwinkleStars';
 import { LevelSelectStage3D } from './LevelSelectStage3D';
 import { LeaderboardController } from './LeaderboardController';
 import { TopUpController } from './TopUpController';
+import { EventNewbie14Panel } from './EventNewbie14Panel';
+import { fetchNewbie14Status } from '../core/EventNewbie14Api';
 import { PlayerProfile } from '../core/PlayerProfile';
 import { setBannedHandler, getBannedState, setBearerToken, type BannedState } from '../core/Http';
 import { fetchWallet, subscribeBalance } from '../core/WalletApi';
@@ -347,6 +349,20 @@ export class MenuController extends Component {
 
     @property({ type: SpriteFrame, tooltip: '苹果 — 已绑定状态图（绿色）' })
     appleBoundSprite: SpriteFrame | null = null;
+
+    // ---- 新手 14 天活动 ----
+    // 主页面右上/角落的活动入口按钮 —— 服务端返回 active=false 时，
+    // 脚本会把整个按钮节点 active=false 隐藏（例如玩家过了 14 天）。
+    // 弹窗根节点上必须挂 EventNewbie14Panel 组件；点击按钮时脚本调
+    // eventNewbie14Panel.show()，弹窗内部自己拉状态、刷新、领取。
+    @property({ type: Button, tooltip: '主页面"新手 14 天活动"入口按钮 — 服务端说过期就自动隐藏。可空。' })
+    authoredEventNewbie14Button: Button | null = null;
+
+    @property({ type: EventNewbie14Panel, tooltip: '"新手 14 天活动"弹窗组件（挂在弹窗根节点上）— 可空，未拖时按钮永远不显示。' })
+    authoredEventNewbie14Panel: EventNewbie14Panel | null = null;
+
+    @property({ type: Sprite, tooltip: '"今日可领"红点提示 Sprite — 挂在活动按钮右上角。服务端说 canClaimToday=true 时脚本自动显示，已领/过期自动隐藏。可空。' })
+    authoredEventNewbie14RedDot: Sprite | null = null;
 
     // ---- 兼容旧场景的 Toggle 版本（不再主动使用，可以留空）----
     @property({ type: Toggle, tooltip: '（已废弃）谷歌已绑定开关 — 请改用 authoredSettingsGoogleButton' })
@@ -941,6 +957,76 @@ export class MenuController extends Component {
             this._cachedGemBalance = w.gems;
             this.paintBalanceButton(w.gems);
         }).catch(() => { /* silent — cached value is fine */ });
+        // Newbie 14-day event entry button — server tells us whether
+        // the player is still inside the 14-day window. Runs on every
+        // return-to-menu so the button auto-hides at the moment the
+        // window expires (player left the app open past midnight).
+        this._refreshEventNewbie14Button();
+    }
+
+    /** Ping /player/event/newbie14/status and toggle the main-menu
+     *  entry button accordingly. Also wires the click → panel.show()
+     *  once (guarded by `_eventNewbie14Wired`). Silent no-op if
+     *  either the button or the panel component isn't wired in the
+     *  editor. */
+    private _eventNewbie14Wired = false;
+    private _refreshEventNewbie14Button(): void {
+        const btn = this.authoredEventNewbie14Button;
+        const panel = this.authoredEventNewbie14Panel;
+        if (!btn || !panel) return;
+        // Hide up-front — the fetch below will re-show if active.
+        // Prevents a one-frame flash of the button for expired players
+        // on second-and-later menu opens (cached-button case).
+        btn.node.active = false;
+        // Red dot starts hidden too — only lit up when server confirms
+        // there's an unclaimed reward waiting today.
+        if (this.authoredEventNewbie14RedDot) {
+            this.authoredEventNewbie14RedDot.node.active = false;
+        }
+        if (!this._eventNewbie14Wired) {
+            btn.node.on(Button.EventType.CLICK, () => {
+                void panel.show();
+                // Hide the red dot the moment the player opens the
+                // popup — the "there's a reward for you" hint has
+                // done its job. It'll come back tomorrow if the
+                // panel claim confirms + next-day fetch says
+                // canClaimToday again.
+                if (this.authoredEventNewbie14RedDot) {
+                    this.authoredEventNewbie14RedDot.node.active = false;
+                }
+            }, this);
+            // One-shot warmup — the popup lives at active=false and
+            // its textures / fonts / layout components aren't uploaded
+            // to the GPU or initialized until the node goes active for
+            // the first time. Without this, the FIRST tap only kicks
+            // off that init work and the panel appears blank / a frame
+            // late; the player then taps again to actually see it.
+            // Flick active on/off in the same frame — enough to run
+            // Cocos's one-frame init pass without ever showing the
+            // panel to the player. Safe because show() is idempotent
+            // (opacity/scale get re-set every call).
+            panel.node.active = true;
+            this.scheduleOnce(() => {
+                panel.node.active = false;
+            }, 0);
+            this._eventNewbie14Wired = true;
+        }
+        fetchNewbie14Status()
+            .then((s) => {
+                btn.node.active = s.active;
+                if (this.authoredEventNewbie14RedDot) {
+                    this.authoredEventNewbie14RedDot.node.active = s.active && s.canClaimToday;
+                }
+            })
+            .catch((err) => {
+                console.warn('[MenuController] newbie14 status failed:', (err as Error)?.message);
+                // Fail-closed: keep button hidden on network / server
+                // errors. Better than a button that opens a broken popup.
+                btn.node.active = false;
+                if (this.authoredEventNewbie14RedDot) {
+                    this.authoredEventNewbie14RedDot.node.active = false;
+                }
+            });
     }
 
     public showLevelSelect(): void {
