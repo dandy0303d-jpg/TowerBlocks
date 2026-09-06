@@ -32,6 +32,7 @@ import { LeaderboardController } from './LeaderboardController';
 import { TopUpController } from './TopUpController';
 import { LevelProgress } from '../core/LevelProgress';
 import { PlayerProfile } from '../core/PlayerProfile';
+import { fetchMyLevelTimes } from '../core/LeaderboardApi';
 import { t, initFromSystemLang } from '../core/i18n/I18n';
 
 const { ccclass, property } = _decorator;
@@ -218,16 +219,48 @@ export class LoadingController extends Component {
             }
             try {
                 const p = await PlayerProfile.fetchProfile();
-                const clearedCount = p?.bestScores?.level ?? 0;
-                if (clearedCount > 0) {
-                    const serverIdx = clearedCount - 1;
-                    const localIdx = LevelProgress.maxClearedIdx;
-                    if (serverIdx > localIdx) {
-                        LevelProgress.restoreFrom(serverIdx);
-                        console.log(`[Loading] LevelProgress restored ${localIdx} -> ${serverIdx}`);
+                // Server-side level progress lives in TWO places, and we
+                // need the max of both to hydrate correctly:
+                //
+                //   1. player.bestScores.level — historically the "highest
+                //      cleared level count". Only bumped by endless/blind
+                //      submitScore calls; the level-mode submitLevelTime
+                //      endpoint writes to the leaderboard table but never
+                //      touches this field. So for a level-mode-only
+                //      player, bestScores.level stays 0 forever.
+                //
+                //   2. leaderboard/level-time entries — every per-level
+                //      submitLevelTime creates one row per (uuid, level),
+                //      keyed by the fastest elapsedSec. The MAX levelIdx
+                //      across all my rows IS my true "highest cleared" —
+                //      it's the only source of truth for level-mode
+                //      progress after a device switch / account recovery.
+                //
+                // Take the max of both so a player who's cleared level 45
+                // via level-mode + reached endless-layer 20 still recovers
+                // to level 46 unlocked on a fresh device.
+                let serverIdx = (p?.bestScores?.level ?? 0) - 1;   // -1 if server has nothing
+                try {
+                    const mine = await fetchMyLevelTimes();
+                    if (mine.length > 0) {
+                        const derivedIdx = mine.reduce(
+                            (max, e) => (e.levelIdx > max ? e.levelIdx : max),
+                            -1,
+                        );
+                        if (derivedIdx > serverIdx) {
+                            console.log(`[Loading] level-time entries yield higher progress: ${derivedIdx} > bestScores.level-1=${serverIdx}`);
+                            serverIdx = derivedIdx;
+                        }
                     }
+                } catch (e) {
+                    console.warn('[Loading] fetchMyLevelTimes failed (progress hydration will fall back to bestScores.level only):', (e as Error).message);
                 }
-                console.log(`[Loading] fetchProfile done — bestScores=${JSON.stringify(p?.bestScores)}`);
+                const localIdx = LevelProgress.maxClearedIdx;
+                if (serverIdx > localIdx) {
+                    LevelProgress.restoreFrom(serverIdx);
+                    console.log(`[Loading] LevelProgress restored ${localIdx} -> ${serverIdx}`);
+                }
+                console.log(`[Loading] fetchProfile done — bestScores=${JSON.stringify(p?.bestScores)}, effectiveServerIdx=${serverIdx}, localIdx=${localIdx}`);
             } catch (e) {
                 console.warn('[Loading] fetchProfile failed:', (e as Error).message);
             }
