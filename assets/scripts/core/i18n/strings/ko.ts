@@ -310,7 +310,7 @@ export const KO: Record<string, string> = {
     'settings.googleRecovery.failed':                                       '복구 실패, 다시 시도',
     'settings.googleRecovery.success':                                       '계정 복구 완료',
     // ---- Progressive unlock tips ----
-    'lock.endless':      '{n} 스테이지 클리어 시 무한 모드 해금',
+    'lock.endless':      '{n}층에 도달하면 무한 모드 해금',
     'lock.blind':        '무한 모드에서 {n}층 달성 시 블라인드 모드 해금',
     'lock.leaderboard':  '무한 모드에서 {n}층 달성 시 랭킹 해금',
     'level.next':        '다음 스테이지',

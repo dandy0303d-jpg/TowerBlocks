@@ -282,7 +282,7 @@ export const FR: Record<string, string> = {
     'settings.googleRecovery.failed':                                       'Échec de la restauration, réessayez',
     'settings.googleRecovery.success':                                       'Compte restauré',
     // ---- Progressive unlock tips ----
-    'lock.endless':      'Termine {n} niveaux pour déverrouiller le Mode Infini',
+    'lock.endless':      'Atteins l’étage {n} pour déverrouiller le Mode Infini',
     'lock.blind':        'Atteins {n} étages en Mode Infini pour déverrouiller le Mode Aveugle',
     'lock.leaderboard':  'Atteins {n} étages en Mode Infini pour déverrouiller le Classement',
     'level.next':        'Niveau suivant',

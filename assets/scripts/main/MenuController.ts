@@ -1703,7 +1703,21 @@ export class MenuController extends Component {
         };
         bindBtn(this.modeBtnEndless,       'menu.endless', () => {
             if (this._isEndlessUnlocked()) this.enterEndless();
-            else this._showLockToast(t('lock.endless', { n: MenuController.ENDLESS_UNLOCK_LEVEL_COUNT }));
+            else {
+                // Show the FLOOR NUMBER the player needs to reach, not
+                // the raw clear count — the level display was reversed
+                // (highest floor = starting floor, floor 1 = final).
+                // With 99 floors and UNLOCK_COUNT=10, the player needs
+                // to clear their first 10 stages, which under reversed
+                // numbering means reaching floor 90 (99 → 98 → … → 90).
+                // Falls back to 99 if flatLevels isn't populated yet
+                // (extremely defensive; shouldn't happen at this point
+                // in the flow, but keeps the toast readable rather than
+                // showing "Reach floor NaN").
+                const totalFloors = (this.gameController as any)?.flatLevels?.length ?? 99;
+                const requiredFloor = totalFloors - (MenuController.ENDLESS_UNLOCK_LEVEL_COUNT - 1);
+                this._showLockToast(t('lock.endless', { n: requiredFloor }));
+            }
         });
         bindBtn(this.modeBtnLevel,         'menu.levels',      () => this.showLevelSelect());
         bindBtn(this.modeBtnBlind,         'menu.blind', () => {

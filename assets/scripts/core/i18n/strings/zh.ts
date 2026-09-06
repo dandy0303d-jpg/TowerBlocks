@@ -326,7 +326,7 @@ export const ZH: Record<string, string> = {
     'consent.mustAgree':                             '必须同意所有必选项才能开始游戏。',
     'consent.error':                             '同意记录失败，请稍后重试。',
     // ---- Progressive unlock tips ----
-    'lock.endless':      '通过 {n} 关后解锁无尽模式',
+    'lock.endless':      '到达 {n} 层后解锁无尽模式',
     'lock.blind':        '无尽模式达到 {n} 层后解锁闭眼模式',
     'lock.leaderboard':  '无尽模式达到 {n} 层后解锁排行榜',
     'level.next':        '下一关',
