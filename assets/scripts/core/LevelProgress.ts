@@ -71,26 +71,26 @@ class LevelProgressStore {
         this._persist();
     }
 
-    /** Wipe progress. Only used by dev/debug tooling. */
+    /** Wipe progress. Used by dev/debug tooling AND by the Google-
+     *  recovery flow (before scene reload) so the recovered account's
+     *  server-side bestScores can hydrate from a clean slate rather
+     *  than getting max-merged with the outgoing guest's local value. */
     public reset(): void {
         this._maxClearedIdx = -1;
         this._persist();
     }
 
-    /** Overwrite the local `maxClearedIdx` from an authoritative source
-     *  (currently the server-side bestScores.level - 1). Used when the
-     *  account identity changes without a full reload — e.g. Apple
-     *  recovery swaps the guest uuid for a previously-linked one and
-     *  the local progress belongs to the abandoned uuid.
-     *
-     *  Unlike markCleared this is NOT monotone — it will lower the
-     *  count if the recovered account has less progress than what's
-     *  currently persisted locally. Callers who want a max-merge should
-     *  do it themselves before calling. */
-    public restoreFrom(maxClearedIdx: number): void {
-        if (!Number.isFinite(maxClearedIdx)) return;
-        const n = Math.max(-1, Math.floor(maxClearedIdx));
-        this._maxClearedIdx = n;
+    /** Overwrite `maxClearedIdx` to `idx` (typically from server-side
+     *  `bestScores.level - 1`). Boot code / recovery flow use this to
+     *  hydrate local progress from what the server knows. Callers gate
+     *  this with an `idx > current` check for max-merge, so this method
+     *  doesn't refuse a downward write — that's a policy decision left
+     *  to the caller (same-account recovery = max-merge upward only;
+     *  swap-account recovery calls reset() first, so there's nothing
+     *  local to lose). */
+    public restoreFrom(idx: number): void {
+        if (!Number.isFinite(idx)) return;
+        this._maxClearedIdx = idx;
         this._persist();
     }
 

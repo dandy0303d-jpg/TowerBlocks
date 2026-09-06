@@ -54,14 +54,6 @@ import { HapticsManager } from '../audio/HapticsManager';
 import { BgmManager } from '../audio/BgmManager';
 import { FontManager } from '../core/FontManager';
 import { LevelProgress } from '../core/LevelProgress';
-import { LoadingController } from './LoadingController';
-// SIWA on channel/app-store. Imports resolve to no-op / iOS-only paths;
-// on non-iOS platforms AppleAuth.signIn() rejects with 'platform-unsupported'
-// so the button click handler surfaces a benign toast rather than crashing.
-import { AppleAuth } from '../channels/apple/AppleAuth';
-import { linkAppleAccount, fetchLinkedAccounts, loginWithApple } from '../channels/apple/AppleAuthApi';
-import { GoogleAuth } from '../channels/apple/GoogleAuth';
-import { linkGoogleAccount, loginWithGoogle } from '../channels/apple/GoogleAuthApi';
 import { deletePlayerSelf } from '../core/PlayerApi';
 import { IS_DEV_BUILD } from '../core/BuildConfig';
 import { fetchConsentStatus } from '../core/ConsentApi';
@@ -549,9 +541,6 @@ export class MenuController extends Component {
 
     @property({ type: Button, tooltip: '通用输入弹窗"取消"按钮（次按钮）— 脚本 wire 点击关弹窗+resolve null' })
     authoredPromptModalCancelButton: Button | null = null;
-
-    @property({ type: Label, tooltip: '通用输入弹窗提示 Label（脚本填提示文本，例如改名冷却剩余天数；不填就隐藏）— 可空' })
-    authoredPromptModalHint: Label | null = null;
 
     // ---- 通用 Toast（设置面板内错误提示，例如昵称超长）----
     @property({ type: Node, tooltip: '设置面板通用 Toast 根节点（含背景 + 内部 Label；默认 active=false；脚本会 tween 淡入淡出）— 可空' })
@@ -2778,400 +2767,11 @@ export class MenuController extends Component {
         }
     }
 
-    /** Sign in with Apple → link current guest uuid → refresh UI.
-     *
-     *  If already linked, no-op with a friendly log.
-     *  If Apple returns user-cancelled, silent — user just backed out.
-     *  Otherwise log the error kind; UI shows unchanged (toggle stays OFF).
-     *
-     *  In-flight guard: the button node is disabled while the sheet is
-     *  up, so double-taps don't trigger overlapping flows. */
-    private async handleAppleLoginClick(): Promise<void> {
-        if (PlayerProfile.accountType === 'apple') {
-            log('[Settings] Apple already linked — no-op');
-            return;
-        }
-        let cachedIdentityToken: string | null = null;
-        try {
-            log('[Settings] Apple login tapped — starting SIWA flow');
-            const cred = await AppleAuth.signIn();
-            cachedIdentityToken = cred.identityToken;
-            log(`[Settings] SIWA success — appleSub=${cred.appleSub.substring(0, 12)}..., calling /player/link/apple`);
-            const result = await linkAppleAccount(cred.identityToken, cred.appleSub, cred.authorizationCode);
-            log(`[Settings] link result — linked=${result.linked}, alreadyLinked=${result.alreadyLinked}`);
-            PlayerProfile.setAccountType('apple');
-            this._knownLinkedProviders.add('apple');
-            // Show the loading overlay while we sync the newly-bound
-            // account state (server-authoritative profile + level
-            // progress) so the transition looks intentional. Settings
-            // panel closes first so the overlay sits over the main
-            // menu the player returns to.
-            this.closeSettingsPanel();
-            await this.runWithReloadOverlay(async () => {
-                try {
-                    const p = await PlayerProfile.fetchProfile();
-                    LevelProgress.restoreFrom((p.bestScores?.level ?? 0) - 1);
-                } catch (e) {
-                    console.warn(`[Settings] fetchProfile after bind failed: ${(e as Error).message}`);
-                }
-                this.refreshAuthoredSettingsValues();
-            });
-            this.showSettingsToast(t('settings.bind.success'));
-        } catch (err) {
-            const msg = (err as Error).message ?? String(err);
-            if (msg.startsWith('user-cancelled') || msg.startsWith('platform-unsupported')) {
-                log(`[Settings] SIWA aborted: ${msg}`);
-                // Only toast user-initiated cancel; a platform-unsupported
-                // path shouldn't reach real users (button is iOS-only).
-                if (msg.startsWith('user-cancelled')) {
-                    this.showSettingsToast(t('settings.bind.cancelled'));
-                }
-                // Snap the Apple toggle back off — user may have flipped
-                // it ON to trigger this flow; the bind didn't happen so
-                // the UI shouldn't claim it did.
-                this.refreshAuthoredSettingsValues();
-                return;
-            }
-            // "This Apple ID is bound to another player" — offer recovery
-            // via the generic confirm modal (same UX as delete-account).
-            // The server returns 409 with body {"error":"apple already linked"}
-            // which Http.ts serializes as `HTTP 409: {"error":"..."}`.
-            if (msg.includes('apple already linked') && cachedIdentityToken) {
-                // finally{} will re-enable the button before we await; that's
-                // fine — showConfirm's modal blocks further Apple clicks.
-                const token = cachedIdentityToken;
-                void (async () => {
-                    const ok = await this.showConfirm(
-                        t('settings.appleRecovery.title'),
-                        t('settings.appleRecovery.desc'),
-                        t('common.confirm'),
-                        t('common.cancel'),
-                    );
-                    if (!ok) {
-                        log('[Settings] Apple recovery cancelled by user');
-                        // Recovery not confirmed → bind still didn't happen,
-                        // snap toggle back off.
-                        this.refreshAuthoredSettingsValues();
-                        return;
-                    }
-                    await this.commitAppleRecovery(token);
-                })();
-                return;
-            }
-            console.warn(`[Settings] SIWA / link failed: ${msg}`);
-            this.showSettingsToast(t('settings.bind.failed'));
-            // Bind failed for some other reason → snap toggle back off.
-            this.refreshAuthoredSettingsValues();
-        }
-    }
-
-    /** Actually recover the linked account.
-     *  1. POST /player/login/apple with the identity token
-     *  2. Server returns {uuid, bearer} for the previously-linked account
-     *  3. Swap local PlayerProfile state (uuid, bearer, accountType='apple')
-     *  4. Refresh Settings UI — wallet / linked accounts re-fetch under the new uuid */
-    private async commitAppleRecovery(identityToken: string): Promise<void> {
-        try {
-            log('[Settings] Apple recovery — calling /player/login/apple');
-            const r = await loginWithApple(identityToken);
-            log(`[Settings] Apple recovery success — recovered uuid=${r.uuid}`);
-            PlayerProfile.swapToRecoveredAccount(r.uuid, r.bearer);
-            this.closeSettingsPanel();
-            await this.runWithReloadOverlay(async () => {
-                // swap wipes the local name (it belongs to the OLD guest
-                // uuid). Pull the recovered account's real name + avatar
-                // + best scores so refreshAuthoredSettingsValues() paints
-                // from authoritative data. Non-fatal if fetch fails — the
-                // placeholder will be replaced on next Settings open.
-                try {
-                    const p = await PlayerProfile.fetchProfile();
-                    log(`[Settings] recovered profile — name="${p.name}", avatarIdx=${p.avatarIdx}, bestScores=${JSON.stringify(p.bestScores)}`);
-                    // Server stores level-mode best score = count of
-                    // levels cleared. Convert to idx (0-based) before
-                    // restoring. Guard against undefined/negative just
-                    // in case the server hasn't tracked any yet.
-                    const clearedCount = p.bestScores?.level ?? 0;
-                    LevelProgress.restoreFrom(clearedCount - 1);
-                    log(`[Settings] LevelProgress restored to maxClearedIdx=${clearedCount - 1}`);
-                } catch (e) {
-                    console.warn(`[Settings] fetchProfile after recovery failed: ${(e as Error).message}`);
-                }
-                this.refreshAuthoredSettingsValues();
-            });
-            this.showSettingsToast(t('settings.appleRecovery.success'));
-        } catch (err) {
-            const msg = (err as Error).message ?? String(err);
-            console.warn(`[Settings] Apple recovery failed: ${msg}`);
-            this.showSettingsToast(t('settings.appleRecovery.failed'));
-            // Recovery failed → user is still on the original guest uuid;
-            // snap toggle back off so it doesn't misrepresent bind state.
-            this.refreshAuthoredSettingsValues();
-        }
-    }
-
-    // ============================================================
-    //  Google Sign-In flow — mirrors Apple's shape end-to-end
-    // ============================================================
-
-    /** Kick off the Google Sign-In flow. Mirrors handleAppleLoginClick:
-     *  ASWebAuthenticationSession → server /player/link/google →
-     *  refresh profile + LevelProgress under the loading overlay →
-     *  toast success. On 409 (google already linked to another uuid)
-     *  the confirm modal offers to recover instead. */
-    private async handleGoogleLoginClick(): Promise<void> {
-        if (PlayerProfile.accountType === 'google') {
-            log('[Settings] Google already linked — no-op');
-            return;
-        }
-        let cachedIdToken: string | null = null;
-        try {
-            log('[Settings] Google login tapped — starting OAuth flow');
-            const cred = await GoogleAuth.signIn();
-            cachedIdToken = cred.idToken;
-            log(`[Settings] Google sign-in success — googleSub=${cred.googleSub.substring(0, 12)}..., calling /player/link/google`);
-            const result = await linkGoogleAccount(cred.idToken);
-            log(`[Settings] link result — linked=${result.linked}, alreadyLinked=${result.alreadyLinked}`);
-            PlayerProfile.setAccountType('google');
-            this._knownLinkedProviders.add('google');
-            this.closeSettingsPanel();
-            await this.runWithReloadOverlay(async () => {
-                try {
-                    const p = await PlayerProfile.fetchProfile();
-                    LevelProgress.restoreFrom((p.bestScores?.level ?? 0) - 1);
-                } catch (e) {
-                    console.warn(`[Settings] fetchProfile after Google bind failed: ${(e as Error).message}`);
-                }
-                this.refreshAuthoredSettingsValues();
-            });
-            this.showSettingsToast(t('settings.bind.success'));
-        } catch (err) {
-            const msg = (err as Error).message ?? String(err);
-            if (msg.startsWith('user-cancelled') || msg.startsWith('platform-unsupported')) {
-                log(`[Settings] Google sign-in aborted: ${msg}`);
-                if (msg.startsWith('user-cancelled')) {
-                    this.showSettingsToast(t('settings.bind.cancelled'));
-                }
-                this.refreshAuthoredSettingsValues();
-                return;
-            }
-            // 409 = 'google already linked to another uuid' — same
-            // recovery UX as Apple.
-            if (msg.includes('google already linked') && cachedIdToken) {
-                const token = cachedIdToken;
-                void (async () => {
-                    const ok = await this.showConfirm(
-                        t('settings.googleRecovery.title'),
-                        t('settings.googleRecovery.desc'),
-                        t('common.confirm'),
-                        t('common.cancel'),
-                    );
-                    if (!ok) {
-                        log('[Settings] Google recovery cancelled by user');
-                        this.refreshAuthoredSettingsValues();
-                        return;
-                    }
-                    await this.commitGoogleRecovery(token);
-                })();
-                return;
-            }
-            console.warn(`[Settings] Google sign-in / link failed: ${msg}`);
-            this.showSettingsToast(t('settings.bind.failed'));
-            this.refreshAuthoredSettingsValues();
-        }
-    }
-
-    /** Recover a previously-linked Google account — mirrors
-     *  commitAppleRecovery: POST /player/login/google → swap identity
-     *  → pull fresh profile + LevelProgress under loading overlay. */
-    private async commitGoogleRecovery(idToken: string): Promise<void> {
-        try {
-            log('[Settings] Google recovery — calling /player/login/google');
-            const r = await loginWithGoogle(idToken);
-            log(`[Settings] Google recovery success — recovered uuid=${r.uuid}`);
-            PlayerProfile.swapToRecoveredAccount(r.uuid, r.bearer);
-            // swap defaults accountType='apple' inside PlayerProfile
-            // (SIWA was implemented first). Override to 'google' here
-            // so the Settings toggles paint correctly.
-            PlayerProfile.setAccountType('google');
-            this.closeSettingsPanel();
-            await this.runWithReloadOverlay(async () => {
-                try {
-                    const p = await PlayerProfile.fetchProfile();
-                    log(`[Settings] recovered Google profile — name="${p.name}", bestScores=${JSON.stringify(p.bestScores)}`);
-                    LevelProgress.restoreFrom((p.bestScores?.level ?? 0) - 1);
-                } catch (e) {
-                    console.warn(`[Settings] fetchProfile after Google recovery failed: ${(e as Error).message}`);
-                }
-                this.refreshAuthoredSettingsValues();
-            });
-            this.showSettingsToast(t('settings.googleRecovery.success'));
-        } catch (err) {
-            const msg = (err as Error).message ?? String(err);
-            console.warn(`[Settings] Google recovery failed: ${msg}`);
-            this.showSettingsToast(t('settings.googleRecovery.failed'));
-            this.refreshAuthoredSettingsValues();
-        } finally {
-            if (btn) btn.getComponent(Button)!.interactable = true;
-        }
-    }
-
-    /** Double-tap-confirm state for the Delete Account button. When
-     *  null the button is idle; when non-null the button is "armed"
-     *  and a second click within DELETE_ARM_WINDOW_MS commits. */
-    private deleteAccountArmTimer: number | null = null;
-
-    private static readonly DELETE_ARM_WINDOW_MS = 5000;
-
-    /** Delete Account button handler. Two-tap pattern:
-     *    1st tap  → arm — button label flips to "再次点击确认删除",
-     *               5-second timer resets it back if no follow-up.
-     *    2nd tap  → commit — API call + wipe local storage + reload
-     *               the current scene into fresh guest state.
-     *
-     *  We deliberately DON'T pop a native modal — Cocos 3.x doesn't
-     *  ship one, and Apple's App Review has accepted this in-app-only
-     *  double-confirm pattern (see e.g. many indie games shipping the
-     *  same UX). If reviewers ever push back we upgrade to a proper
-     *  confirmation panel or a native UIAlertController bridge. */
-    private handleDeleteAccountClick(): void {
-        const btn = this.authoredSettingsDeleteAccountButton;
-        if (!btn) return;
-        const lab = btn.getComponentInChildren(Label);
-
-        // Second click inside the arm window — commit.
-        if (this.deleteAccountArmTimer !== null) {
-            clearTimeout(this.deleteAccountArmTimer);
-            this.deleteAccountArmTimer = null;
-            this.commitDeleteAccount();
-            return;
-        }
-
-        // First click — arm.
-        log('[Settings] Delete account armed — waiting 5s for confirmation click');
-        if (lab) lab.string = t('settings.deleteAccount.confirm');
-        // Turn the button red-ish while armed. Only if it has a Sprite
-        // to color — best-effort; skip if not.
-        const bgSprite = btn.node.getComponent(Sprite);
-        const originalColor = bgSprite ? bgSprite.color.clone() : null;
-        if (bgSprite) bgSprite.color = new Color(220, 60, 60, 255);
-
-        this.deleteAccountArmTimer = setTimeout(() => {
-            this.deleteAccountArmTimer = null;
-            log('[Settings] Delete account confirmation timed out — reset');
-            if (lab) lab.string = t('settings.deleteAccount');
-            if (bgSprite && originalColor) bgSprite.color = originalColor;
-        }, MenuController.DELETE_ARM_WINDOW_MS) as unknown as number;
-    }
-
-    /** Actually delete the account. Called after the second confirmation
-     *  tap. Fire-and-forget promise chain — failures log but don't
-     *  brick the UI (button reset happens either way in the caller). */
-    private async commitDeleteAccount(): Promise<void> {
-        const btn = this.authoredSettingsDeleteAccountButton;
-        const lab = btn?.getComponentInChildren(Label) ?? null;
-        // Disable to prevent further clicks during the network round-trip.
-        if (btn) btn.getComponent(Button)!.interactable = false;
-        if (lab) lab.string = t('settings.deleteAccount.pending');
-        try {
-            log('[Settings] Delete account — calling DELETE /player/self');
-            await deletePlayerSelf();
-            log('[Settings] Server-side delete OK — wiping local state');
-            // Wipe every player-scoped localStorage key. Nuclear option
-            // (localStorage.clear()) would also wipe settings like
-            // volume/language which players probably want to keep —
-            // enumerate the player-identity keys explicitly.
-            sys.localStorage.removeItem('tt.player.uuid');
-            sys.localStorage.removeItem('tt.player.name');
-            sys.localStorage.removeItem('tt.player.accountType');
-            sys.localStorage.removeItem('tt.player.token');
-            sys.localStorage.removeItem('tt.player.tokenExpEpochSec');
-            sys.localStorage.removeItem('tt.player.avatarIdx');
-            // Wipe PlayerProfile's in-memory cache. Without this the
-            // module-level singleton would keep serving the deleted
-            // uuid, which no longer exists server-side → any subsequent
-            // API call fails with 500 (FK violation on player_wallets)
-            // or 401 (bearer no longer maps to a player row).
-            PlayerProfile.resetInMemoryState();
-            log('[Settings] Re-registering as fresh guest…');
-            // Re-run register to mint a new anonymous uuid + bearer.
-            // This is ~200ms — much cheaper than reloading the whole
-            // scene (30-60 seconds on iOS due to asset/pool teardown).
-            await PlayerProfile.ensureRegistered();
-            log('[Settings] Fresh guest ready — refreshing Settings UI');
-            // Repaint whatever's currently visible in Settings:
-            //   - wallet balance → 0
-            //   - Apple toggle → OFF
-            //   - AccountTypeLabel → "游客"
-            //   - nickname EditBox → new user-XXXX
-            this.refreshAuthoredSettingsValues();
-        } catch (err) {
-            const msg = (err as Error).message ?? String(err);
-            console.warn(`[Settings] delete account failed: ${msg}`);
-            if (lab) lab.string = t('settings.deleteAccount.failed');
-            // Re-enable button after a brief cool-down so user can retry.
-            setTimeout(() => {
-                if (btn) btn.getComponent(Button)!.interactable = true;
-                if (lab) lab.string = t('settings.deleteAccount');
-            }, 3000);
-        }
-    }
-
     /** Max nickname length (characters). Also mirror on the EditBox's
      *  `MaxLength` inspector field so the on-screen keyboard stops
      *  accepting past this limit; this constant is the JS-side belt
      *  in case someone paste-drops a longer string past that gate. */
     private static readonly NICKNAME_MAX_CHARS = 20;
-
-    // ---- Nickname change cooldown (client-side) ----
-    //
-    // Players can only change their nickname once every 7 days.
-    // Timestamp is stored in localStorage and read at modal open time
-    // to render the remaining-days hint. Cheatable via device-clock
-    // rollback — server-side enforcement is a follow-up (add a
-    // `nickname_changed_at` column + reject PUT /player/profile when
-    // within cooldown). Client gate catches honest players and
-    // provides the required UX.
-    private static readonly NICKNAME_COOLDOWN_MS = 7 * 24 * 60 * 60 * 1000;
-    private static readonly NICKNAME_CHANGED_AT_KEY = 'nicknameChangedAt';
-
-    /** Read the last recorded nickname change timestamp (ms epoch), or
-     *  0 if never changed / storage unavailable / malformed. */
-    private static readNicknameChangedAt(): number {
-        if (typeof localStorage === 'undefined') return 0;
-        const raw = localStorage.getItem(MenuController.NICKNAME_CHANGED_AT_KEY);
-        const n = raw ? Number(raw) : 0;
-        return Number.isFinite(n) && n > 0 ? n : 0;
-    }
-
-    /** Persist the current time as the last nickname change. Called on
-     *  successful setName only — a rejected change (profanity, network)
-     *  should NOT arm the cooldown. */
-    private static markNicknameChanged(): void {
-        if (typeof localStorage === 'undefined') return;
-        try {
-            localStorage.setItem(MenuController.NICKNAME_CHANGED_AT_KEY, String(Date.now()));
-        } catch { /* full/private mode — noop */ }
-    }
-
-    /** Whole days remaining until the player can change their nickname
-     *  again. Prefers the server-authoritative `nicknameNextChangeAt`
-     *  (from GET /profile / mutating PUTs); falls back to localStorage
-     *  when the server hasn't reported yet or is on an older build.
-     *  Rounds UP so "6.1 days left" reads as "7 days". */
-    public static remainingNicknameCooldownDays(): number {
-        const serverReadyAt = PlayerProfile.nicknameNextChangeAt;
-        const localLast = MenuController.readNicknameChangedAt();
-        const localReadyAt = localLast > 0
-            ? localLast + MenuController.NICKNAME_COOLDOWN_MS
-            : 0;
-        // Take whichever is later — server truth wins when present,
-        // local truth catches offline-changed-then-came-back-online.
-        const readyAt = Math.max(serverReadyAt ?? 0, localReadyAt);
-        if (readyAt === 0) return 0;
-        const msLeft = readyAt - Date.now();
-        if (msLeft <= 0) return 0;
-        return Math.ceil(msLeft / (24 * 60 * 60 * 1000));
-    }
 
     /** Read the nickname EditBox, hand it to PlayerProfile.setName
      *  (empty / whitespace is rejected inside setName), then refresh
@@ -3293,14 +2893,6 @@ export class MenuController extends Component {
      *  compat with old scenes). Cancel → no-op. */
     private async editNicknameViaPrompt(): Promise<void> {
         const currentName = PlayerProfile.name;
-        // 7-day nickname change cooldown. Timestamp lives in
-        // localStorage — see NICKNAME_COOLDOWN_MS / readNicknameChangedAt.
-        // Server-side enforcement is a follow-up; this catches honest
-        // players and gives visible UX for the limit.
-        const remainingDays = MenuController.remainingNicknameCooldownDays();
-        const hint = remainingDays > 0
-            ? t('settings.nickname.cooldown', { n: remainingDays })
-            : t('settings.nickname.cooldownReady');
         const next = await this.showPrompt(
             t('settings.nickname.title'),
             currentName,
@@ -3308,19 +2900,9 @@ export class MenuController extends Component {
             t('common.confirm'),
             t('common.cancel'),
             MenuController.NICKNAME_MAX_CHARS,
-            hint,
         );
         if (next === null) {
             log('[Settings] nickname edit cancelled');
-            return;
-        }
-        // Re-check cooldown at submit time in case the user opened the
-        // modal exactly at the boundary (or the day rolled over while
-        // the modal was open). Reject with a toast if still on cooldown.
-        const remainingAtSubmit = MenuController.remainingNicknameCooldownDays();
-        if (remainingAtSubmit > 0) {
-            this.showSettingsToast(t('settings.nickname.cooldown', { n: remainingAtSubmit }));
-            log(`[Settings] nickname change blocked — ${remainingAtSubmit} day(s) remaining`);
             return;
         }
         const trimmed = next.trim();
@@ -3345,10 +2927,6 @@ export class MenuController extends Component {
         this.refreshAuthoredSettingsValues();
         try {
             await PlayerProfile.setName(trimmed);
-            // Record the successful change locally too — channel-specific
-            // fallback cooldown timer that keeps working when the server
-            // hasn't reported nicknameNextChangeAt yet.
-            MenuController.markNicknameChanged();
             // Refresh again post-success so the cooldown Label flips
             // from "现在可以修改" → "距下次可修改还有 7 天" (the new
             // cooldown-end timestamp arrived in the setName response).
@@ -3442,16 +3020,40 @@ export class MenuController extends Component {
             try {
                 const rec = await loginWithGoogle(idToken);
                 PlayerProfile.swapToRecoveredAccount(rec.uuid, rec.bearer, rec.expEpochSec, 'google');
-                // Re-fetch server-side profile so the recovered account's
-                // name / avatar / bestScores paint into the settings panel.
-                try {
-                    await PlayerProfile.fetchProfile();
-                } catch (e) {
-                    console.warn('[Settings] fetchProfile after recovery failed:', (e as Error)?.message);
-                }
+                // Recovery is an ACCOUNT SWAP, not a same-account
+                // sync — the outgoing guest's local progress belongs
+                // to a uuid we're about to abandon. Wipe every device-
+                // scoped progress key so the boot-time
+                // fetchProfile().bestScores hydration below writes the
+                // recovered account's real values into a clean slate
+                // (otherwise the boot code's max-merge would keep the
+                // guest's high values and hide the recovered account's
+                // actual lower / higher progress inconsistently).
+                LevelProgress.reset();
+                sys.localStorage.removeItem(MenuController.ENDLESS_BEST_KEY);
+                this._endlessBestLayers = 0;
+                log(`[Settings] Recovered Google-linked account: ${rec.uuid} — reloading scene`);
+                // Full scene reload — the recovered account has a
+                // completely different profile / wallet / level
+                // progress / event state / leaderboard rank than the
+                // outgoing guest, and refreshing a handful of Settings
+                // fields would still leave stale in-memory caches all
+                // over the tree (GameController's cleared-levels set,
+                // HUD balance, EventNewbie14Panel's claim state, etc).
+                // Reloading Game.scene fires the same onLoad chain as
+                // a fresh app launch — LoadingController shows the
+                // loading panel, then beginBoot() runs, which re-
+                // registers with the persisted bearer, re-fetches
+                // profile/wallet/leaderboard/event and lands the
+                // player on the menu with correct data.
                 this.showSettingsToast(t('settings.google.recovered'), 'info');
-                this.refreshAuthoredSettingsValues();
-                log(`[Settings] Recovered Google-linked account: ${rec.uuid}`);
+                // Small delay so the toast can be seen before the
+                // scene wipes it. director.loadScene is fire-and-
+                // forget — anything on `this` after this call is
+                // running on a dead scene.
+                this.scheduleOnce(() => {
+                    director.loadScene('Game');
+                }, 0.4);
             } catch (err: any) {
                 console.warn('[Settings] /login/google FAILED:', err?.message ?? err);
                 this.showSettingsToast(t('settings.google.error'), 'error');
@@ -3489,11 +3091,16 @@ export class MenuController extends Component {
      *     (server call may take 1-2s including Apple revoke on iOS)
      *  2. DELETE /player/self — server nukes DB rows + calls Apple
      *     /auth/revoke if SIWA was linked
-     *  3. Wipe every player-scoped localStorage key
-     *  4. PlayerProfile.resetInMemoryState() — clears cached uuid,
-     *     name, accountType, avatarIdx, AND the Http bearer token
-     *  5. ensureRegistered() → mint fresh anonymous account
-     *  6. Refresh Settings UI — wallet=0, toggles OFF, guest label
+     *  3. Wipe every player-scoped localStorage key + device-scoped
+     *     progress keys (LevelProgress + endless-best) — no reason to
+     *     keep them around when the account they belonged to is gone.
+     *  4. Close the app via game.end() so the ex-player isn't dropped
+     *     into an auto-created fresh guest against their will (Korean
+     *     ONE Store copy explicitly says "게임이 종료됩니다").
+     *
+     * NOTE: we deliberately do NOT re-register a new guest here. If
+     * the player reopens the app, ensureRegistered() at boot mints
+     * one — that path is the same as a first-install fresh device.
      */
     private async commitDeleteAccount(): Promise<void> {
         const btn = this.authoredSettingsDeleteAccountButton;
@@ -3504,39 +3111,41 @@ export class MenuController extends Component {
             log('[Settings] delete account — calling DELETE /player/self');
             await deletePlayerSelf();
             log('[Settings] server-side delete OK — wiping local state');
-            // From here on, the operation cannot be aborted — go through
-            // the loading overlay to give the player a clear "reloading
-            // with new data" transition instead of a jarring stale-UI
-            // flash. closeSettingsPanel + hide top-up so the overlay
-            // covers only the main menu underneath.
-            this.closeSettingsPanel();
-            await this.runWithReloadOverlay(async () => {
-                // Wipe player-scoped localStorage keys (keep audio/language
-                // etc — those are per-device preferences, not per-account).
-                sys.localStorage.removeItem('tt.player.uuid');
-                sys.localStorage.removeItem('tt.player.name');
-                sys.localStorage.removeItem('tt.player.accountType');
-                sys.localStorage.removeItem('tt.player.token');
-                sys.localStorage.removeItem('tt.player.tokenExpEpochSec');
-                sys.localStorage.removeItem('tt.player.avatarIdx');
-                // Also wipe level progress — the deleted account's
-                // cleared levels don't belong to the fresh guest.
-                LevelProgress.reset();
-                // Clear PlayerProfile's in-memory cache — without this, the
-                // module-level singleton would keep serving the deleted
-                // uuid, which no longer exists server-side.
-                PlayerProfile.resetInMemoryState();
-                this._knownLinkedProviders.clear();
-                log('[Settings] re-registering as fresh guest…');
-                await PlayerProfile.ensureRegistered();
-                log('[Settings] fresh guest ready — refreshing Settings UI');
-                this.refreshAuthoredSettingsValues();
-            });
+            // Wipe player-scoped localStorage keys (keep audio/language
+            // etc — those are per-device preferences, not per-account).
+            sys.localStorage.removeItem('tt.player.uuid');
+            sys.localStorage.removeItem('tt.player.name');
+            sys.localStorage.removeItem('tt.player.accountType');
+            sys.localStorage.removeItem('tt.player.token');
+            sys.localStorage.removeItem('tt.player.tokenExpEpochSec');
+            sys.localStorage.removeItem('tt.player.avatarIdx');
+            // Also clear device-scoped progress caches. These aren't
+            // strictly per-account (they use device-global keys) but
+            // showing the deleted account's cleared-levels /
+            // endless-best to whoever reopens the app next would be
+            // wrong — they belonged to the deleted uuid, and the
+            // server no longer has them.
+            LevelProgress.reset();
+            sys.localStorage.removeItem(MenuController.ENDLESS_BEST_KEY);
+            // Clear PlayerProfile's in-memory cache — without this, the
+            // module-level singleton would keep serving the deleted
+            // uuid until the process ends.
+            PlayerProfile.resetInMemoryState();
+            log('[Settings] closing app after delete');
+            // Small delay so the pending toast is visible for a beat
+            // before the window vanishes — otherwise the player sees
+            // an instant close and wonders whether the delete actually
+            // went through.
+            this.scheduleOnce(() => {
+                game.end();
+            }, 0.6);
         } catch (err) {
             const msg = (err as Error).message ?? String(err);
             console.warn(`[Settings] delete account failed: ${msg}`);
             this.showSettingsToast(t('settings.deleteAccount.failed'), 'error');
-        } finally {
+            // Only re-enable the button on failure. On success the
+            // app is about to close, so leaving it disabled prevents
+            // a double-tap from firing another DELETE.
             if (btnComp) btnComp.interactable = true;
         }
     }
@@ -3841,8 +3450,8 @@ export class MenuController extends Component {
         if (this.authoredSettingsGoogleToggle) {
             this.authoredSettingsGoogleToggle.isChecked = (acct === 'google');
         }
-        if (this.authoredSettingsHapticLabel) {
-            this.trackI18nLabel(this.authoredSettingsHapticLabel, 'settings.haptic');
+        if (this.authoredSettingsAppleToggle) {
+            this.authoredSettingsAppleToggle.isChecked = (acct === 'apple');
         }
         // Haptic toggle — reflect Settings state each open (may have
         // been changed by another entry point, though today it's only
@@ -3856,70 +3465,6 @@ export class MenuController extends Component {
         // Avatar Sprite — repaint from PlayerProfile in case the player
         // picked a new one since the last open.
         this.paintSettingsAvatar();
-        // Ask the server what we're ACTUALLY bound to and reconcile
-        // local state / toggles. Handles the case where:
-        //   - the local accountType is stale (localStorage restored
-        //     from an old backup, or user manually cleared)
-        //   - the server-side link was removed (admin action, refund
-        //     of Apple ID, etc.)
-        //   - the app was reinstalled and the local state got out of
-        //     sync with the recovered uuid
-        this.reconcileLinkedAccountsFromServer();
-    }
-
-    /** Fetch the server-authoritative list of providers this uuid is
-     *  bound to and repaint the Settings toggles + label. Silent on
-     *  network failure — local state (already painted) is a fine
-     *  fallback. Fire-and-forget from refreshAuthoredSettingsValues. */
-    private reconcileLinkedAccountsFromServer(): void {
-        fetchLinkedAccounts()
-            .then((r) => {
-                const hasApple  = r.providers.indexOf('apple')  >= 0;
-                const hasGoogle = r.providers.indexOf('google') >= 0;
-                // Update local PlayerProfile so subsequent reads (e.g.
-                // handleAppleLoginClick's early-out) see the truth.
-                // Priority order: apple > google > anonymous. Since we
-                // only support one label at a time today, apple wins
-                // if both are ever bound. Revisit when we have UI to
-                // display multiple bindings simultaneously.
-                const newAcct = hasApple  ? 'apple'
-                              : hasGoogle ? 'google'
-                              : 'anonymous';
-                if (PlayerProfile.accountType !== newAcct) {
-                    log(`[Settings] server reconcile — accountType ${PlayerProfile.accountType} → ${newAcct}`);
-                    PlayerProfile.setAccountType(newAcct);
-                }
-                // Update the known-linked-providers cache so the
-                // toggle handlers don't misinterpret a dual-bound
-                // repaint as a fresh login attempt.
-                this._knownLinkedProviders.clear();
-                if (hasApple)  this._knownLinkedProviders.add('apple');
-                if (hasGoogle) this._knownLinkedProviders.add('google');
-                // Repaint the toggles with the server truth. Suppress
-                // toggle events during programmatic isChecked= so we
-                // don't re-fire login handlers.
-                this._suppressToggleEvents = true;
-                try {
-                    if (this.authoredSettingsGoogleToggle) {
-                        this.authoredSettingsGoogleToggle.isChecked = hasGoogle;
-                    }
-                    if (this.authoredSettingsAppleToggle) {
-                        this.authoredSettingsAppleToggle.isChecked = hasApple;
-                    }
-                } finally {
-                    this._suppressToggleEvents = false;
-                }
-                // Repaint the account-type label as well. Use
-                // formatAccountRow (not accountTypeText) so the UUID +
-                // 📋 copy affordance stay visible after server reconcile.
-                if (this.authoredSettingsAccountTypeLabel) {
-                    this.authoredSettingsAccountTypeLabel.string
-                        = this.formatAccountRow(PlayerProfile.accountType, PlayerProfile.uuid);
-                }
-            })
-            .catch((err) => {
-                console.warn('[Settings] fetchLinkedAccounts failed (offline?):', err?.message);
-            });
     }
 
     /** Translate PlayerProfile.accountType into the settings-label
@@ -3961,33 +3506,11 @@ export class MenuController extends Component {
      */
     private async copyPlayerIdentity(): Promise<void> {
         const text =
-            // Hard-coded English label — kept in English (matches
-            // 'UserID:') so support / disputes can read it regardless
-            // of the player's game language. The previous code reused
-            // the panel button's i18n key ('修改昵称' / 'Edit Nickname')
-            // which read awkwardly out of context (support ticket:
-            // "修改昵称: Albert" makes it look like an action, not a
-            // field label).
-            `Nickname: ${PlayerProfile.name}\n` +
+            `${t('settings.nickname.title')}: ${PlayerProfile.name}\n` +
             `UserID: ${PlayerProfile.uuid}`;
         let copied = false;
         let method = 'none';
         const anySys = sys as any;
-
-        // (0) Native bridge — ClipboardBridgeGlue.mm hands off to
-        // UIPasteboard directly. Only path that actually works on the
-        // Cocos native iOS runtime; sys.setClipboard* below are either
-        // missing or no-ops there. Fire-and-forget: assume success on
-        // native iOS, don't try the JS/web fallbacks after.
-        if (!copied && sys.isNative && sys.os === sys.OS.IOS) {
-            try {
-                (native as any).bridge.sendToNative('clipboard.copy', text);
-                copied = true;
-                method = 'native.bridge/clipboard.copy';
-            } catch (e) {
-                console.warn('[Settings] native clipboard bridge threw:', e);
-            }
-        }
 
         // (1) Cocos 3.x legacy: sys.setClipboardText
         if (!copied && typeof anySys.setClipboardText === 'function') {
@@ -4149,21 +3672,7 @@ export class MenuController extends Component {
      *  confirm before the first resolves, we auto-resolve the first
      *  as false (cancelled) and take over the modal. */
     private _confirmPendingResolve: ((confirmed: boolean) => void) | null = null;
-
-    /** Set to true around any programmatic assignment to
-     *  authored*Toggle.isChecked so the fired 'toggle' event handlers
-     *  short-circuit — otherwise we get an infinite login loop
-     *  (see the block wire in wireAuthoredSettingsPanel).
-     *  See MenuController._suppressToggleEvents. */
-    private _suppressToggleEvents: boolean = false;
-
-    /** Server-authoritative snapshot of providers this uuid is bound
-     *  to. Updated by reconcileLinkedAccountsFromServer + immediately
-     *  after successful link. Toggle handlers consult this to decide
-     *  whether an ON tap is a real bind attempt or a re-paint from a
-     *  dual-bound state (bound to BOTH apple + google but accountType
-     *  only stores one). */
-    private _knownLinkedProviders: Set<string> = new Set();
+    private _confirmModalWired: boolean = false;
 
     /** Show the generic confirmation modal. Returns a Promise that
      *  resolves to `true` if the user tapped Confirm, `false` if they
@@ -4203,12 +3712,6 @@ export class MenuController extends Component {
             this._confirmPendingResolve = resolve;
             if (prev) prev(false);
 
-            // Rewire buttons EVERY show — the panel node is shared
-            // with the pause overlay in some scenes; whichever showX
-            // (confirm / pause) most recently activated the panel
-            // needs its handlers to own the buttons, else the OTHER
-            // module's handler fires and the modal appears un-
-            // dismissable to the user.
             this.wireConfirmModalOnce();
 
             if (this.authoredConfirmModalTitle) {
@@ -4239,13 +3742,9 @@ export class MenuController extends Component {
      *  used for push+pop so BackKeyManager can deduplicate. */
     private _confirmBack = (): void => { this.closeConfirmModal(false); };
 
-    /** Rewire on every show — the confirm-modal Node is shared with
-     *  the pause overlay in app-store scenes; whichever surface most
-     *  recently activated the panel needs its own click handlers, or
-     *  the previous handler still owns the buttons and the modal
-     *  appears un-dismissable. Method name is legacy `Once` for
-     *  cross-branch parity — behavior is idempotent (off then on). */
     private wireConfirmModalOnce(): void {
+        if (this._confirmModalWired) return;
+        this._confirmModalWired = true;
         if (this.authoredConfirmModalConfirmButton) {
             const btn = this.authoredConfirmModalConfirmButton;
             btn.node.off('click');
@@ -4331,7 +3830,6 @@ export class MenuController extends Component {
         confirmLabelText: string,
         cancelLabelText: string,
         maxLength?: number,
-        hintText?: string,
     ): Promise<string | null> {
         const panel = this.authoredPromptModal;
         if (!panel) {
@@ -4349,16 +3847,6 @@ export class MenuController extends Component {
 
             if (this.authoredPromptModalTitle) {
                 this.authoredPromptModalTitle.string = title;
-            }
-            // Optional hint Label — set text if scene binds one and
-            // hintText is non-empty; hide/blank otherwise so leftover
-            // text from a previous prompt doesn't leak through.
-            if (this.authoredPromptModalHint) {
-                const hint = hintText ?? '';
-                this.authoredPromptModalHint.string = hint;
-                if (this.authoredPromptModalHint.node) {
-                    this.authoredPromptModalHint.node.active = hint.length > 0;
-                }
             }
             if (this.authoredPromptModalConfirmButton) {
                 const lab = this.authoredPromptModalConfirmButton.getComponentInChildren(Label);
