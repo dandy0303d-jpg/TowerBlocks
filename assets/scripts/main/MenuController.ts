@@ -33,6 +33,7 @@ import { LevelSelectStage3D } from './LevelSelectStage3D';
 import { LeaderboardController } from './LeaderboardController';
 import { TopUpController } from './TopUpController';
 import { EventNewbie14Panel } from './EventNewbie14Panel';
+import { EventButtonSparkles } from './EventButtonSparkles';
 import { fetchNewbie14Status } from '../core/EventNewbie14Api';
 import { BackKeyManager } from './BackKeyManager';
 import { PlayerProfile } from '../core/PlayerProfile';
@@ -1032,6 +1033,10 @@ export class MenuController extends Component {
             this.scheduleOnce(() => {
                 panel.node.active = false;
             }, 0);
+            // Attention-grabbing idle FX — gentle pulse + subtle wobble
+            // + gold sparkle particles. Wired once (guarded by
+            // _eventNewbie14Wired), survives active toggles.
+            this._startEventNewbie14ButtonFx(btn.node);
             this._eventNewbie14Wired = true;
         }
         fetchNewbie14Status()
@@ -1050,6 +1055,48 @@ export class MenuController extends Component {
                     this.authoredEventNewbie14RedDot.node.active = false;
                 }
             });
+    }
+
+    /** Idle FX on the newbie-14 entry button: a subtle "breathing"
+     *  pulse (scale 0.6 ↔ 0.7) + a shallow rotational wobble
+     *  (±4°). Runs forever once wired. The pulse and wobble use
+     *  slightly different periods so they don't visually beat
+     *  against each other. Set up once — cc.tween's `repeatForever`
+     *  keeps running across node active toggles (tween lives on the
+     *  node's action manager and is paused when the node is inactive,
+     *  resumes automatically when it goes active again).
+     *
+     *  Kept as a separate method so future tweaks (particles, glow
+     *  layer sprite, shake on new-reward day) have a clear entry
+     *  point. */
+    private _startEventNewbie14ButtonFx(node: Node): void {
+        // Pulse (scale): 0.9s in, 0.9s out — 1.8s cycle.
+        // Range 0.6 ↔ 0.7 per design.
+        tween(node)
+            .to(0.9, { scale: new Vec3(0.7, 0.7, 1) }, { easing: 'sineInOut' })
+            .to(0.9, { scale: new Vec3(0.6, 0.6, 1) }, { easing: 'sineInOut' })
+            .union()
+            .repeatForever()
+            .start();
+        // Wobble (rotation Z): ±4° over a 2.4s cycle — deliberately
+        // out of sync with the pulse so the two effects visually
+        // desync and the button feels alive instead of mechanical.
+        tween(node)
+            .to(0.6, { eulerAngles: new Vec3(0, 0,  4) }, { easing: 'sineInOut' })
+            .to(0.6, { eulerAngles: new Vec3(0, 0, -4) }, { easing: 'sineInOut' })
+            .to(0.6, { eulerAngles: new Vec3(0, 0,  4) }, { easing: 'sineInOut' })
+            .to(0.6, { eulerAngles: new Vec3(0, 0,  0) }, { easing: 'sineInOut' })
+            .union()
+            .repeatForever()
+            .start();
+        // Sparkles — attach the EventButtonSparkles particle emitter so
+        // small glowing dots continuously twinkle around the button.
+        // Component is self-contained (builds its own radial-gradient
+        // texture, no art asset), auto-tracks the button's active
+        // state, and cleans up its own children on disable.
+        if (!node.getComponent(EventButtonSparkles)) {
+            node.addComponent(EventButtonSparkles);
+        }
     }
 
     private _levelSelectBack = (): void => {
