@@ -805,7 +805,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 375.00000000000006,
+      "x": 375,
       "y": 667,
       "z": 0
     },
@@ -5807,7 +5807,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 321.0000000000001,
+      "x": 321.00000000000006,
       "y": 530.076,
       "z": 0
     },
@@ -6008,7 +6008,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 280.00000000000006,
+      "x": 280,
       "y": -617,
       "z": 0
     },
@@ -6353,7 +6353,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 239.40000000000003,
+      "x": 239.39999999999998,
       "y": 613,
       "z": 0
     },
@@ -6704,7 +6704,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": -280.00000000000006,
+      "x": -280,
       "y": -617,
       "z": 0
     },
@@ -7052,8 +7052,8 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 285.22299999999996,
-      "y": 0,
+      "x": 282.6539999999999,
+      "y": -190.1,
       "z": 0
     },
     "_lrot": {
@@ -7262,11 +7262,11 @@
     "_alignFlags": 34,
     "_target": null,
     "_left": 0,
-    "_right": 29.777000000000072,
+    "_right": 32.34600000000009,
     "_top": 0,
     "_bottom": 0,
     "_horizontalCenter": 0,
-    "_verticalCenter": 0,
+    "_verticalCenter": -190.1,
     "_isAbsLeft": true,
     "_isAbsRight": true,
     "_isAbsTop": true,
@@ -7339,14 +7339,14 @@
     },
     "_enabled": true,
     "__prefab": null,
-    "_alignFlags": 34,
+    "_alignFlags": 36,
     "_target": null,
     "_left": 600.223,
     "_right": 25,
     "_top": 0,
-    "_bottom": 0,
+    "_bottom": 412.9069999999999,
     "_horizontalCenter": 0,
-    "_verticalCenter": 0,
+    "_verticalCenter": -578.007,
     "_isAbsLeft": true,
     "_isAbsRight": true,
     "_isAbsTop": true,
@@ -8377,7 +8377,7 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 750.0000000000001,
+      "width": 750,
       "height": 1334
     },
     "_anchorPoint": {
@@ -51365,7 +51365,7 @@
       "__id__": 1203
     },
     "titleLabel": {
-      "__id__": 1212
+      "__id__": 1052
     },
     "logoSprite": {
       "__id__": 1277
@@ -51584,7 +51584,7 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 750.0000000000001,
+      "width": 750,
       "height": 1334
     },
     "_anchorPoint": {
