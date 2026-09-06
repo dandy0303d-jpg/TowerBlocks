@@ -41707,7 +41707,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 229.39999999999998,
+      "x": 229.40000000000003,
       "y": 603,
       "z": 0
     },
@@ -45768,10 +45768,10 @@
       "b": 177,
       "a": 255
     },
-    "_string": "\b베타 테스트 기간에 오픈하지 않습니다.",
+    "_string": "베타 테스트 중에는 지원하지 않는 기능입니다.",
     "_horizontalAlign": 1,
     "_verticalAlign": 1,
-    "_actualFontSize": 30,
+    "_actualFontSize": 25,
     "_fontSize": 30,
     "_fontFamily": "Arial",
     "_lineHeight": 40,
@@ -45822,7 +45822,7 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 750,
+      "width": 750.0000000000001,
       "height": 1334
     },
     "_anchorPoint": {
@@ -51365,7 +51365,7 @@
       "__id__": 1203
     },
     "titleLabel": {
-      "__id__": 1212
+      "__id__": 1052
     },
     "logoSprite": {
       "__id__": 1277
@@ -51846,10 +51846,10 @@
       "__id__": 856
     },
     "authoredPickerPaidRefreshButton": {
-      "__id__": 873
+      "__id__": 685
     },
     "authoredPickerPaidRefreshLabel": {
-      "__id__": 865
+      "__id__": 677
     },
     "authoredPickerPaidRefreshButton": {
       "__id__": 685

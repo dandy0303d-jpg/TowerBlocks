@@ -35,7 +35,7 @@
  * works during dev without a real Android device.
  */
 
-import { input, Input, EventKeyboard, KeyCode } from 'cc';
+import { input, Input, EventKeyboard, KeyCode, native, sys } from 'cc';
 
 type BackHandler = () => boolean | void | Promise<boolean | void>;
 
@@ -52,7 +52,30 @@ class _BackKeyManager {
      *  by different scenes. MenuController wires this in onLoad. */
     public install(): void {
         if (this._installed) return;
+        // Editor / web / desktop preview path: Cocos delivers Escape
+        // (and MOBILE_BACK where it works) through the normal input
+        // dispatcher, so we keep this hookup for dev parity.
         input.on(Input.EventType.KEY_UP, this._onKeyUp, this);
+        // Android device path: Cocos 3.8's CocosActivity swallows the
+        // hardware back key and never fires KeyCode.MOBILE_BACK through
+        // input.on. AppActivity.onBackPressed() forwards the press to
+        // JS via JsbBridgeWrapper.dispatchEventToScript("androidBack", "")
+        // — subscribe here so BackKeyManager fires exactly the same
+        // dispatch path as an Escape key would.
+        if (sys.isNative && sys.os === sys.OS.ANDROID) {
+            try {
+                const jbw = (native as any)?.jsbBridgeWrapper;
+                if (jbw && typeof jbw.addNativeEventListener === 'function') {
+                    jbw.addNativeEventListener('androidBack', () => {
+                        void this._dispatch();
+                    });
+                } else {
+                    console.warn('[BackKeyManager] jsbBridgeWrapper unavailable — hardware back key will not fire on this build');
+                }
+            } catch (e) {
+                console.warn('[BackKeyManager] bridge install failed:', (e as Error)?.message);
+            }
+        }
         this._installed = true;
     }
 
