@@ -31,6 +31,7 @@ import { BackgroundCubes } from './BackgroundCubes';
 import { TwinkleStars } from './TwinkleStars';
 import { LevelSelectStage3D } from './LevelSelectStage3D';
 import { LeaderboardController } from './LeaderboardController';
+import { fetchMyLevelTimes } from '../core/LeaderboardApi';
 import { TopUpController } from './TopUpController';
 import { EventNewbie14Panel } from './EventNewbie14Panel';
 import { EventButtonSparkles } from './EventButtonSparkles';
@@ -814,15 +815,38 @@ export class MenuController extends Component {
             // install; player just re-plays the missing levels).
             try {
                 const p = await PlayerProfile.fetchProfile();
-                const clearedCount = p?.bestScores?.level ?? 0;
-                if (clearedCount > 0) {
+                // Server-side level progress lives in TWO places (see the
+                // same block in LoadingController.beginBoot for the full
+                // rationale). Short version: bestScores.level is only
+                // bumped by endless/blind submitScore, NOT by level-mode
+                // submitLevelTime — so a level-mode-only player has 0
+                // there forever. The truth is in the leaderboard/level-
+                // time-mine entries: max(levelIdx) is the real "highest
+                // cleared". Take the max of both to hydrate correctly on
+                // fresh installs / account recovery.
+                let serverIdx = (p?.bestScores?.level ?? 0) - 1;
+                try {
+                    const mine = await fetchMyLevelTimes();
+                    if (mine.length > 0) {
+                        const derivedIdx = mine.reduce(
+                            (max, e) => (e.levelIdx > max ? e.levelIdx : max),
+                            -1,
+                        );
+                        if (derivedIdx > serverIdx) {
+                            log(`[MenuController] boot: level-time entries yield higher progress ${derivedIdx} > bestScores.level-1=${serverIdx}`);
+                            serverIdx = derivedIdx;
+                        }
+                    }
+                } catch (e) {
+                    console.warn(`[MenuController] boot fetchMyLevelTimes failed (progress will fall back to bestScores.level only): ${(e as Error)?.message}`);
+                }
+                if (serverIdx >= 0) {
                     // Max-merge with whatever's already in localStorage
                     // so a player who just cleared a level on this
                     // device doesn't get bumped BACK if the upload race
                     // lost. Server-side best-of merging keeps subsequent
                     // submissions monotone anyway.
                     const localIdx = LevelProgress.maxClearedIdx;
-                    const serverIdx = clearedCount - 1;
                     if (serverIdx > localIdx) {
                         LevelProgress.restoreFrom(serverIdx);
                         log(`[MenuController] boot restored LevelProgress from server: ${localIdx} -> ${serverIdx}`);
