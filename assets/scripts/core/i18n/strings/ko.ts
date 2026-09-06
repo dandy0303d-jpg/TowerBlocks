@@ -211,7 +211,7 @@ export const KO: Record<string, string> = {
     'controls.expert':       '전문가',
     'settings.nickname':     '닉네임',
     'settings.volume':       '볼륨',
-    'settings.accountData':  '계정과 데이터',
+    'settings.accountData':  '계정 관리',
     'settings.googleAccount': 'Google 계정',
     'settings.appleAccount': 'Apple 계정',
     'settings.notBound':     '미연동',
