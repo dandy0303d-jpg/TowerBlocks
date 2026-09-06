@@ -98,7 +98,8 @@ public class AppActivity extends CocosActivity {
         // getIntent() reflects the new intent, matching Android norms.
         if (intent != null
                 && intent.getData() != null
-                && "com.tetritower.oauth".equals(intent.getData().getScheme())) {
+                && intent.getData().getScheme() != null
+                && intent.getData().getScheme().startsWith("com.googleusercontent.apps.")) {
             setIntent(intent);
             com.cocos.game.GoogleWebOAuthBridge.handleRedirect(intent);
         }

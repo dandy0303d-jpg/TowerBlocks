@@ -240,6 +240,8 @@ export const ES: Record<string, string> = {
     'settings.deleteAccount':         'Eliminar cuenta',
     'settings.deleteAccount.title':   '¿Eliminar cuenta?',
     'settings.deleteAccount.desc':    'Esta acción no se puede deshacer. Todos los datos (gemas, progreso, cuentas vinculadas) se borrarán permanentemente.',
+    'settings.bound':                 'Vinculada',
+    'settings.unbound':               'No vinculada',
     'settings.google.pending':        'Abriendo inicio de sesión de Google…',
     'settings.google.linked':         'Cuenta de Google vinculada',
     'settings.google.alreadyLinked':  'Cuenta de Google ya vinculada',

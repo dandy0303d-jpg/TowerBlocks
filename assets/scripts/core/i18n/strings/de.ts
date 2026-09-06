@@ -220,6 +220,8 @@ export const DE: Record<string, string> = {
     'settings.deleteAccount':         'Konto löschen',
     'settings.deleteAccount.title':   'Konto löschen?',
     'settings.deleteAccount.desc':    'Diese Aktion kann nicht rückgängig gemacht werden. Alle Daten (Edelsteine, Fortschritt, verknüpfte Konten) werden dauerhaft gelöscht.',
+    'settings.bound':                 'Verknüpft',
+    'settings.unbound':               'Nicht verknüpft',
     'settings.google.pending':        'Google-Anmeldung wird geöffnet…',
     'settings.google.linked':         'Google-Konto verknüpft',
     'settings.google.alreadyLinked':  'Google-Konto bereits verknüpft',

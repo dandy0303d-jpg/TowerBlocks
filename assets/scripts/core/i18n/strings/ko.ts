@@ -241,6 +241,8 @@ export const KO: Record<string, string> = {
     'settings.deleteAccount':         '계정 삭제',
     'settings.deleteAccount.title':   '계정을 삭제하시겠습니까?',
     'settings.deleteAccount.desc':    '이 작업은 취소할 수 없습니다. 모든 데이터(보석, 진행 상황, 연결 계정)가 영구 삭제됩니다.',
+    'settings.bound':                 '연결됨',
+    'settings.unbound':               '연결 안 됨',
     'settings.google.pending':        'Google 로그인을 여는 중…',
     'settings.google.linked':         'Google 계정이 연결되었습니다',
     'settings.google.alreadyLinked':  '이미 Google 계정에 연결됨',

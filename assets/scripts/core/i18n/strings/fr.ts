@@ -218,6 +218,8 @@ export const FR: Record<string, string> = {
     'settings.deleteAccount':         'Supprimer le compte',
     'settings.deleteAccount.title':   'Supprimer le compte ?',
     'settings.deleteAccount.desc':    'Cette action est irréversible. Toutes les données (gemmes, progression, comptes liés) seront supprimées définitivement.',
+    'settings.bound':                 'Lié',
+    'settings.unbound':               'Non lié',
     'settings.google.pending':        'Ouverture de la connexion Google…',
     'settings.google.linked':         'Compte Google lié',
     'settings.google.alreadyLinked':  'Compte Google déjà lié',
