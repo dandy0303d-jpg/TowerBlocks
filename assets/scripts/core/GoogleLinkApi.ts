@@ -60,7 +60,28 @@ export interface GoogleLoginResult {
 export async function linkGoogleToCurrentAccount(idToken: string): Promise<GoogleLinkResult> {
     const url = `${BACKEND_BASE_URL}/player/link/google`;
     console.log(`[GoogleLink] linking current account — id_token length=${idToken.length}`);
-    return httpPostJson<GoogleLinkResult>(url, { idToken: idToken }, BACKEND_TIMEOUT_MS);
+    try {
+        return await httpPostJson<GoogleLinkResult>(url, { idToken: idToken }, BACKEND_TIMEOUT_MS);
+    } catch (err: any) {
+        // Server returns 409 { "error": "google already linked" } when
+        // this Google account is already bound to a DIFFERENT uuid —
+        // this is a RECOVERABLE conflict, not a hard failure. The
+        // original doc-comment contract above says 200 + { linked:
+        // false, alreadyLinked: true } but the current server rejects
+        // the whole request with a 409 instead. Reshape here so
+        // MenuController's `link.alreadyLinked` branch (which opens the
+        // recovery-confirm modal → loginWithGoogle) still runs.
+        //
+        // Server doesn't include the other uuid in its 409 payload, so
+        // linkedUuid stays undefined — the recovery dialog copy doesn't
+        // rely on it, and loginWithGoogle will resolve to the correct
+        // uuid on its own.
+        const msg = String(err?.message ?? err);
+        if (msg.startsWith('HTTP 409') && /already[\s_-]?linked/i.test(msg)) {
+            return { linked: false, alreadyLinked: true };
+        }
+        throw err;
+    }
 }
 
 /** Recover an account previously linked to this Google. Returns the

@@ -320,7 +320,7 @@ export const EN: Record<string, string> = {
     'consent.mustAgree':                             'You must agree to all required items to start the game.',
     'consent.error':                             'Failed to record your agreement. Please try again.',
     // ---- Progressive unlock tips ----
-    'lock.endless':      'Clear {n} levels to unlock Endless mode',
+    'lock.endless':      'Reach floor {n} to unlock Endless mode',
     'lock.blind':        'Reach {n} layers in Endless to unlock Blind mode',
     'lock.leaderboard':  'Reach {n} layers in Endless to unlock Leaderboard',
     'level.next':        'Next Level',
