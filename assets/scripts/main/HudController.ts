@@ -2364,33 +2364,53 @@ export class HudController extends Component {
      *  Network/other errors log without changing UI state so a flaky
      *  connection doesn't burn the daily count. */
     private onFateFreeRerollClicked(): void {
-        // Pre-gate on the cached remaining count so we don't accidentally
-        // reroll on channels/server versions where the /consume endpoint
-        // doesn't 429 when the quota is exhausted. Ad-watch integration
-        // is a separate TODO — for now the "🎬 看广告改命" click just
-        // toasts a hint instead of silently rerolling for free.
-        const cached = PlayerProfile.dailyFreeRemaining('fate');
-        if (cached === 0) {
-            console.log('[FateModal] daily-free exhausted — ad-watch not wired, ignoring click');
-            // TODO(rewarded-ad): call channel's ad SDK, play rewarded
-            // video, on completion call onFateReroll() + refresh label.
-            return;
-        }
+        // Two-stage flow mirroring the magic picker's onRefreshClicked:
+        //   1. Try consumeDailyFree('fate') — atomic server-side
+        //      check-and-decrement. 200 → grant reroll.
+        //   2. On quota exhausted (ok=false, remaining=0) fall through
+        //      to Providers.ads.showRewardedAd(). Rewarded → grant reroll;
+        //      dismissed / error → no-op (or toast on error).
+        // MockAdProvider (non-channel builds) resolves 'rewarded'
+        // instantly so the flow exercises end-to-end in Preview;
+        // LevelPlayProvider (channel/onestore) shows a real ad.
         void (async () => {
+            let free: { ok: boolean; remaining: number } | null = null;
             try {
-                const r = await consumeDailyFree('fate');
-                PlayerProfile.setDailyFreeRemaining('fate', r.remaining);
+                free = await consumeDailyFree('fate');
+            } catch (err) {
+                // Non-429 error (network / 5xx) — DailyFreeApi rethrows
+                // those. Skip both branches so a flaky network doesn't
+                // burn an ad on a transient hiccup.
+                console.warn('[FateModal] daily-free consume failed:', String((err as any)?.message ?? err));
+                return;
+            }
+            // Server swallows 429 into { ok: false, remaining: 0 }.
+            if (free.ok) {
+                PlayerProfile.setDailyFreeRemaining('fate', free.remaining);
                 this.onFateReroll();
                 this.updateFateRerollButtonLabel();
-            } catch (err) {
-                const msg = String((err as any)?.message ?? err);
-                if (msg.includes('HTTP 429')) {
-                    PlayerProfile.setDailyFreeRemaining('fate', 0);
+                return;
+            }
+            // Quota exhausted → repaint label to ad-watch state, then
+            // attempt the rewarded ad.
+            PlayerProfile.setDailyFreeRemaining('fate', 0);
+            this.updateFateRerollButtonLabel();
+            try {
+                const r = await Providers.ads.showRewardedAd();
+                if (r.kind === 'rewarded') {
+                    this.onFateReroll();
                     this.updateFateRerollButtonLabel();
-                    console.log('[FateModal] daily-free exhausted — label switched to ad-watch');
                     return;
                 }
-                console.warn('[FateModal] daily-free consume failed:', msg);
+                if (r.kind === 'dismissed') {
+                    console.log('[FateModal] ad dismissed early — no reroll');
+                    return;
+                }
+                console.warn('[FateModal] ad error:', r.reason);
+                ToastManager.instance?.show(t('picker.adRefresh.failed'));
+            } catch (e) {
+                console.warn('[FateModal] showRewardedAd threw:', (e as Error)?.message ?? e);
+                ToastManager.instance?.show(t('picker.adRefresh.failed'));
             }
         })();
     }

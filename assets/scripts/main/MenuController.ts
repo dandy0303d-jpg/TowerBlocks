@@ -3637,15 +3637,25 @@ export class MenuController extends Component {
         // Until real OAuth is wired every player is `anonymous`, so
         // both buttons show the unbound (gray) variant.
         const acct = PlayerProfile.accountType;
-        const setBtnSprite = (btn: Button | null, sf: SpriteFrame | null): void => {
-            if (!btn || !sf) return;
-            const spr = btn.getComponent(Sprite) ?? btn.getComponentInChildren(Sprite);
-            if (spr) spr.spriteFrame = sf;
+        const setBtnState = (btn: Button | null, sf: SpriteFrame | null, bound: boolean): void => {
+            if (!btn) return;
+            if (sf) {
+                const spr = btn.getComponent(Sprite) ?? btn.getComponentInChildren(Sprite);
+                if (spr) spr.spriteFrame = sf;
+            }
+            // The button's visible text lives in a child Label node
+            // (Google → Sprite, Label). Swapping the sprite frame
+            // alone leaves the "未绑定" text unchanged, so update it
+            // here too. i18n so it tracks language changes.
+            const lab = btn.getComponentInChildren(Label);
+            if (lab) lab.string = t(bound ? 'settings.bound' : 'settings.unbound');
         };
-        setBtnSprite(this.authoredSettingsGoogleButton,
-                     acct === 'google' ? this.googleBoundSprite : this.googleUnboundSprite);
-        setBtnSprite(this.authoredSettingsAppleButton,
-                     acct === 'apple'  ? this.appleBoundSprite  : this.appleUnboundSprite);
+        setBtnState(this.authoredSettingsGoogleButton,
+                    acct === 'google' ? this.googleBoundSprite : this.googleUnboundSprite,
+                    acct === 'google');
+        setBtnState(this.authoredSettingsAppleButton,
+                    acct === 'apple'  ? this.appleBoundSprite  : this.appleUnboundSprite,
+                    acct === 'apple');
         // Legacy toggle version (kept for backward compat).
         if (this.authoredSettingsGoogleToggle) {
             this.authoredSettingsGoogleToggle.isChecked = (acct === 'google');

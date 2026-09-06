@@ -243,6 +243,8 @@ export const ZH_HANT: Record<string, string> = {
     'settings.deleteAccount':         '刪除帳號',
     'settings.deleteAccount.title':   '刪除帳號？',
     'settings.deleteAccount.desc':    '此操作無法還原。所有資料（寶石、進度、綁定）將永久刪除。',
+    'settings.bound':                 '已綁定',
+    'settings.unbound':               '未綁定',
     'settings.google.pending':        '正在開啟 Google 登入…',
     'settings.google.linked':         '已綁定 Google 帳號',
     'settings.google.alreadyLinked':  '已綁定 Google 帳號',
