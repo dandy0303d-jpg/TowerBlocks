@@ -27,6 +27,7 @@ package com.cocos.game;
 import android.os.Bundle;
 import android.content.Intent;
 import android.content.res.Configuration;
+import android.view.KeyEvent;
 import android.view.WindowManager;
 
 import com.cocos.service.SDKWrapper;
@@ -119,8 +120,65 @@ public class AppActivity extends CocosActivity {
 
     @Override
     public void onBackPressed() {
+        // Fallback path — normally the back key is captured by
+        // dispatchKeyEvent() below (fires before any View sees it),
+        // so this only runs if some system dialog / IME upstream
+        // routes back through the Activity path instead. Keep the
+        // SDKWrapper hook so third-party SDKs get lifecycle parity.
         SDKWrapper.shared().onBackPressed();
-        super.onBackPressed();
+        try {
+            com.cocos.lib.JsbBridgeWrapper.getInstance()
+                    .dispatchEventToScript("androidBack", "");
+        } catch (Throwable t) {
+            android.util.Log.w("AppActivity",
+                    "JsbBridge back dispatch failed: " + t.getMessage());
+        }
+    }
+
+    /**
+     * Intercept the hardware back key at the Activity dispatch layer.
+     *
+     * Why not onBackPressed()? Cocos 3.8's CocosSurfaceView consumes
+     * KEYCODE_BACK in its own onKeyDown() and returns true, so the key
+     * never bubbles up to Activity.onBackPressed(). It also does NOT
+     * forward it to the JS input dispatcher — `input.on(KEY_UP,
+     * MOBILE_BACK)` never fires. We tried both paths and confirmed no
+     * dispatch either way.
+     *
+     * dispatchKeyEvent() fires BEFORE the SurfaceView sees the event,
+     * so we can consume KEYCODE_BACK cleanly and forward it to JS via
+     * JsbBridgeWrapper. BackKeyManager.ts subscribes to the
+     * "androidBack" event and runs its LIFO handler stack (popup close
+     * → exit-confirm modal at main menu).
+     *
+     * Returning true here means "handled" — the SurfaceView never sees
+     * the key, and Android does NOT background/finish the Activity.
+     * If JS wants to exit the app it calls `game.end()`, which finishes
+     * the Activity normally.
+     *
+     * We only capture ACTION_UP (single event per press) so we don't
+     * fire twice on a normal press-and-release. Long-press repeats
+     * fire more ACTION_DOWN events but only one ACTION_UP on release,
+     * which is the behavior we want.
+     */
+    @Override
+    public boolean dispatchKeyEvent(KeyEvent event) {
+        if (event.getKeyCode() == KeyEvent.KEYCODE_BACK
+                && event.getAction() == KeyEvent.ACTION_UP) {
+            android.util.Log.i("AppActivity", "back key → JsbBridge androidBack");
+            try {
+                com.cocos.lib.JsbBridgeWrapper.getInstance()
+                        .dispatchEventToScript("androidBack", "");
+            } catch (Throwable t) {
+                android.util.Log.w("AppActivity",
+                        "JsbBridge back dispatch failed: " + t.getMessage());
+                // Fall through to super so the app doesn't feel dead
+                // if the bridge broke for some reason.
+                return super.dispatchKeyEvent(event);
+            }
+            return true;   // consumed — do NOT let SurfaceView see it
+        }
+        return super.dispatchKeyEvent(event);
     }
 
     @Override
