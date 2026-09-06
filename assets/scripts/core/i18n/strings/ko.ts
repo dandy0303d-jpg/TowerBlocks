@@ -243,6 +243,7 @@ export const KO: Record<string, string> = {
     'settings.deleteAccount':         '회원 탈퇴',
     'settings.deleteAccount.title':   '회원 탈퇴하시겠습니까?',
     'settings.deleteAccount.desc':    '이 작업은 취소할 수 없습니다. 모든 데이터(보석, 진행 상황, 연결 계정)가 영구 삭제되며 게임이 종료됩니다.',
+    'settings.deleteAccount.confirm': '탈퇴하려면 다시 탭하세요',
     'settings.bound':                 '연결됨',
     'settings.unbound':               '연결 안 됨',
     // ---- 신규 유저 14일 이벤트 ----
@@ -274,10 +275,11 @@ export const KO: Record<string, string> = {
     'settings.deleteAccount.failed':  '탈퇴 실패, 다시 시도',
     'settings.tos':     '이용약관',
     'settings.privacy': '개인정보 처리방침',
-    'settings.deleteAccount':          '계정 삭제',
-    'settings.deleteAccount.confirm':  '탈퇴하려면 다시 탭하세요',
-    'settings.deleteAccount.pending':  '탈퇴 처리 중...',
-    'settings.deleteAccount.failed':   '탈퇴 실패, 다시 시도',
+    // NOTE: duplicate 'settings.deleteAccount' keys used to live here —
+    // ko.ts had a legacy block that redefined the button label as
+    // '계정 삭제', which SILENTLY OVERWROTE the '회원 탈퇴' block above
+    // (JS object-literal semantics: last key wins). The confirm string
+    // is now defined once above; do not re-add duplicates here.
     // 다이아 부족 팝업
     'gems.insufficient': '다이아가 부족합니다\n필요 {need}, 보유 {have}',
     'gems.goTopUp':      '충전하러 가기',
