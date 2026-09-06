@@ -1,5 +1,24 @@
 import org.apache.tools.ant.taskdefs.condition.Os
 
+// Buildscript classpath for the Kotlin plugin. Cocos generates the
+// top-level proj/build.gradle from its own template and pulls this
+// file in via `apply from:`, which means any `buildscript` block in
+// native/engine/android/build.gradle is IGNORED by the root project
+// (apply-from's buildscript scope is only the applied script itself).
+// Declaring the classpath HERE keeps it scoped to CocosGame:app but
+// still available before `apply plugin: 'kotlin-android'` runs.
+// Version must match the Kotlin stdlib coordinate in dependencies
+// below and any transitive stdlib the channel SDKs pull in.
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.21"
+    }
+}
+
 apply plugin: 'com.android.application'
 // Kotlin — GoogleWebOAuthBridge.kt (account-bind Custom Tabs flow)
 // is Kotlin, so without this plugin the .kt won't compile and

@@ -224,6 +224,8 @@ export const PT_BR: Record<string, string> = {
     'settings.deleteAccount':         'Excluir conta',
     'settings.deleteAccount.title':   'Excluir conta?',
     'settings.deleteAccount.desc':    'Esta ação não pode ser desfeita. Todos os dados (gemas, progresso, contas vinculadas) serão apagados permanentemente.',
+    'settings.bound':                 'Vinculada',
+    'settings.unbound':               'Não vinculada',
     'settings.google.pending':        'Abrindo login do Google…',
     'settings.google.linked':         'Conta Google vinculada',
     'settings.google.alreadyLinked':  'Conta Google já vinculada',

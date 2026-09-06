@@ -254,6 +254,8 @@ export const ZH: Record<string, string> = {
     'settings.deleteAccount':         '删除账号',
     'settings.deleteAccount.title':   '删除账号？',
     'settings.deleteAccount.desc':    '此操作不可撤销。所有数据（钻石、进度、绑定）将永久删除。',
+    'settings.bound':                 '已绑定',
+    'settings.unbound':               '未绑定',
     'settings.google.pending':        '正在打开 Google 登录…',
     'settings.google.linked':         '已绑定 Google 账号',
     'settings.google.alreadyLinked':  '已绑定 Google 账号',

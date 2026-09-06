@@ -245,6 +245,8 @@ export const JA: Record<string, string> = {
     'settings.deleteAccount':         'アカウント削除',
     'settings.deleteAccount.title':   'アカウントを削除？',
     'settings.deleteAccount.desc':    'この操作は取り消せません。全データ（ジェム、進捗、連携）が永久に削除されます。',
+    'settings.bound':                 '連携済み',
+    'settings.unbound':               '未連携',
     'settings.google.pending':        'Google ログインを開いています…',
     'settings.google.linked':         'Google アカウントを連携しました',
     'settings.google.alreadyLinked':  'Google アカウントは既に連携済み',

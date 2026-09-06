@@ -60,7 +60,7 @@ export interface GoogleLoginResult {
 export async function linkGoogleToCurrentAccount(idToken: string): Promise<GoogleLinkResult> {
     const url = `${BACKEND_BASE_URL}/player/link/google`;
     console.log(`[GoogleLink] linking current account — id_token length=${idToken.length}`);
-    return httpPostJson<GoogleLinkResult>(url, { id_token: idToken }, BACKEND_TIMEOUT_MS);
+    return httpPostJson<GoogleLinkResult>(url, { idToken: idToken }, BACKEND_TIMEOUT_MS);
 }
 
 /** Recover an account previously linked to this Google. Returns the
@@ -73,5 +73,5 @@ export async function loginWithGoogle(idToken: string): Promise<GoogleLoginResul
     console.log(`[GoogleLink] recovery login — id_token length=${idToken.length}`);
     // sign=false because the /login endpoint is unsigned — the caller
     // may not have a valid bearer yet (that's the whole point of login).
-    return httpPostJson<GoogleLoginResult>(url, { id_token: idToken }, BACKEND_TIMEOUT_MS, /*sign=*/false);
+    return httpPostJson<GoogleLoginResult>(url, { idToken: idToken }, BACKEND_TIMEOUT_MS, /*sign=*/false);
 }

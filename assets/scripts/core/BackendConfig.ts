@@ -41,9 +41,13 @@ export const GOOGLE_OAUTH_CLIENT_ID = '898144979904-2msavmk9b0c63fbi4bl29kl7ud1i
  *  Android ID). Server config: GOOGLE_ALLOWED_AUDIENCES must include it. */
 export const GOOGLE_OAUTH_WEB_CLIENT_ID = '898144979904-6qcfcmp21s5o9lhn7l64mpe9u89u9ekc.apps.googleusercontent.com';
 
-/** OAuth redirect URI — must exactly match the value registered in
- *  Google Cloud Console → OAuth 2.0 Client → Authorized redirect URIs.
- *  The custom scheme is picked up by the intent-filter in
- *  AndroidManifest.xml (com.tetritower.oauth → AppActivity), which
- *  invokes GoogleWebOAuthBridge.handleRedirect. */
-export const GOOGLE_OAUTH_REDIRECT_URI = 'com.tetritower.oauth://google/callback';
+/** OAuth redirect URI — Android-type OAuth clients only accept the
+ *  reversed-DNS format `com.googleusercontent.apps.<CLIENT_ID_NUM>:/oauth2redirect`.
+ *  Google auto-validates the scheme against the client's package name
+ *  + SHA-1, so no separate "redirect URIs" field exists in Console.
+ *
+ *  The scheme MUST equal the client ID prefix (before .apps.googleusercontent.com)
+ *  reversed. AndroidManifest.xml has an intent-filter on this exact
+ *  scheme so the OS routes the redirect back to AppActivity, which
+ *  hands it to GoogleWebOAuthBridge.handleRedirect. */
+export const GOOGLE_OAUTH_REDIRECT_URI = 'com.googleusercontent.apps.898144979904-2msavmk9b0c63fbi4bl29kl7ud1iknj1:/oauth2redirect';

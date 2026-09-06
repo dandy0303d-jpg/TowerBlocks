@@ -219,6 +219,8 @@ export const RU: Record<string, string> = {
     'settings.deleteAccount':         'Удалить аккаунт',
     'settings.deleteAccount.title':   'Удалить аккаунт?',
     'settings.deleteAccount.desc':    'Это действие нельзя отменить. Все данные (кристаллы, прогресс, связанные аккаунты) будут удалены безвозвратно.',
+    'settings.bound':                 'Привязано',
+    'settings.unbound':               'Не привязано',
     'settings.google.pending':        'Открываем вход через Google…',
     'settings.google.linked':         'Аккаунт Google привязан',
     'settings.google.alreadyLinked':  'Аккаунт Google уже привязан',

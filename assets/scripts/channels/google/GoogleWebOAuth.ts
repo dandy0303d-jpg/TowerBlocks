@@ -58,8 +58,11 @@ const GOOGLE_SCOPES = 'openid email profile';
 const AUTH_TIMEOUT_MS = 5 * 60 * 1000;
 
 interface JsbBridgeLike {
-    addScriptEventListener: (event: string, cb: (data: string) => void) => void;
-    removeScriptEventListener: (event: string, cb: (data: string) => void) => void;
+    // Cocos 3.8 API on native.jsbBridgeWrapper. Method names differ
+    // slightly from older builds: addNativeEventListener adds, removes
+    // by removeNativeEventListener. Both take (event, cb).
+    addNativeEventListener: (event: string, cb: (arg: string) => void) => void;
+    removeNativeEventListener: (event: string, cb: (arg: string) => void) => void;
 }
 
 /** In-flight auth request state — kept module-level so the Custom
@@ -76,6 +79,43 @@ interface PendingAuth {
 }
 
 let pending: PendingAuth | null = null;
+
+/** Encode a plain object into an application/x-www-form-urlencoded
+ *  string. Substitute for `URLSearchParams.toString()`, which isn't
+ *  available in Cocos 3.x's native V8 build. Values are stringified;
+ *  keys/values are URI-encoded so `&` `=` `+` etc. survive.
+ *  Order matches the object's insertion order — Google doesn't care
+ *  about param order but stable output aids debugging. */
+function encodeFormValue(params: Record<string, string | number>): string {
+    const parts: string[] = [];
+    for (const k in params) {
+        if (!Object.prototype.hasOwnProperty.call(params, k)) continue;
+        parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(params[k]))}`);
+    }
+    return parts.join('&');
+}
+
+/** Parse a query string ("k1=v1&k2=v2") back into a plain object.
+ *  Substitute for `new URLSearchParams(s).get()` chains. Missing keys
+ *  return `undefined`. Values are URI-decoded; empty values become "". */
+function decodeFormValues(input: string): Record<string, string> {
+    const out: Record<string, string> = {};
+    if (!input) return out;
+    // Strip a leading "?" if the caller passed a whole URL search chunk.
+    const s = input.charCodeAt(0) === 0x3f ? input.slice(1) : input;
+    for (const pair of s.split('&')) {
+        if (!pair) continue;
+        const eq = pair.indexOf('=');
+        if (eq < 0) {
+            out[decodeURIComponent(pair)] = '';
+        } else {
+            const k = decodeURIComponent(pair.slice(0, eq));
+            const v = decodeURIComponent(pair.slice(eq + 1).replace(/\+/g, '%20'));
+            out[k] = v;
+        }
+    }
+    return out;
+}
 
 /** Base64url-encode a Uint8Array (RFC 4648 §5, no padding). Google's
  *  PKCE spec expects the URL-safe alphabet with `=` stripped. */
@@ -112,10 +152,13 @@ async function sha256(input: string): Promise<Uint8Array> {
         try {
             const enc = new TextEncoder().encode(input);
             const buf: ArrayBuffer = await g.crypto.subtle.digest('SHA-256', enc);
+            console.log('[GoogleWebOAuth] sha256 via crypto.subtle');
             return new Uint8Array(buf);
-        } catch (_) {
-            // Fall through to pure-JS on any subtle-crypto quirk.
+        } catch (e) {
+            console.warn('[GoogleWebOAuth] crypto.subtle threw, falling back to pure-JS:', (e as Error).message);
         }
+    } else {
+        console.log('[GoogleWebOAuth] crypto.subtle missing, using pure-JS sha256');
     }
     return sha256Pure(input);
 }
@@ -191,22 +234,28 @@ function sha256Pure(input: string): Uint8Array {
 }
 function rr(x: number, n: number): number { return ((x >>> n) | (x << (32 - n))) >>> 0; }
 
-/** Fetch the JsbBridgeWrapper singleton via native.reflection. Wrapped
- *  so callers don't have to know the class path. Returns null on Web
- *  / editor preview where the bridge doesn't exist. */
+/** Fetch the JsbBridgeWrapper singleton. In Cocos 3.8 it lives on
+ *  `native.jsbBridgeWrapper` (imported from 'cc'). Returns null on
+ *  Web / editor preview / older Cocos builds where it isn't wired. */
 function getJsbBridge(): JsbBridgeLike | null {
-    // On native, the wrapper is available directly as jsb.JsbBridgeWrapper
-    // (older Cocos exposes it as globalThis.JsbBridgeWrapper). Guard for
-    // both; return null on non-native so callers can degrade gracefully.
-    const jsb: any = (globalThis as any).jsb;
-    const wrap = jsb?.JsbBridgeWrapper ?? (globalThis as any).JsbBridgeWrapper;
-    if (!wrap) return null;
-    return wrap.getInstance ? wrap.getInstance() : wrap;
+    const w = (native as any)?.jsbBridgeWrapper;
+    if (w && typeof w.addNativeEventListener === 'function') return w as JsbBridgeLike;
+    // Legacy fallback — some third-party template builds hoist it
+    // onto globalThis.jsb.JsbBridgeWrapper.
+    const legacy: any = (globalThis as any).jsb?.JsbBridgeWrapper;
+    if (legacy) {
+        const inst = legacy.getInstance ? legacy.getInstance() : legacy;
+        if (inst && typeof inst.addNativeEventListener === 'function') return inst as JsbBridgeLike;
+    }
+    return null;
 }
 
 function isNativeAndroid(): boolean {
-    // sys.OS.ANDROID + native platform (excludes Editor preview + Web).
-    return sys.os === sys.OS.ANDROID && (sys.platform === sys.Platform.ANDROID || (sys as any).isNative);
+    // Cocos native runtime exposes sys.isNative reliably; sys.os check
+    // handles both platform enums across Cocos versions.
+    const isAndroid = sys.os === sys.OS.ANDROID
+        || (sys.platform !== undefined && String(sys.os).toLowerCase().includes('android'));
+    return isAndroid && ((sys as any).isNative === true);
 }
 
 export const GoogleWebOAuth = {
@@ -215,7 +264,13 @@ export const GoogleWebOAuth = {
      *  installed. Callers should hide / disable the Google-bind
      *  button when this is false (editor preview, Web, iOS). */
     get isSupported(): boolean {
-        return isNativeAndroid() && !!getJsbBridge();
+        const nativeAndroid = isNativeAndroid();
+        const bridge = !!getJsbBridge();
+        const ok = nativeAndroid && bridge;
+        if (!ok) {
+            console.log(`[GoogleWebOAuth] isSupported=false — isNativeAndroid=${nativeAndroid}, hasJsbBridge=${bridge}, sys.os=${sys.os}, sys.isNative=${(sys as any).isNative}`);
+        }
+        return ok;
     },
 
     /**
@@ -240,32 +295,54 @@ export const GoogleWebOAuth = {
         // callback with the new attempt's tokens.
         if (pending) {
             pending.reject(new Error('cancelled by newer signIn call'));
-            try { bridge.removeScriptEventListener(OAUTH_EVENT, pending.listener); } catch { /* ignore */ }
+            try { bridge.removeNativeEventListener(OAUTH_EVENT, pending.listener); } catch { /* ignore */ }
             clearTimeout(pending.timeout);
             pending = null;
         }
 
         // ---- PKCE + state ----
+        // Prefer S256 when a trusted SHA-256 is available (crypto.subtle
+        // on Web / newer native builds). Fall back to `plain` when we'd
+        // have to use the JS SHA-256, since a mismatched hash between
+        // our client and Google's server-side re-hash means Google
+        // rejects the token exchange with `invalid_grant: Invalid code
+        // verifier`. plain sends verifier == challenge — Google's spec
+        // still accepts it and the OAuth flow retains PKCE's core
+        // protection (only the client that generated the verifier can
+        // redeem the code) because the verifier is never sent over the
+        // wire outside the /token POST.
         const state        = randomToken();
         const codeVerifier = randomToken();
-        const challengeBytes = await sha256(codeVerifier);
-        const codeChallenge  = b64urlEncode(challengeBytes);
+        const useS256      = !!(globalThis as any).crypto?.subtle?.digest;
+        let codeChallenge:       string;
+        let codeChallengeMethod: 'S256' | 'plain';
+        if (useS256) {
+            const challengeBytes = await sha256(codeVerifier);
+            codeChallenge        = b64urlEncode(challengeBytes);
+            codeChallengeMethod  = 'S256';
+        } else {
+            codeChallenge        = codeVerifier;
+            codeChallengeMethod  = 'plain';
+        }
+        console.log(`[GoogleWebOAuth] PKCE (${codeChallengeMethod}) — verifier=${codeVerifier.slice(0, 12)}… challenge=${codeChallenge.slice(0, 12)}…`);
 
         // ---- Build the authorization URL ----
-        const params = new URLSearchParams({
+        // URLSearchParams isn't available in Cocos 3.x native V8 —
+        // hand-encode the query string with encodeFormValue().
+        const authQuery = encodeFormValue({
             client_id:             GOOGLE_OAUTH_CLIENT_ID,
             redirect_uri:          GOOGLE_OAUTH_REDIRECT_URI,
             response_type:         'code',
             scope:                 GOOGLE_SCOPES,
             code_challenge:        codeChallenge,
-            code_challenge_method: 'S256',
+            code_challenge_method: codeChallengeMethod,
             state,
             // access_type=offline would give a refresh_token, but we
             // don't need one — we only want a single id_token to send
             // to the server. Skip to keep the consent screen minimal.
             prompt:                'select_account',
         });
-        const authUrl = `${GOOGLE_AUTH_ENDPOINT}?${params.toString()}`;
+        const authUrl = `${GOOGLE_AUTH_ENDPOINT}?${authQuery}`;
 
         // ---- Return a promise the bridge listener resolves ----
         return new Promise<string>((resolve, reject) => {
@@ -278,20 +355,22 @@ export const GoogleWebOAuth = {
                     return;
                 }
                 // Parse `code=...&state=...` (or `error=access_denied&state=...`).
-                const query = new URLSearchParams(data);
-                const returnedState = query.get('state');
+                // URLSearchParams isn't in Cocos native V8 — decodeFormValues
+                // is a tiny hand-parser that handles the same subset.
+                const query = decodeFormValues(data);
+                const returnedState = query['state'];
                 if (returnedState !== state) {
                     finalize();
                     reject(new Error('google-oauth: state mismatch (possible CSRF)'));
                     return;
                 }
-                const err = query.get('error');
+                const err = query['error'];
                 if (err) {
                     finalize();
                     reject(new Error(`google-oauth: ${err}`));
                     return;
                 }
-                const code = query.get('code');
+                const code = query['code'];
                 if (!code) {
                     finalize();
                     reject(new Error('google-oauth: redirect missing code'));
@@ -304,7 +383,7 @@ export const GoogleWebOAuth = {
             };
 
             const finalize = () => {
-                try { bridge.removeScriptEventListener(OAUTH_EVENT, listener); } catch { /* ignore */ }
+                try { bridge.removeNativeEventListener(OAUTH_EVENT, listener); } catch { /* ignore */ }
                 if (pending && pending.listener === listener) {
                     clearTimeout(pending.timeout);
                     pending = null;
@@ -317,7 +396,7 @@ export const GoogleWebOAuth = {
             }, AUTH_TIMEOUT_MS);
 
             pending = { state, codeVerifier, resolve, reject, listener, timeout };
-            bridge.addScriptEventListener(OAUTH_EVENT, listener);
+            bridge.addNativeEventListener(OAUTH_EVENT, listener);
 
             // Fire the Custom Tabs launch. `startAuth` returns false on
             // launch failure — reject immediately in that case so we
@@ -348,7 +427,7 @@ export const GoogleWebOAuth = {
  *  access_token / expires_in / scope, but we discard those — the
  *  id_token is all the server needs to identify the user. */
 async function exchangeCodeForIdToken(code: string, codeVerifier: string): Promise<string> {
-    const body = new URLSearchParams({
+    const body = encodeFormValue({
         grant_type:    'authorization_code',
         code,
         client_id:     GOOGLE_OAUTH_CLIENT_ID,
@@ -360,7 +439,7 @@ async function exchangeCodeForIdToken(code: string, codeVerifier: string): Promi
         res = await fetch(GOOGLE_TOKEN_ENDPOINT, {
             method:  'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body:    body.toString(),
+            body,
         });
     } catch (e) {
         throw new Error(`google-oauth: token endpoint unreachable (${(e as Error).message})`);

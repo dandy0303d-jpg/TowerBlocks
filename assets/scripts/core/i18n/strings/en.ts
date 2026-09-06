@@ -249,6 +249,8 @@ export const EN: Record<string, string> = {
     'settings.deleteAccount':         'Delete Account',
     'settings.deleteAccount.title':   'Delete account?',
     'settings.deleteAccount.desc':    'This cannot be undone. All data (gems, progress, linked accounts) will be permanently erased.',
+    'settings.bound':                 'Linked',
+    'settings.unbound':               'Not linked',
     'settings.google.pending':        'Opening Google sign-in…',
     'settings.google.linked':         'Google account linked',
     'settings.google.alreadyLinked':  'Google account already linked',
