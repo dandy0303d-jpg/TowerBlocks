@@ -212,7 +212,7 @@ export const ZH_HANT: Record<string, string> = {
     'controls.expert':       '高手',
     'settings.nickname':     '暱稱',
     'settings.volume':       '音量',
-    'settings.accountData':  '帳號與資料',
+    'settings.accountData':  '帳號管理',
     'settings.googleAccount': 'Google 帳號',
     'settings.appleAccount': 'Apple 帳號',
     'settings.notBound':     '未綁定',

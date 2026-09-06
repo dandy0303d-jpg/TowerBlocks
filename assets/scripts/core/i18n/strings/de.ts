@@ -190,7 +190,7 @@ export const DE: Record<string, string> = {
     'controls.expert':       'Experte',
     'settings.nickname':     'Nickname',
     'settings.volume':       'Lautstärke',
-    'settings.accountData':  'Konto & Daten',
+    'settings.accountData':  'Kontoverwaltung',
     'settings.googleAccount': 'Google-Konto',
     'settings.appleAccount': 'Apple-Konto',
     'settings.notBound':     'Nicht verknüpft',

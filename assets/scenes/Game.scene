@@ -19726,7 +19726,7 @@
         "__id__": 492
       }
     ],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 503
@@ -22814,7 +22814,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": -307.5,
+      "x": -307.50000000000006,
       "y": 599.5,
       "z": 0
     },
@@ -32181,7 +32181,7 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 750,
+      "width": 750.0000000000001,
       "height": 1334
     },
     "_anchorPoint": {
@@ -48286,8 +48286,8 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 1024,
-      "height": 1334.0000000000002
+      "width": 1024.0000000000002,
+      "height": 1334
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -48546,7 +48546,7 @@
       "b": 255,
       "a": 255
     },
-    "_string": "标题",
+    "_string": "타이틀",
     "_horizontalAlign": 0,
     "_verticalAlign": 1,
     "_actualFontSize": 36,
@@ -51182,7 +51182,7 @@
     "_lpos": {
       "__type__": "cc.Vec3",
       "x": 0,
-      "y": 368.5780000000001,
+      "y": 368.578,
       "z": 0
     },
     "_lrot": {
@@ -51311,8 +51311,8 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 1024,
-      "height": 1334.0000000000002
+      "width": 1024.0000000000002,
+      "height": 1334
     },
     "_anchorPoint": {
       "__type__": "cc.Vec2",
@@ -51365,7 +51365,7 @@
       "__id__": 1203
     },
     "titleLabel": {
-      "__id__": 1052
+      "__id__": 1212
     },
     "logoSprite": {
       "__id__": 1277

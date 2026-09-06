@@ -194,7 +194,7 @@ export const PT_BR: Record<string, string> = {
     'controls.expert':       'Expert',
     'settings.nickname':     'Apelido',
     'settings.volume':       'Volume',
-    'settings.accountData':  'Conta e dados',
+    'settings.accountData':  'Gerenciamento da conta',
     'settings.googleAccount': 'Conta Google',
     'settings.appleAccount': 'Conta Apple',
     'settings.notBound':     'Não vinculada',

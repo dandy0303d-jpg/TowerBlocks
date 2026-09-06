@@ -214,7 +214,7 @@ export const JA: Record<string, string> = {
     'controls.expert':       'エキスパート',
     'settings.nickname':     'ニックネーム',
     'settings.volume':       '音量',
-    'settings.accountData':  'アカウントとデータ',
+    'settings.accountData':  'アカウント管理',
     'settings.googleAccount': 'Google アカウント',
     'settings.appleAccount': 'Apple アカウント',
     'settings.notBound':     '未連携',

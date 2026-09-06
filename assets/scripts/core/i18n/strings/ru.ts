@@ -189,7 +189,7 @@ export const RU: Record<string, string> = {
     'controls.expert':       'Эксперт',
     'settings.nickname':     'Никнейм',
     'settings.volume':       'Громкость',
-    'settings.accountData':  'Аккаунт и данные',
+    'settings.accountData':  'Управление аккаунтом',
     'settings.googleAccount': 'Google-аккаунт',
     'settings.appleAccount': 'Apple ID',
     'settings.notBound':     'Не привязан',
