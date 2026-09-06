@@ -102,6 +102,7 @@ export const PT_BR: Record<string, string> = {
     'collect.header':    'Objetivos',
 
     'level.name':        'Fase {n}',
+    'level.floorName':   'Andar {n}',
     'level.clearTime':   'Tempo: {time}',
     'level.enter':       'Entrar na fase',
 
@@ -238,6 +239,11 @@ export const PT_BR: Record<string, string> = {
     'event.newbie14.daysLeft':        'Faltam {days} dias',
     'event.newbie14.loading':         'Carregando…',
     'event.newbie14.error':           'Falha ao resgatar. Tente novamente.',
+    // ---- Confirmação de saída ----
+    'exit.title':                     'Sair do jogo',
+    'exit.desc':                      'Deseja mesmo sair do jogo?',
+    'exit.confirm':                   'Sair',
+    'exit.cancel':                    'Cancelar',
     'settings.google.pending':        'Abrindo login do Google…',
     'settings.google.linked':         'Conta Google vinculada',
     'settings.google.alreadyLinked':  'Conta Google já vinculada',

@@ -111,6 +111,7 @@ export const JA: Record<string, string> = {
 
     // ---------- ステージ選択 ----------
     'level.name':        'ステージ {n}',
+    'level.floorName':   'ステージ {n}階',
     'level.clearTime':   'クリア時間：{time}',
     'level.enter':       'ステージ開始',
 
@@ -259,6 +260,11 @@ export const JA: Record<string, string> = {
     'event.newbie14.daysLeft':        '残り {days} 日',
     'event.newbie14.loading':         '読み込み中…',
     'event.newbie14.error':           '受取失敗。再度お試しください',
+    // ---- ゲーム終了確認 ----
+    'exit.title':                     'ゲーム終了',
+    'exit.desc':                      'ゲームを終了しますか？',
+    'exit.confirm':                   '終了',
+    'exit.cancel':                    'キャンセル',
     'settings.google.pending':        'Google ログインを開いています…',
     'settings.google.linked':         'Google アカウントを連携しました',
     'settings.google.alreadyLinked':  'Google アカウントは既に連携済み',

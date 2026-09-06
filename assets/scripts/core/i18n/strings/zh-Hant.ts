@@ -109,6 +109,7 @@ export const ZH_HANT: Record<string, string> = {
 
     // ---------- 關卡選擇 ----------
     'level.name':        '關卡 {n}',
+    'level.floorName':   '關卡 {n} 層',
     'level.clearTime':   '通關時間：{time}',
     'level.enter':       '進入關卡',
 
@@ -257,6 +258,11 @@ export const ZH_HANT: Record<string, string> = {
     'event.newbie14.daysLeft':        '活動剩餘 {days} 天',
     'event.newbie14.loading':         '載入中…',
     'event.newbie14.error':           '領取失敗，請重試',
+    // ---- 退出遊戲確認 ----
+    'exit.title':                     '退出遊戲',
+    'exit.desc':                      '確定要退出遊戲嗎？',
+    'exit.confirm':                   '退出',
+    'exit.cancel':                    '取消',
     'settings.google.pending':        '正在開啟 Google 登入…',
     'settings.google.linked':         '已綁定 Google 帳號',
     'settings.google.alreadyLinked':  '已綁定 Google 帳號',

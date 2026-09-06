@@ -96,6 +96,7 @@ export const FR: Record<string, string> = {
     'collect.header':    'Objectifs',
 
     'level.name':        'Niveau {n}',
+    'level.floorName':   'Étage {n}',
     'level.clearTime':   'Temps : {time}',
     'level.enter':       'Entrer',
 
@@ -232,6 +233,11 @@ export const FR: Record<string, string> = {
     'event.newbie14.daysLeft':        '{days} jours restants',
     'event.newbie14.loading':         'Chargement…',
     'event.newbie14.error':           'Échec de la récupération. Réessayez.',
+    // ---- Confirmation de sortie ----
+    'exit.title':                     'Quitter le jeu',
+    'exit.desc':                      'Voulez-vous vraiment quitter ?',
+    'exit.confirm':                   'Quitter',
+    'exit.cancel':                    'Annuler',
     'settings.google.pending':        'Ouverture de la connexion Google…',
     'settings.google.linked':         'Compte Google lié',
     'settings.google.alreadyLinked':  'Compte Google déjà lié',
