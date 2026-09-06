@@ -250,6 +250,7 @@ export const EN: Record<string, string> = {
     'settings.deleteAccount':         'Delete Account',
     'settings.deleteAccount.title':   'Delete account?',
     'settings.deleteAccount.desc':    'This cannot be undone. All data (gems, progress, linked accounts) will be permanently erased.',
+    'settings.deleteAccount.confirm': 'Tap again to confirm delete',
     'settings.bound':                 'Linked',
     'settings.unbound':               'Not linked',
     // ---- Newbie 14-day gift event ----
@@ -281,10 +282,10 @@ export const EN: Record<string, string> = {
     'settings.deleteAccount.failed':  'Delete failed, please retry',
     'settings.tos':     'Terms of Service',
     'settings.privacy': 'Privacy Policy',
-    'settings.deleteAccount':          'Delete Account',
-    'settings.deleteAccount.confirm':  'Tap again to confirm delete',
-    'settings.deleteAccount.pending':  'Deleting...',
-    'settings.deleteAccount.failed':   'Delete failed, try again',
+    // NOTE: duplicate 'settings.deleteAccount' keys used to live here.
+    // ko.ts had a divergent value that silently overrode the block
+    // above; removed here too for consistency. The 'confirm' key now
+    // lives with the rest of the deleteAccount strings above.
     'settings.appleRecovery.confirm':  'This Apple ID is linked elsewhere. Tap again to restore',
     'settings.appleRecovery.title':    'Restore account?',
     'settings.appleRecovery.desc':     'This Apple ID is already linked to another game account. Confirming will switch to that account. Your current guest data (gems, progress) will NOT be carried over.',

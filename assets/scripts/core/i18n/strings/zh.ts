@@ -255,6 +255,7 @@ export const ZH: Record<string, string> = {
     'settings.deleteAccount':         '删除账号',
     'settings.deleteAccount.title':   '删除账号？',
     'settings.deleteAccount.desc':    '此操作不可撤销。所有数据（钻石、进度、绑定）将永久删除。',
+    'settings.deleteAccount.confirm': '再次点击确认删除',
     'settings.bound':                 '已绑定',
     'settings.unbound':               '未绑定',
     // ---- 新手 14 天活动 ----
@@ -287,10 +288,9 @@ export const ZH: Record<string, string> = {
 
     'settings.tos':     '服务条款',
     'settings.privacy': '隐私政策',
-    'settings.deleteAccount':          '删除账号',
-    'settings.deleteAccount.confirm':  '再次点击确认删除',
-    'settings.deleteAccount.pending':  '删除中...',
-    'settings.deleteAccount.failed':   '删除失败，请重试',
+    // NOTE: duplicate 'settings.deleteAccount' keys used to live here.
+    // See ko.ts for the bug — divergent KO value silently overrode
+    // the earlier block. Removed here too for consistency.
     'settings.appleRecovery.confirm':  '此 Apple 已绑其他账号，再点确认恢复',
     'settings.appleRecovery.title':    '恢复账号？',
     'settings.appleRecovery.desc':     '此 Apple ID 已绑定另一个游戏账号。确认后当前游客账号将切换到该已绑定账号，原游客数据（钻石、进度）不会带过去。',
