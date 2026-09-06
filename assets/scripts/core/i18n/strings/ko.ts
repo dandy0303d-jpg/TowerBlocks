@@ -239,10 +239,10 @@ export const KO: Record<string, string> = {
     'common.confirm':    '확인',
     'common.cancel':     '취소',
 
-    // ---------- 계정 삭제 (App Store 5.1.1(v) 필수) ----------
-    'settings.deleteAccount':         '계정 삭제',
-    'settings.deleteAccount.title':   '계정을 삭제하시겠습니까?',
-    'settings.deleteAccount.desc':    '이 작업은 취소할 수 없습니다. 모든 데이터(보석, 진행 상황, 연결 계정)가 영구 삭제됩니다.',
+    // ---------- 회원 탈퇴 (App Store 5.1.1(v) 필수) ----------
+    'settings.deleteAccount':         '회원 탈퇴',
+    'settings.deleteAccount.title':   '회원 탈퇴하시겠습니까?',
+    'settings.deleteAccount.desc':    '이 작업은 취소할 수 없습니다. 모든 데이터(보석, 진행 상황, 연결 계정)가 영구 삭제되며 게임이 종료됩니다.',
     'settings.bound':                 '연결됨',
     'settings.unbound':               '연결 안 됨',
     // ---- 신규 유저 14일 이벤트 ----
@@ -270,14 +270,14 @@ export const KO: Record<string, string> = {
     'settings.google.recover.title':  '이 Google 계정은 다른 계정에 연결되어 있습니다',
     'settings.google.recover.desc':   '이 Google 계정은 이미 다른 게임 계정에 연결되어 있습니다. 복구하면 현재 게스트 계정이 폐기됩니다. 계속하시겠습니까?',
     'settings.google.recovered':      'Google 연결 계정을 복구했습니다',
-    'settings.deleteAccount.pending': '삭제 중...',
-    'settings.deleteAccount.failed':  '삭제 실패, 다시 시도',
+    'settings.deleteAccount.pending': '탈퇴 처리 중...',
+    'settings.deleteAccount.failed':  '탈퇴 실패, 다시 시도',
     'settings.tos':     '이용약관',
     'settings.privacy': '개인정보 처리방침',
     'settings.deleteAccount':          '계정 삭제',
-    'settings.deleteAccount.confirm':  '삭제하려면 다시 탭하세요',
-    'settings.deleteAccount.pending':  '삭제 중...',
-    'settings.deleteAccount.failed':   '삭제 실패, 다시 시도',
+    'settings.deleteAccount.confirm':  '탈퇴하려면 다시 탭하세요',
+    'settings.deleteAccount.pending':  '탈퇴 처리 중...',
+    'settings.deleteAccount.failed':   '탈퇴 실패, 다시 시도',
     // 다이아 부족 팝업
     'gems.insufficient': '다이아가 부족합니다\n필요 {need}, 보유 {have}',
     'gems.goTopUp':      '충전하러 가기',

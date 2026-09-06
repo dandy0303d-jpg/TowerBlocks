@@ -3020,16 +3020,40 @@ export class MenuController extends Component {
             try {
                 const rec = await loginWithGoogle(idToken);
                 PlayerProfile.swapToRecoveredAccount(rec.uuid, rec.bearer, rec.expEpochSec, 'google');
-                // Re-fetch server-side profile so the recovered account's
-                // name / avatar / bestScores paint into the settings panel.
-                try {
-                    await PlayerProfile.fetchProfile();
-                } catch (e) {
-                    console.warn('[Settings] fetchProfile after recovery failed:', (e as Error)?.message);
-                }
+                // Recovery is an ACCOUNT SWAP, not a same-account
+                // sync — the outgoing guest's local progress belongs
+                // to a uuid we're about to abandon. Wipe every device-
+                // scoped progress key so the boot-time
+                // fetchProfile().bestScores hydration below writes the
+                // recovered account's real values into a clean slate
+                // (otherwise the boot code's max-merge would keep the
+                // guest's high values and hide the recovered account's
+                // actual lower / higher progress inconsistently).
+                LevelProgress.reset();
+                sys.localStorage.removeItem(MenuController.ENDLESS_BEST_KEY);
+                this._endlessBestLayers = 0;
+                log(`[Settings] Recovered Google-linked account: ${rec.uuid} — reloading scene`);
+                // Full scene reload — the recovered account has a
+                // completely different profile / wallet / level
+                // progress / event state / leaderboard rank than the
+                // outgoing guest, and refreshing a handful of Settings
+                // fields would still leave stale in-memory caches all
+                // over the tree (GameController's cleared-levels set,
+                // HUD balance, EventNewbie14Panel's claim state, etc).
+                // Reloading Game.scene fires the same onLoad chain as
+                // a fresh app launch — LoadingController shows the
+                // loading panel, then beginBoot() runs, which re-
+                // registers with the persisted bearer, re-fetches
+                // profile/wallet/leaderboard/event and lands the
+                // player on the menu with correct data.
                 this.showSettingsToast(t('settings.google.recovered'), 'info');
-                this.refreshAuthoredSettingsValues();
-                log(`[Settings] Recovered Google-linked account: ${rec.uuid}`);
+                // Small delay so the toast can be seen before the
+                // scene wipes it. director.loadScene is fire-and-
+                // forget — anything on `this` after this call is
+                // running on a dead scene.
+                this.scheduleOnce(() => {
+                    director.loadScene('Game');
+                }, 0.4);
             } catch (err: any) {
                 console.warn('[Settings] /login/google FAILED:', err?.message ?? err);
                 this.showSettingsToast(t('settings.google.error'), 'error');
@@ -3067,11 +3091,16 @@ export class MenuController extends Component {
      *     (server call may take 1-2s including Apple revoke on iOS)
      *  2. DELETE /player/self — server nukes DB rows + calls Apple
      *     /auth/revoke if SIWA was linked
-     *  3. Wipe every player-scoped localStorage key
-     *  4. PlayerProfile.resetInMemoryState() — clears cached uuid,
-     *     name, accountType, avatarIdx, AND the Http bearer token
-     *  5. ensureRegistered() → mint fresh anonymous account
-     *  6. Refresh Settings UI — wallet=0, toggles OFF, guest label
+     *  3. Wipe every player-scoped localStorage key + device-scoped
+     *     progress keys (LevelProgress + endless-best) — no reason to
+     *     keep them around when the account they belonged to is gone.
+     *  4. Close the app via game.end() so the ex-player isn't dropped
+     *     into an auto-created fresh guest against their will (Korean
+     *     ONE Store copy explicitly says "게임이 종료됩니다").
+     *
+     * NOTE: we deliberately do NOT re-register a new guest here. If
+     * the player reopens the app, ensureRegistered() at boot mints
+     * one — that path is the same as a first-install fresh device.
      */
     private async commitDeleteAccount(): Promise<void> {
         const btn = this.authoredSettingsDeleteAccountButton;
@@ -3090,19 +3119,33 @@ export class MenuController extends Component {
             sys.localStorage.removeItem('tt.player.token');
             sys.localStorage.removeItem('tt.player.tokenExpEpochSec');
             sys.localStorage.removeItem('tt.player.avatarIdx');
+            // Also clear device-scoped progress caches. These aren't
+            // strictly per-account (they use device-global keys) but
+            // showing the deleted account's cleared-levels /
+            // endless-best to whoever reopens the app next would be
+            // wrong — they belonged to the deleted uuid, and the
+            // server no longer has them.
+            LevelProgress.reset();
+            sys.localStorage.removeItem(MenuController.ENDLESS_BEST_KEY);
             // Clear PlayerProfile's in-memory cache — without this, the
             // module-level singleton would keep serving the deleted
-            // uuid, which no longer exists server-side.
+            // uuid until the process ends.
             PlayerProfile.resetInMemoryState();
-            log('[Settings] re-registering as fresh guest…');
-            await PlayerProfile.ensureRegistered();
-            log('[Settings] fresh guest ready — refreshing Settings UI');
-            this.refreshAuthoredSettingsValues();
+            log('[Settings] closing app after delete');
+            // Small delay so the pending toast is visible for a beat
+            // before the window vanishes — otherwise the player sees
+            // an instant close and wonders whether the delete actually
+            // went through.
+            this.scheduleOnce(() => {
+                game.end();
+            }, 0.6);
         } catch (err) {
             const msg = (err as Error).message ?? String(err);
             console.warn(`[Settings] delete account failed: ${msg}`);
             this.showSettingsToast(t('settings.deleteAccount.failed'), 'error');
-        } finally {
+            // Only re-enable the button on failure. On success the
+            // app is about to close, so leaving it disabled prevents
+            // a double-tap from firing another DELETE.
             if (btnComp) btnComp.interactable = true;
         }
     }
