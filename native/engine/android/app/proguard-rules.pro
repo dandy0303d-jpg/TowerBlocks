@@ -41,6 +41,58 @@
 -dontwarn android.net.http.SslError
 -dontwarn android.webkit.WebViewClient
 
+# -------------------------------------------------------------
+# Bridges called from JS via JsbBridge — belt-and-suspenders
+# (already covered by `com.cocos.**` above, kept here so channel
+# branches that split bridge classes out of com.cocos.game stay
+# safe against future refactors).
+# -------------------------------------------------------------
+-keep class com.cocos.game.AppActivity { *; }
+-keep class com.cocos.game.OneStoreBridge { *; }
+-keep class com.cocos.game.LevelPlayBridge { *; }
+-keep class com.cocos.game.GoogleWebOAuthBridge { *; }
+-keep class com.cocos.game.ClipboardBridge { *; }
+
+# Preserve @Keep-annotated members (androidx annotation) — used by
+# some SDKs to mark reflection targets that R8 would otherwise strip.
+-keep,allowobfuscation @interface androidx.annotation.Keep
+-keep @androidx.annotation.Keep class *
+-keepclassmembers class * {
+    @androidx.annotation.Keep *;
+}
+
+# -------------------------------------------------------------
+# ONE Store IAP SDK v21 — the SDK ships consumer rules but pin
+# the public API here so a future R8 update can't over-shrink.
+# -------------------------------------------------------------
+-keep class com.gaa.sdk.** { *; }
+-keep class com.onestore.** { *; }
+-dontwarn com.gaa.sdk.**
+-dontwarn com.onestore.**
+
+# -------------------------------------------------------------
+# Unity LevelPlay / IronSource / Unity Ads — heavy on reflection.
+# -------------------------------------------------------------
+-keep class com.unity3d.** { *; }
+-keep class com.ironsource.** { *; }
+-dontwarn com.unity3d.**
+-dontwarn com.ironsource.**
+
+# Google Play Services — usually has consumer rules but keep the
+# ads-identifier + appset APIs LevelPlay reflects into.
+-keep class com.google.android.gms.ads.identifier.** { *; }
+-keep class com.google.android.gms.appset.** { *; }
+
+# Kotlin metadata — needed if reflection reads @Metadata (LevelPlay
+# does). Cheap to keep.
+-keep class kotlin.Metadata { *; }
+-keepattributes RuntimeVisibleAnnotations,AnnotationDefault,Signature,InnerClasses,EnclosingMethod
+
+# JsbBridge — Cocos native ↔ JS glue. addNativeEventListener uses
+# reflection on registered handlers.
+-keep class com.cocos.lib.JsbBridge { *; }
+-keep class com.cocos.lib.JsbBridgeWrapper { *; }
+
 # This is generated automatically by the Android Gradle plugin.
 -dontwarn android.hardware.BatteryState
 -dontwarn android.hardware.lights.Light
