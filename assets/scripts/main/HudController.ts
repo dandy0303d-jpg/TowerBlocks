@@ -810,6 +810,24 @@ export class HudController extends Component {
         // nothing changed keeps this from thrashing.
         this.syncPauseUi();
 
+        // Hide the pause BUTTON (not the overlay — the pause overlay
+        // is a separate concern) whenever the tutorial is active.
+        // Reason: tapping pause during the guided tutorial pops the
+        // authored pause overlay, which has a "Home" button; taking
+        // that path bails out of the tutorial mid-step and leaves
+        // TutorialController wired up over an unrelated scene state,
+        // producing hand-glow-over-menu and other UI ghost bugs. Just
+        // make the button unreachable while the tutorial owns the
+        // screen. Cheap per-frame — one bool compare + one .active
+        // write, which Cocos short-circuits when the value is unchanged.
+        if (this.authoredPauseButton) {
+            const tutorialActive = !!g.tutorialActive;
+            const shouldShow = this._hudOn && !tutorialActive;
+            if (this.authoredPauseButton.node.active !== shouldShow) {
+                this.authoredPauseButton.node.active = shouldShow;
+            }
+        }
+
         // Debug speed button — refresh label + visibility per frame.
         // Cheap: refreshDebugSpeedLabel() early-exits when nothing
         // changed. Visibility flips as the mode changes (e.g. player
@@ -4184,6 +4202,13 @@ export class HudController extends Component {
     private onPauseButtonClicked(): void {
         const gs = this.gameController?.gameState;
         if (!gs || !gs.running || gs.gameOver) return;
+        // Defense-in-depth for the tutorial. The button node itself is
+        // hidden in update() while tutorialActive, so this branch is
+        // unreachable in the normal touch path; kept here so any non-
+        // touch trigger (BackKeyManager, ADB input tap, editor script)
+        // can't slip a pause through and derail the tutorial state
+        // machine.
+        if (gs.tutorialActive) return;
         gs.togglePause();
         this.refreshPauseUi();
     }
