@@ -97,6 +97,7 @@ export const RU: Record<string, string> = {
     'collect.header':    'Цели сбора',
 
     'level.name':        'Уровень {n}',
+    'level.floorName':   'Этаж {n}',
     'level.clearTime':   'Время: {time}',
     'level.enter':       'Войти в уровень',
 
@@ -233,6 +234,11 @@ export const RU: Record<string, string> = {
     'event.newbie14.daysLeft':        'Осталось {days} дней',
     'event.newbie14.loading':         'Загрузка…',
     'event.newbie14.error':           'Не удалось забрать. Попробуйте ещё раз.',
+    // ---- Подтверждение выхода ----
+    'exit.title':                     'Выйти из игры',
+    'exit.desc':                      'Действительно выйти из игры?',
+    'exit.confirm':                   'Выйти',
+    'exit.cancel':                    'Отмена',
     'settings.google.pending':        'Открываем вход через Google…',
     'settings.google.linked':         'Аккаунт Google привязан',
     'settings.google.alreadyLinked':  'Аккаунт Google уже привязан',

@@ -35,6 +35,7 @@ import { fetchNewbie14Status, claimNewbie14, Newbie14Status } from '../core/Even
 import { t } from '../core/i18n/I18n';
 import { ToastManager } from './ToastManager';
 import { fetchWallet } from '../core/WalletApi';
+import { BackKeyManager } from './BackKeyManager';
 
 const { ccclass, property } = _decorator;
 
@@ -88,16 +89,25 @@ export class EventNewbie14Panel extends Component {
     }
 
     onDestroy(): void {
-        if (this.claimButton) {
-            this.claimButton.node.off(Button.EventType.CLICK, this._onClaimClick, this);
-        }
-        if (this.closeButton) {
-            this.closeButton.node.off(Button.EventType.CLICK, this.hide, this);
-        }
-        if (this.dimBackdrop) {
-            this.dimBackdrop.off(Node.EventType.TOUCH_END, this.hide, this);
-        }
+        // Cocos may null out a component's `.node` back-ref BEFORE it
+        // reaches our onDestroy (specifically when the whole subtree
+        // is being torn down — child components are destroyed first
+        // and their node ref is cleared). Guard with `?.` so a
+        // scene close / editor stop doesn't throw.
+        this.claimButton?.node?.off(Button.EventType.CLICK, this._onClaimClick, this);
+        this.closeButton?.node?.off(Button.EventType.CLICK, this.hide, this);
+        this.dimBackdrop?.off(Node.EventType.TOUCH_END, this.hide, this);
+        // Belt-and-suspenders: if the panel was mid-show when
+        // destroyed, drop its back-key handler so BackKeyManager
+        // doesn't hold a dead reference. pop() is a no-op if not
+        // in the stack.
+        BackKeyManager.pop(this._back);
     }
+
+    /** Android back-key handler. Bound once so push/pop use the
+     *  same function ref. Returning nothing (undefined) tells
+     *  BackKeyManager we consumed the key. */
+    private _back = (): void => { this.hide(); };
 
     // ============================================================
     //  Public API
@@ -108,6 +118,9 @@ export class EventNewbie14Panel extends Component {
      *  if the player leaves the app open past UTC midnight. */
     public async show(): Promise<void> {
         this.node.active = true;
+        // Register with the global back-key stack so Android's
+        // hardware back closes this popup before anything else.
+        BackKeyManager.push(this._back);
         // Simple opacity fade-in — feels nicer than a hard snap and
         // matches the other menu popups.
         const op = this.node.getComponent(UIOpacity) ?? this.node.addComponent(UIOpacity);
@@ -132,6 +145,7 @@ export class EventNewbie14Panel extends Component {
 
     public hide(): void {
         this.node.active = false;
+        BackKeyManager.pop(this._back);
     }
 
     // ============================================================

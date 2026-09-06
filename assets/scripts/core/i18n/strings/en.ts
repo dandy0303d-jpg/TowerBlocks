@@ -109,6 +109,7 @@ export const EN: Record<string, string> = {
 
     // ---------- Level select ----------
     'level.name':        'Level {n}',
+    'level.floorName':   'Floor {n}',
     'level.clearTime':   'Clear time: {time}',
     'level.enter':       'Enter Level',
 
@@ -263,6 +264,11 @@ export const EN: Record<string, string> = {
     'event.newbie14.daysLeft':        '{days} days left',
     'event.newbie14.loading':         'Loading…',
     'event.newbie14.error':           'Claim failed. Please try again.',
+    // ---- Exit game confirm ----
+    'exit.title':                     'Exit Game',
+    'exit.desc':                      'Are you sure you want to exit?',
+    'exit.confirm':                   'Exit',
+    'exit.cancel':                    'Cancel',
     'settings.google.pending':        'Opening Google sign-in…',
     'settings.google.linked':         'Google account linked',
     'settings.google.alreadyLinked':  'Google account already linked',

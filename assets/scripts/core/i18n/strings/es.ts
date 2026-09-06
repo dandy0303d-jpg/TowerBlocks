@@ -107,6 +107,7 @@ export const ES: Record<string, string> = {
 
     // ---------- Level select ----------
     'level.name':        'Nivel {n}',
+    'level.floorName':   'Piso {n}',
     'level.clearTime':   'Tiempo: {time}',
     'level.enter':       'Entrar al nivel',
 
@@ -254,6 +255,11 @@ export const ES: Record<string, string> = {
     'event.newbie14.daysLeft':        'Quedan {days} días',
     'event.newbie14.loading':         'Cargando…',
     'event.newbie14.error':           'No se pudo reclamar. Inténtalo de nuevo.',
+    // ---- Confirmación de salida ----
+    'exit.title':                     'Salir del juego',
+    'exit.desc':                      '¿Seguro que quieres salir del juego?',
+    'exit.confirm':                   'Salir',
+    'exit.cancel':                    'Cancelar',
     'settings.google.pending':        'Abriendo inicio de sesión de Google…',
     'settings.google.linked':         'Cuenta de Google vinculada',
     'settings.google.alreadyLinked':  'Cuenta de Google ya vinculada',
