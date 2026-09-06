@@ -114,6 +114,8 @@ export const KO: Record<string, string> = {
 
     // ---------- Level select ----------
     'level.name':        '스테이지 {n}',
+    // 排行榜关卡模式专用（塔层数格式）—— 与 level.name 分开，避免影响其它 UI
+    'level.floorName':   '스테이지 {n}층',
     'level.clearTime':   '클리어 시간: {time}',
     'level.enter':       '스테이지 진입',
 
@@ -255,6 +257,11 @@ export const KO: Record<string, string> = {
     'event.newbie14.daysLeft':        '이벤트 {days}일 남음',
     'event.newbie14.loading':         '불러오는 중…',
     'event.newbie14.error':           '수령 실패, 다시 시도해 주세요',
+    // ---- 게임 종료 확인 ----
+    'exit.title':                     '게임 종료',
+    'exit.desc':                      '게임을 종료하시겠습니까?',
+    'exit.confirm':                   '종료',
+    'exit.cancel':                    '취소',
     'settings.google.pending':        'Google 로그인을 여는 중…',
     'settings.google.linked':         'Google 계정이 연결되었습니다',
     'settings.google.alreadyLinked':  '이미 Google 계정에 연결됨',

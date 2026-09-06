@@ -34,6 +34,7 @@ import { LeaderboardController } from './LeaderboardController';
 import { TopUpController } from './TopUpController';
 import { EventNewbie14Panel } from './EventNewbie14Panel';
 import { fetchNewbie14Status } from '../core/EventNewbie14Api';
+import { BackKeyManager } from './BackKeyManager';
 import { PlayerProfile } from '../core/PlayerProfile';
 import { setBannedHandler, getBannedState, setBearerToken, type BannedState } from '../core/Http';
 import { fetchWallet, subscribeBalance } from '../core/WalletApi';
@@ -617,6 +618,12 @@ export class MenuController extends Component {
 
     onLoad(): void {
         log('[TowerBlocks] MenuController.onLoad');
+        // Global back-key dispatcher. Popup components push/pop their
+        // own dismiss handlers via BackKeyManager.push/pop; when the
+        // stack is empty (i.e. we're at the main menu), the default
+        // handler below fires and shows the exit-confirm modal.
+        BackKeyManager.install();
+        BackKeyManager.setDefault(() => this._onBackAtMainMenu());
         // Re-translate every tracked label whenever the user toggles
         // the language at runtime. Stored unsub fires in onDestroy.
         // Also swap the main-menu logo image to the current language's
@@ -910,6 +917,11 @@ export class MenuController extends Component {
     //  Panel state transitions
     // ============================================================
     public showModeSelect(): void {
+        // Defensive: whichever path got us here (tap return button,
+        // enter a level, back key), drop the level-select back
+        // handler so it doesn't linger and fire from the wrong
+        // screen. pop() is a no-op if not on the stack.
+        BackKeyManager.pop(this._levelSelectBack);
         this.modeSelectPanel.active  = true;
         // Reflect any progress that happened between the last time
         // this panel was visible and now (level clear, endless best).
@@ -1029,6 +1041,13 @@ export class MenuController extends Component {
             });
     }
 
+    private _levelSelectBack = (): void => {
+        // Same as tapping the 3D stage's return button — pops us
+        // back to the mode-select screen. showModeSelect() also
+        // hides the levelStage3D, so both entry points converge.
+        BackKeyManager.pop(this._levelSelectBack);
+        this.showModeSelect();
+    };
     public showLevelSelect(): void {
         this.modeSelectPanel.active = false;
         BgmManager.instance?.play('menu');
@@ -1044,6 +1063,10 @@ export class MenuController extends Component {
         this.setGameplayVisible(false);
         // Twinkle stars belong to the level-select scenery only.
         if (this.twinkleStars) this.twinkleStars.setVisible(true);
+        // Back-key: return to mode-select. Registered here (not in
+        // showModeSelect) so back only fires the return when the
+        // player is actually on level-select.
+        BackKeyManager.push(this._levelSelectBack);
         this.levelStage3D.showForLevel(
             LevelProgress.currentIdx,
             (idx: number) => this.enterLevelFromStage3D(idx),
@@ -1061,6 +1084,11 @@ export class MenuController extends Component {
         if (this._enteringLevel) return;   // ignore repeated taps
         this._enteringLevel = true;
         this.currentLevelIdx = idx;
+        // Leaving level-select for gameplay — drop the level-select
+        // back-handler. In-game back falls through to the default
+        // (exit-confirm at main menu). If we want in-game back to
+        // pause / return-to-menu instead, do it in GameController.
+        BackKeyManager.pop(this._levelSelectBack);
 
         const releaseGuard = () => { this._enteringLevel = false; };
 
@@ -2009,6 +2037,7 @@ export class MenuController extends Component {
      *  Settings.subscribe() listeners to long-lived nodes. */
     private settingsPanel: Node | null = null;
 
+    private _settingsBack = (): void => { this.closeSettingsPanel(); };
     private openSettingsPanel(): void {
         // Authored (Sprite-based) path.
         if (this.authoredSettingsPanel) {
@@ -2020,6 +2049,7 @@ export class MenuController extends Component {
             ensureDimBackdrop(this.authoredSettingsPanel);
             this.authoredSettingsPanel.setSiblingIndex(999);
             this.authoredSettingsPanel.active = true;
+            BackKeyManager.push(this._settingsBack);
             return;
         }
         // If already open, do nothing.
@@ -2161,6 +2191,7 @@ export class MenuController extends Component {
     }
 
     private closeSettingsPanel(): void {
+        BackKeyManager.pop(this._settingsBack);
         // Authored panel is shared — just hide, don't destroy.
         if (this.authoredSettingsPanel) {
             this.authoredSettingsPanel.active = false;
@@ -2474,15 +2505,18 @@ export class MenuController extends Component {
      *  browser's cached previous-language response. */
     /** Open the "操作方式" (control scheme) picker modal, syncing the
      *  3 toggles to reflect the currently-active mode. */
+    private _controlsBack = (): void => { this.closeControlsPanel(); };
     private openControlsPanel(): void {
         if (!this.authoredControlsPanel) return;
         this._syncControlToggles(getControlMode());
         this.authoredControlsPanel.active = true;
+        BackKeyManager.push(this._controlsBack);
     }
 
     private closeControlsPanel(): void {
         if (!this.authoredControlsPanel) return;
         this.authoredControlsPanel.active = false;
+        BackKeyManager.pop(this._controlsBack);
     }
 
     /** Apply a player-selected control mode: persist to Settings,
@@ -3593,8 +3627,16 @@ export class MenuController extends Component {
             ensureDimBackdrop(panel);
             panel.setSiblingIndex(999);
             panel.active = true;
+            // Android hardware back inside the confirm resolves as
+            // "cancel". Push our closer onto the back-key stack —
+            // pop happens in closeConfirmModal.
+            BackKeyManager.push(this._confirmBack);
         });
     }
+
+    /** Bound back-handler for the shared confirm modal. Same fn ref
+     *  used for push+pop so BackKeyManager can deduplicate. */
+    private _confirmBack = (): void => { this.closeConfirmModal(false); };
 
     private wireConfirmModalOnce(): void {
         if (this._confirmModalWired) return;
@@ -3613,9 +3655,36 @@ export class MenuController extends Component {
 
     private closeConfirmModal(confirmed: boolean): void {
         if (this.authoredConfirmModal) this.authoredConfirmModal.active = false;
+        BackKeyManager.pop(this._confirmBack);
         const cb = this._confirmPendingResolve;
         this._confirmPendingResolve = null;
         if (cb) cb(confirmed);
+    }
+
+    /** Default back-key fallback — fires when NO popup handler is on
+     *  the BackKeyManager stack (i.e. player is at main-mode-select
+     *  or the game screen and hit back). Shows an exit-confirm modal;
+     *  on confirm we quit via game.end() (same primitive the ban
+     *  modal uses). Second back INSIDE the confirm dismisses it as
+     *  cancel (see BackKeyManager wiring in showConfirm above). */
+    private _exitConfirmActive = false;
+    private async _onBackAtMainMenu(): Promise<void> {
+        if (this._exitConfirmActive) return;   // paranoia — showConfirm dedupes
+        this._exitConfirmActive = true;
+        try {
+            const ok = await this.showConfirm(
+                t('exit.title'),
+                t('exit.desc'),
+                t('exit.confirm'),
+                t('exit.cancel'),
+            );
+            if (ok) {
+                log('[MenuController] player confirmed exit — calling game.end()');
+                try { game.end(); } catch (e) { console.warn('[MenuController] game.end() threw:', e); }
+            }
+        } finally {
+            this._exitConfirmActive = false;
+        }
     }
 
     // ============================================================

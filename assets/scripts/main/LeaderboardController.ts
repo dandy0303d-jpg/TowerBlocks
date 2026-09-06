@@ -65,6 +65,7 @@ import {
 
 import { t, subscribe as subscribeI18n } from '../core/i18n/I18n';
 import { LeaderboardRow } from './LeaderboardRow';
+import { BackKeyManager } from './BackKeyManager';
 import { getLang, subscribe as subscribeLang } from '../core/i18n/I18n';
 import { fetchTop, fetchMyRank, fetchLevelTops, fetchMyLevelTimes, LeaderboardApiEntry, LeaderboardApiMode, LevelTopEntry, MyLevelTimeEntry, MyRankResult } from '../core/LeaderboardApi';
 import { PlayerProfile } from '../core/PlayerProfile';
@@ -238,11 +239,13 @@ export class LeaderboardController extends Component {
 
     /** Show the leaderboard for `mode` (default: endless). Auto-scrolls
      *  to the top so the player always sees rank 1 first. */
+    private _back = (): void => { this.hide(); };
     public show(mode: LeaderboardMode = 'endless'): void {
         if (!this.panel) {
             log('[Leaderboard] panel not wired — cannot show');
             return;
         }
+        BackKeyManager.push(this._back);
         log(`[Leaderboard] show(${mode}) — panel=${!!this.panel} content=${!!this.content} scrollView=${!!this.scrollView} rowPrefab=${!!this.rowPrefab}`);
         // Activate the tree BEFORE we instantiate + populate rows.
         // Cocos Layout only recalculates content size when the layout
@@ -268,6 +271,7 @@ export class LeaderboardController extends Component {
 
     public hide(): void {
         if (this.panel) this.panel.active = false;
+        BackKeyManager.pop(this._back);
     }
 
     public isOpen(): boolean {
@@ -538,7 +542,7 @@ export class LeaderboardController extends Component {
         const ss = hasPB ? (secs! % 60).toString().padStart(2, '0') : '';
         row.populate({
             rank:       idx + 1,
-            rankLabel:  t('level.name', { n: idx + 1 }),
+            rankLabel:  t('level.floorName', { n: idx + 1 }),
             name:       PlayerProfile.name,
             score:      hasPB ? secs! : 0,
             scoreLabel: hasPB ? `${mm}:${ss}` : '—',
@@ -688,14 +692,19 @@ export class LeaderboardController extends Component {
             // for now — extra empty rows just render "—".
             const TOTAL_LEVELS = 99;
             const out: LeaderboardEntry[] = [];
-            for (let idx = 0; idx < TOTAL_LEVELS; idx++) {
+            // Iterate HIGH → LOW so the leaderboard reads top-down as
+            // "99 층 → 1 층" — highest floor first, matching the
+            // tower theme. The `rank` field stays as the true floor
+            // number (idx+1) so downstream selection logic that
+            // matches on rank still works.
+            for (let idx = TOTAL_LEVELS - 1; idx >= 0; idx--) {
                 const top = byIdx.get(idx);
                 if (top) {
                     const mm = Math.floor(top.elapsedSec / 60).toString().padStart(2, '0');
                     const ss = (top.elapsedSec % 60).toString().padStart(2, '0');
                     out.push({
                         rank:       idx + 1,   // floor number (1..99)
-                        rankLabel:  t('level.name', { n: idx + 1 }),  // "关卡 1" / "Level 1"
+                        rankLabel:  t('level.floorName', { n: idx + 1 }),  // "스테이지 99층" / "Level 99"
                         name:       top.name,
                         score:      top.elapsedSec,     // raw seconds — honest sort field
                         scoreLabel: `${mm}:${ss}`,     // painter-facing display
@@ -712,7 +721,7 @@ export class LeaderboardController extends Component {
                     // LeaderboardRow paints "—" for empty name / score.
                     out.push({
                         rank:       idx + 1,
-                        rankLabel:  t('level.name', { n: idx + 1 }),
+                        rankLabel:  t('level.floorName', { n: idx + 1 }),
                         name:       '—',
                         score:      0,
                         scoreLabel: '—',

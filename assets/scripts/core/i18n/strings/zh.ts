@@ -112,6 +112,7 @@ export const ZH: Record<string, string> = {
 
     // ---------- 关卡选择 ----------
     'level.name':        '关卡 {n}',
+    'level.floorName':   '关卡 {n} 层',
     'level.clearTime':   '通关时间：{time}',
     'level.enter':       '进入关卡',
 
@@ -268,6 +269,11 @@ export const ZH: Record<string, string> = {
     'event.newbie14.daysLeft':        '活动剩余 {days} 天',
     'event.newbie14.loading':         '加载中…',
     'event.newbie14.error':           '领取失败，请重试',
+    // ---- 退出游戏确认 ----
+    'exit.title':                     '退出游戏',
+    'exit.desc':                      '确定要退出游戏吗？',
+    'exit.confirm':                   '退出',
+    'exit.cancel':                    '取消',
     'settings.google.pending':        '正在打开 Google 登录…',
     'settings.google.linked':         '已绑定 Google 账号',
     'settings.google.alreadyLinked':  '已绑定 Google 账号',

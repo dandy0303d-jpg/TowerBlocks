@@ -58,6 +58,7 @@ import {
 } from '../core/WalletApi';
 import { Providers } from '../core/channels/Providers';
 import { ToastManager } from './ToastManager';
+import { BackKeyManager } from './BackKeyManager';
 
 const { ccclass, property } = _decorator;
 
@@ -152,11 +153,13 @@ export class TopUpController extends Component {
 
     /** Show the top-up panel. Paints cached balance immediately, then
      *  refreshes from server in the background. */
+    private _back = (): void => { this.hide(); };
     public show(): void {
         if (!this.panel) {
             log('[TopUp] panel not wired — cannot show');
             return;
         }
+        BackKeyManager.push(this._back);
         // Activate the tree FIRST — same lesson learned from
         // LeaderboardController: some Cocos UI wiring (label writes,
         // click handler registration on button children) is only
@@ -178,6 +181,7 @@ export class TopUpController extends Component {
 
     public hide(): void {
         if (this.panel) this.panel.active = false;
+        BackKeyManager.pop(this._back);
     }
 
     public isOpen(): boolean {
