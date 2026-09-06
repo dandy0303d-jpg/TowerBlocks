@@ -213,7 +213,7 @@ export const EN: Record<string, string> = {
     'controls.expert':       'Expert',
     'settings.nickname':     'Nickname',
     'settings.volume':       'Volume',
-    'settings.accountData':  'Account & Data',
+    'settings.accountData':  'Account Management',
     'settings.googleAccount': 'Google Account',
     'settings.appleAccount': 'Apple Account',
     'settings.notBound':     'Not linked',

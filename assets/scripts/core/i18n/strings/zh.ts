@@ -217,7 +217,7 @@ export const ZH: Record<string, string> = {
     'controls.expert':       '高手',
     'settings.nickname':     '昵称',
     'settings.volume':       '音乐大小',
-    'settings.accountData':  '账号与数据',
+    'settings.accountData':  '账号管理',
     'settings.googleAccount': '谷歌账号',
     'settings.appleAccount': '苹果账号',
     'settings.notBound':     '未绑定',

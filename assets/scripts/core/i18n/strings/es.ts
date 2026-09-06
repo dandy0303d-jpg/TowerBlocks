@@ -210,7 +210,7 @@ export const ES: Record<string, string> = {
     'controls.expert':       'Experto',
     'settings.nickname':     'Apodo',
     'settings.volume':       'Volumen',
-    'settings.accountData':  'Cuenta y datos',
+    'settings.accountData':  'Gestión de cuenta',
     'settings.googleAccount': 'Cuenta de Google',
     'settings.appleAccount': 'Cuenta de Apple',
     'settings.notBound':     'No vinculada',

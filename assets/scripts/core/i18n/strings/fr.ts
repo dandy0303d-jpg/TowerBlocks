@@ -188,7 +188,7 @@ export const FR: Record<string, string> = {
     'controls.expert':       'Expert',
     'settings.nickname':     'Pseudo',
     'settings.volume':       'Volume',
-    'settings.accountData':  'Compte et données',
+    'settings.accountData':  'Gestion du compte',
     'settings.googleAccount': 'Compte Google',
     'settings.appleAccount': 'Compte Apple',
     'settings.notBound':     'Non lié',
