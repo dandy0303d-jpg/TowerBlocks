@@ -2481,6 +2481,19 @@ export class HudController extends Component {
         if (pb?.node) {
             pb.node.off('click');
             pb.node.on('click', () => this.onPickerPaidRefreshClicked(), this);
+            // One-line audit so a scene issue (inactive node, zero
+            // hitbox, ancestor with BlockInputEvents / UIOpacity=0)
+            // surfaces in the log before the player has to describe
+            // "click does nothing". Prints per open, which is fine —
+            // picker opens are rare.
+            const n = pb.node;
+            const ancestors: string[] = [];
+            for (let cur: Node | null = n.parent; cur && ancestors.length < 8; cur = cur.parent) {
+                ancestors.push(`${cur.name}(active=${cur.active})`);
+            }
+            const ui = n.getComponent(UITransform);
+            const size = ui ? `${ui.width}x${ui.height}` : 'no-UITransform';
+            console.log(`[Picker] paid-refresh WIRED — node=${n.name} active=${n.active} activeInHierarchy=${n.activeInHierarchy} interactable=${pb.interactable} size=${size} ancestors=[${ancestors.join(' → ')}]`);
         } else if (pb) {
             console.warn('[Picker] authoredPickerPaidRefreshButton has no node — skipping wire');
         } else {
