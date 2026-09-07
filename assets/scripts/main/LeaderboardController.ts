@@ -58,6 +58,8 @@ import {
     Button,
     Prefab,
     ScrollView,
+    UITransform,
+    Vec2,
     Widget,
     instantiate,
     log,
@@ -628,13 +630,12 @@ export class LeaderboardController extends Component {
             if (layout) layout.updateLayout(true);
         }
         // Level tab: consume the auto-scroll request set by show() /
-        // onTabClick and scroll to the player's LAST cleared row so
-        // they immediately see the tail of their progress rather than
-        // Stage 1 at the top. maxClearedIdx is the highest 0-based
-        // levelIdx cleared; under forward ordering + Top-To-Bottom
-        // Content Layout, that row sits `maxClearedIdx / (TOTAL-1)`
-        // of the way down the content. scrollToPercentVertical(0)
-        // duration keeps it flash-free.
+        // onTabClick and land the player's LAST cleared row near the
+        // BOTTOM of the visible area, so the cleared rows above it
+        // fill most of the viewport (and a couple of uncleared rows
+        // peek in below as a hint of what's next). Previous version
+        // put the row near the top of the viewport, which hid all the
+        // cleared progress above it and read as "scrolled too far".
         //
         // Falls back to scrollToTop for a fresh player (nothing
         // cleared, maxClearedIdx = -1) — Stage 1 at the top is the
@@ -642,9 +643,33 @@ export class LeaderboardController extends Component {
         if (isLevel && this._pendingLevelAutoScroll && this.scrollView) {
             this._pendingLevelAutoScroll = false;
             const maxCleared = LevelProgress.maxClearedIdx;
-            if (maxCleared >= 0 && n > 1) {
-                const pct = Math.max(0, Math.min(1, maxCleared / (n - 1)));
-                this.scrollView.scrollToPercentVertical(pct, 0, false);
+            const targetRow  = this.rowPool[maxCleared] ?? null;
+            const contentUi  = this.content?.getComponent(UITransform) ?? null;
+            const viewUi     = this.scrollView.node.getComponent(UITransform) ?? null;
+            const rowUi      = targetRow?.node.getComponent(UITransform) ?? null;
+            if (maxCleared >= 0 && targetRow && contentUi && viewUi && rowUi) {
+                // Content anchor is typically (0.5, 1) — top-center —
+                // so a row painted at content-local y = -rowYFromTop
+                // sits `rowYFromTop` pixels below the content's top
+                // edge. scrollView.scrollToOffset(0, y) then treats y
+                // as "shift the content up by y pixels" so the point
+                // at y from content top lands at the top of the view.
+                //
+                // We want the row's BOTTOM edge to sit ~1 row above
+                // the view's bottom edge — the row itself plus one
+                // extra row's worth of uncleared "—" visible below it.
+                const rowYFromTop = -targetRow.node.position.y;
+                const rowH        = rowUi.height;
+                const viewH       = viewUi.height;
+                const contentH    = contentUi.height;
+                const maxScroll   = Math.max(0, contentH - viewH);
+                // Row bottom (in "distance from content top") =
+                // rowYFromTop + rowH/2 (with row anchor at center);
+                // we want that bottom to be viewH - rowH*1 from top
+                // of view → offset = rowYFromTop + rowH/2 - (viewH - rowH).
+                const y = rowYFromTop + rowH / 2 - (viewH - rowH);
+                const clamped = Math.max(0, Math.min(maxScroll, y));
+                this.scrollView.scrollToOffset(new Vec2(0, clamped), 0);
             } else {
                 this.scrollView.scrollToTop(0);
             }
