@@ -3540,6 +3540,33 @@ export class MenuController extends Component {
         let method = 'none';
         const anySys = sys as any;
 
+        // (0) Android native — go straight to the Kotlin ClipboardBridge
+        //     via JSB reflection. Cocos 3.8.8's built-in sys.setClipboard*
+        //     and Web Clipboard APIs are ALL no-ops on native Android
+        //     (the JSB just returns undefined without touching the system
+        //     clipboard), so without this bridge every fallback below
+        //     silently fails and the player sees "copy failed" even
+        //     though the button "worked".
+        const isAndroid = sys.platform === sys.Platform.ANDROID
+            || String(sys.os ?? '').toLowerCase().includes('android');
+        if (!copied
+            && isAndroid
+            && typeof (native as any)?.reflection?.callStaticMethod === 'function') {
+            try {
+                const r = (native as any).reflection.callStaticMethod(
+                    'com/cocos/game/ClipboardBridge',
+                    'copyToClipboard',
+                    '(Ljava/lang/String;Ljava/lang/String;)Z',
+                    'TetriTower Account',
+                    text,
+                );
+                copied = r === true;
+                method = 'ClipboardBridge';
+            } catch (e) {
+                console.warn('[Settings] ClipboardBridge.copyToClipboard threw:', e);
+            }
+        }
+
         // (1) Cocos 3.x legacy: sys.setClipboardText
         if (!copied && typeof anySys.setClipboardText === 'function') {
             try {
