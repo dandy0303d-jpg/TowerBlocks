@@ -1,0 +1,29 @@
+# -----------------------------------------------------------------------------
+# Cocos Creator scene / prefab merge rules
+# -----------------------------------------------------------------------------
+# .scene and .prefab are JSON files that carry two things:
+#   1. Human-authored content (properties we care about diffing)
+#   2. Cocos-editor-managed node UUIDs (`__id__`, `_id`, and @property fids)
+#
+# The editor RESHUFFLES UUIDs whenever it saves — even when the visible tree
+# hasn't changed — because add/delete cycles at any point in the session
+# renumber the intra-file `__id__` sequence. When two branches both have
+# reshuffled UUIDs, git's default text merge (ort/recursive) happily auto-
+# merges hunks from both sides, splicing together a scene where @property
+# fids from branch A point at UUIDs that only exist in branch B → dangling
+# references → Cocos silently "heals" on load by picking the nearest
+# same-type node with a matching name, resulting in wired-up buttons that
+# now trigger random labels ten panels away.
+#
+# `merge=binary` disables auto-merge for these files. Behavior:
+#   - If only one side changed: git uses that side, no conflict.
+#   - If both sides changed: MERGE CONFLICT, working-tree file untouched,
+#     user resolves by choosing a side (typically `git checkout --theirs
+#     assets/scenes/Game.scene` when propagating a scene fix downstream)
+#     or by re-editing in Cocos.
+#
+# Trade-off: cross-branch scene propagation now requires explicit
+# resolution. That's the point — every automatic scene merge in the past
+# has produced a hidden UUID corruption. Explicit is safer.
+*.scene merge=binary
+*.prefab merge=binary
