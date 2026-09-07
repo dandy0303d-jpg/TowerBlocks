@@ -3583,15 +3583,13 @@ export class HudController extends Component {
                 if (s[r][c]) cellCount++;
             }
         }
-        // Level mode: show the floor number instead of the level order.
-        // Game convention — no "levels", only "floors": level order 1 is
-        // the TOP of the 99-floor tower (floor 99), level order 99 is the
-        // bottom (floor 1). Hardcode 100 (= totalLevels + 1) since
-        // HudController doesn't have flatLevels; if you ever change the
-        // total level count away from 99, update the 100 below.
+        // Level mode: show the stage's 1-based order directly. Level 0
+        // → Stage 1, level 98 → Stage 99 (fateLevelOrder is already
+        // 1-based). Forward numbering matches every other display path
+        // — level select, fate preview, leaderboard row labels.
         const prefix = this.fateIsEndlessEntry
             ? t('fate.endlessSub')
-            : t('level.floor', { n: this.fateLevelOrder ? (100 - this.fateLevelOrder) : '?' });
+            : t('level.floor', { n: this.fateLevelOrder ?? '?' });
         this.fateSubLab.string = t('fate.subtitle', { tag: prefix, n: cellCount });
     }
 

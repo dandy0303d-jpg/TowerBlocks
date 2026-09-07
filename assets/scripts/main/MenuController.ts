@@ -1502,15 +1502,11 @@ export class MenuController extends Component {
             // Step 3+4: pop the fate preview modal; onDone (after holdMs)
             // triggers assembly.
             if (hud && typeof hud.showFatePreview === 'function' && nextRawLvl) {
-                // Title reads "第 {n} 层" (Floor {n}). The tower is climbed
-                // from the TOP down — first level is the top floor, last
-                // level is floor 1 — so the floor number is
-                // (totalLevels − levelIdx). With 99 levels: level 0 → 99F,
-                // level 1 → 98F, …, level 98 → 1F. Use flatLevels.length
-                // rather than hard-coding 99 so adding/removing levels
-                // Just Works.
-                const totalFloors = flatLevels ? flatLevels.length : 99;
-                const floorNum    = totalFloors - nextIdx;
+                // Title reads "第 {n} 层" / "Floor {n}" using the
+                // stage's 1-based order. Level 0 → 1층, level 98 → 99층.
+                // Kept flatLevels.length available for future dynamic-
+                // count use but not needed for the numeric conversion.
+                const floorNum = nextIdx + 1;
                 hud.showFatePreview(nextRawLvl, advance, holdMs, t('level.floor', { n: floorNum }));
             } else {
                 this.scheduleOnce(advance, holdMs / 1000);
@@ -1742,19 +1738,13 @@ export class MenuController extends Component {
         bindBtn(this.modeBtnEndless,       'menu.endless', () => {
             if (this._isEndlessUnlocked()) this.enterEndless();
             else {
-                // Show the FLOOR NUMBER the player needs to reach, not
-                // the raw clear count — the level display was reversed
-                // (highest floor = starting floor, floor 1 = final).
-                // With 99 floors and UNLOCK_COUNT=10, the player needs
-                // to clear their first 10 stages, which under reversed
-                // numbering means reaching floor 90 (99 → 98 → … → 90).
-                // Falls back to 99 if flatLevels isn't populated yet
-                // (extremely defensive; shouldn't happen at this point
-                // in the flow, but keeps the toast readable rather than
-                // showing "Reach floor NaN").
-                const totalFloors = (this.gameController as any)?.flatLevels?.length ?? 99;
-                const requiredFloor = totalFloors - (MenuController.ENDLESS_UNLOCK_LEVEL_COUNT - 1);
-                this._showLockToast(t('lock.endless', { n: requiredFloor }));
+                // Forward stage numbering — player needs to clear
+                // through Stage `ENDLESS_UNLOCK_LEVEL_COUNT` (default
+                // 10) to unlock endless. "Reach floor 10 to unlock
+                // Endless" reads naturally.
+                this._showLockToast(t('lock.endless', {
+                    n: MenuController.ENDLESS_UNLOCK_LEVEL_COUNT,
+                }));
             }
         });
         bindBtn(this.modeBtnLevel,         'menu.levels',      () => this.showLevelSelect());
