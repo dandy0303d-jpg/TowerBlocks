@@ -67,6 +67,7 @@ import { t, subscribe as subscribeI18n } from '../core/i18n/I18n';
 import { LeaderboardRow } from './LeaderboardRow';
 import { BackKeyManager } from './BackKeyManager';
 import { getLang, subscribe as subscribeLang } from '../core/i18n/I18n';
+import { LevelProgress } from '../core/LevelProgress';
 import { fetchTop, fetchMyRank, fetchLevelTops, fetchMyLevelTimes, LeaderboardApiEntry, LeaderboardApiMode, LevelTopEntry, MyLevelTimeEntry, MyRankResult } from '../core/LeaderboardApi';
 import { PlayerProfile } from '../core/PlayerProfile';
 
@@ -198,6 +199,15 @@ export class LeaderboardController extends Component {
      *  first open; changes when the player taps a row. */
     private selectedLevelIdx: number = 0;
 
+    /** Set when show()/onTabClick opens the LEVEL tab: on the next
+     *  paintRows we should auto-scroll to the player's progress
+     *  boundary (bottom of the reverse-ordered list is where the
+     *  cleared range lives, so the default scrollToTop shown all-
+     *  uncleared 99F..14F, hiding the interesting cleared rows).
+     *  Consumed (reset to false) once the scroll fires so subsequent
+     *  data refreshes / re-paints don't yank the scroll back. */
+    private _pendingLevelAutoScroll: boolean = false;
+
     // ============================================================
     //  Lifecycle
     // ============================================================
@@ -264,9 +274,16 @@ export class LeaderboardController extends Component {
         this.currentMode = mode;
         this.refresh();
         log(`[Leaderboard] show() done — pool=${this.rowPool.length} content children=${this.content?.children.length ?? '(no content)'}`);
-        // Snap to top — instant, no animation, so the player never
-        // sees mid-scroll flash from a previous session's scroll pos.
-        if (this.scrollView) this.scrollView.scrollToTop(0);
+        // Level tab: defer scroll to paintRows (needs to know how many
+        // rows the player has cleared, which comes from LevelProgress
+        // and paints after refresh's fetch resolves). Other tabs snap
+        // to top immediately — instant, no animation, so the player
+        // never sees mid-scroll flash from a previous session's pos.
+        if (mode === 'level') {
+            this._pendingLevelAutoScroll = true;
+        } else if (this.scrollView) {
+            this.scrollView.scrollToTop(0);
+        }
     }
 
     public hide(): void {
@@ -391,9 +408,15 @@ export class LeaderboardController extends Component {
         if (this.currentMode === mode) return;
         this.currentMode = mode;
         this.refresh();
-        // Any tab switch resets scroll to top so the player always
-        // starts at rank 1 for the newly-picked mode.
-        if (this.scrollView) this.scrollView.scrollToTop(0);
+        // Same policy as show(): endless / blind snap to top; level
+        // defers to paintRows so the scroll can target the player's
+        // cleared range (bottom of the reversed list) rather than the
+        // all-uncleared 99F..14F top the default scroll would show.
+        if (mode === 'level') {
+            this._pendingLevelAutoScroll = true;
+        } else if (this.scrollView) {
+            this.scrollView.scrollToTop(0);
+        }
     }
 
     // ============================================================
@@ -609,6 +632,27 @@ export class LeaderboardController extends Component {
             const layout = this.content.getComponent(Layout);
             if (layout) layout.updateLayout(true);
         }
+        // Level tab: consume the "auto-scroll to progress boundary"
+        // request set by show() / onTabClick. The list is Bottom-To-Top
+        // Layout with the array in LOW → HIGH order, so array[0]=1F
+        // sits at the visual bottom and array[98]=99F at the visual
+        // top. Cleared rows occupy floors 1..(maxClearedIdx+1) — i.e.
+        // the bottom of the list. scrollToBottom(0) reveals them
+        // immediately without an animation flash.
+        //
+        // If the player has cleared nothing yet, fall back to
+        // scrollToTop so 99F is visible (nothing meaningful at the
+        // bottom either way, but keeping the "start at top" behavior
+        // for a fresh player is less disorienting than an empty
+        // bottom-of-list view).
+        if (isLevel && this._pendingLevelAutoScroll && this.scrollView) {
+            this._pendingLevelAutoScroll = false;
+            if (LevelProgress.maxClearedIdx >= 0) {
+                this.scrollView.scrollToBottom(0);
+            } else {
+                this.scrollView.scrollToTop(0);
+            }
+        }
     }
 
     /** Instantiate additional row Prefab copies until the pool has
@@ -692,12 +736,19 @@ export class LeaderboardController extends Component {
             // for now — extra empty rows just render "—".
             const TOTAL_LEVELS = 99;
             const out: LeaderboardEntry[] = [];
-            // Iterate HIGH → LOW so the leaderboard reads top-down as
-            // "99 층 → 1 층" — highest floor first, matching the
-            // tower theme. The `rank` field stays as the true floor
-            // number (idx+1) so downstream selection logic that
-            // matches on rank still works.
-            for (let idx = TOTAL_LEVELS - 1; idx >= 0; idx--) {
+            // Iterate LOW → HIGH so that when the scene's Content Layout
+            // is Bottom-To-Top (currently _verticalDirection: 1 in
+            // Game.scene), the last-array-index row (99F, levelIdx=98)
+            // ends up at the TOP of the content, giving the intended
+            // reversed on-screen order "99층 → 1층". If a future
+            // scene edit flips the Layout to Top-To-Bottom, this loop
+            // will need to invert — the on-screen order is a product
+            // of BOTH iteration direction AND Layout verticalDirection.
+            //
+            // The `rank` field stays as the true floor number (idx+1)
+            // so downstream selection logic that matches on rank still
+            // works regardless of array order.
+            for (let idx = 0; idx < TOTAL_LEVELS; idx++) {
                 const top = byIdx.get(idx);
                 if (top) {
                     const mm = Math.floor(top.elapsedSec / 60).toString().padStart(2, '0');
