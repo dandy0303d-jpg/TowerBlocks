@@ -1658,7 +1658,7 @@ export class MenuController extends Component {
      *  wired so we can still tell the click plumbing is alive. */
     private onLeaderboardClicked(): void {
         if (this.leaderboardController) {
-            this.leaderboardController.show('endless');
+            this.leaderboardController.show('level');
         } else {
             console.log('[MenuController] Leaderboard tapped — controller not wired.');
         }
