@@ -161,7 +161,7 @@ export class LeaderboardController extends Component {
     // ============================================================
 
     /** Currently-selected mode tab. */
-    private currentMode: LeaderboardMode = 'endless';
+    private currentMode: LeaderboardMode = 'level';
 
     /** Cached row instances — grown on demand, reused across tab
      *  switches / re-shows. Extra rows past the current data length
@@ -247,7 +247,7 @@ export class LeaderboardController extends Component {
     /** Show the leaderboard for `mode` (default: endless). Auto-scrolls
      *  to the top so the player always sees rank 1 first. */
     private _back = (): void => { this.hide(); };
-    public show(mode: LeaderboardMode = 'endless'): void {
+    public show(mode: LeaderboardMode = 'level'): void {
         if (!this.panel) {
             log('[Leaderboard] panel not wired — cannot show');
             return;
