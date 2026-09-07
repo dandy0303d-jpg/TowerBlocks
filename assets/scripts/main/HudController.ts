@@ -2439,7 +2439,15 @@ export class HudController extends Component {
      *  reads pickerSlotKeys). Same array as the legacy path (both fill it),
      *  so slot-click routing already works without duplicating fields. */
     private wireAuthoredPicker(): void {
-        if (this._pickerAuthoredWired) return;
+        // Deliberately NOT guarded by _pickerAuthoredWired anymore: a
+        // scene-merge or lazy @property load could leave some buttons
+        // null on the first call, and the old guard would mark the
+        // whole picker "wired" and never retry — silent-dead buttons.
+        // Re-wiring every open is cheap (each `.on('click')` is
+        // preceded by `.off('click')` so no duplicate handlers stack).
+        // The picker only opens once per row-lock at most; the extra
+        // work is a handful of listener swaps.
+        //
         // Slot buttons + inject icon/star children lazily on first show.
         // The scene has authored bg + labels but no PNG icon or tier stars
         // — we build those at runtime so no editor rewiring is needed.
@@ -2451,6 +2459,9 @@ export class HudController extends Component {
             }
             btn.node.off('click');
             btn.node.on('click', () => this.onSlotClicked(i), this);
+            // Icon/stars injection is one-shot per node — the helper
+            // no-ops when the child nodes already exist, so it's safe
+            // to call every wire pass.
             this._injectPickerIconAndStars(btn.node, i);
         }
         // Refresh button. Guarded by ?. because after a scene merge the
@@ -2472,6 +2483,12 @@ export class HudController extends Component {
             pb.node.on('click', () => this.onPickerPaidRefreshClicked(), this);
         } else if (pb) {
             console.warn('[Picker] authoredPickerPaidRefreshButton has no node — skipping wire');
+        } else {
+            // pb is null — @property not wired in the scene, so there
+            // is NO gem-refresh button to click. Loud once so the
+            // scene issue surfaces in logs rather than presenting as
+            // "click does nothing" mystery bug.
+            console.warn('[Picker] authoredPickerPaidRefreshButton @property is null — gem-refresh will not work; check scene wiring on EnergyPicker root');
         }
         this._pickerAuthoredWired = true;
     }
@@ -3676,8 +3693,14 @@ export class HudController extends Component {
      *  charges the next tier (10 → 15 → 20). */
     private onPickerPaidRefreshClicked(): void {
         const used = this._paidRefreshUsed.magic;
+        console.log(`[Picker] paid refresh CLICK — used=${used}/${MAX_PAID_REFRESHES_PER_MODAL} sessionActive=${this._pickerSessionActive}`);
         if (used >= MAX_PAID_REFRESHES_PER_MODAL) {
+            // Silent 'ignore' looked like a dead button to players who
+            // didn't realise they'd hit the cap. Surface it — the
+            // button's own label already says '限已达上限', but a
+            // toast confirms the tap was received.
             console.log('[Picker] paid refresh at cap — ignoring click');
+            ToastManager.instance?.show(t('refresh.limitReached'));
             return;
         }
         const tier = used;

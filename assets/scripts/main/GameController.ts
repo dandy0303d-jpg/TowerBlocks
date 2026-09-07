@@ -315,6 +315,20 @@ export class GameController extends Component {
      *  the completion into LevelProgress. */
     private _activeLevelIdx = -1;
     public get activeLevelIdx(): number { return this._activeLevelIdx; }
+
+    /** Every N endless layers, auto-submit the current tower height to
+     *  the leaderboard. See onEndlessMilestone. Set to 50 so a player
+     *  crossing 50 / 100 / 150 / ... floors always has a recorded
+     *  best even if the app dies before natural game-over. */
+    private static readonly ENDLESS_AUTO_SUBMIT_INTERVAL = 50;
+
+    /** Highest `endlessProgress.cumulative` value already auto-submitted
+     *  in THIS run. Reset via resetEndlessAutoSubmitTracker() at the
+     *  start of every fresh endless attempt so the first crossing of
+     *  50 fires. Comparing against this instead of `cumulative % 50`
+     *  survives multi-layer partial-shatter jumps that could skip past
+     *  the boundary in a single lock. */
+    private _lastEndlessAutoSubmit = 0;
     /** Pending game-over popup. `null` once consumed; otherwise holds the
      *  reason code passed by GameState. Same delay logic as level-win. */
     private pendingGameOverReason: number | null | undefined = undefined;
@@ -843,8 +857,28 @@ export class GameController extends Component {
                     }
                     SoundManager.instance?.play('item_pick');
                 },
-                onEndlessMilestone: (_milestone, _cumulative) => {
+                onEndlessMilestone: (_milestone, cumulative) => {
                     this.playMilestoneShatter();
+                    // Auto-report the tower height to the leaderboard on
+                    // every ENDLESS_AUTO_SUBMIT_INTERVAL layers so a
+                    // player who gets killed by app crash / OS-kill /
+                    // battery-out mid-run still has SOMETHING recorded.
+                    // Without this, only pause-quit and natural game-
+                    // over submit — so a 200-layer run that dies to a
+                    // background kill loses everything.
+                    //
+                    // We compare against the last submitted cumulative
+                    // instead of using `cumulative % N === 0`, because
+                    // a single row-lock can clear multiple layers in
+                    // one hop (partial-shatter chains); modulo would
+                    // step over the boundary silently in that case.
+                    // Fire-and-forget: network failures just log, next
+                    // milestone will retry.
+                    if (cumulative - this._lastEndlessAutoSubmit >=
+                            GameController.ENDLESS_AUTO_SUBMIT_INTERVAL) {
+                        this._lastEndlessAutoSubmit = cumulative;
+                        this.submitEndlessHeightIfApplicable('milestone-auto');
+                    }
                 },
             },
         });
@@ -4090,6 +4124,12 @@ export class GameController extends Component {
         this.clearPendingPopups();
         this._activeLevelIdx = -1;
         this.clearBlindHudArtifacts();
+        // Reset the per-run auto-submit tracker so the first
+        // ENDLESS_AUTO_SUBMIT_INTERVAL boundary of the NEW run fires
+        // even if the previous run had already submitted at higher
+        // cumulatives. Without this, retrying after a 200-layer run
+        // wouldn't submit again until layer 250.
+        this._lastEndlessAutoSubmit = 0;
         // Pass the fate piece (if any) straight through to newGame so it
         // gets registered with the bag BEFORE the initial refill — the
         // first piece can then draw the custom shape.
@@ -4174,6 +4214,11 @@ export class GameController extends Component {
         if (!this.gameState) return;
         this.clearPendingPopups();
         this._activeLevelIdx = -1;
+        // Blind mode shares the endless auto-submit tracker (same
+        // `submitEndlessHeightIfApplicable` code path via
+        // onEndlessMilestone) — reset per run so the first 50-layer
+        // crossing of a fresh blind attempt fires.
+        this._lastEndlessAutoSubmit = 0;
         this.gameState.newBlindGame();
         this.boardYOffsetInitialised = false;
         this.lastKnownTotalRows = -1;
