@@ -67,7 +67,6 @@ import { t, subscribe as subscribeI18n } from '../core/i18n/I18n';
 import { LeaderboardRow } from './LeaderboardRow';
 import { BackKeyManager } from './BackKeyManager';
 import { getLang, subscribe as subscribeLang } from '../core/i18n/I18n';
-import { LevelProgress } from '../core/LevelProgress';
 import { fetchTop, fetchMyRank, fetchLevelTops, fetchMyLevelTimes, LeaderboardApiEntry, LeaderboardApiMode, LevelTopEntry, MyLevelTimeEntry, MyRankResult } from '../core/LeaderboardApi';
 import { PlayerProfile } from '../core/PlayerProfile';
 
@@ -194,19 +193,10 @@ export class LeaderboardController extends Component {
      *  elapsedSec. Missing key = player hasn't cleared that floor. */
     private myLevelTimes: Map<number, number> = new Map();
 
-    /** Level tab — currently-selected floor index (0-based) whose PB
-     *  is shown in the bottom my-rank row. Defaults to 0 (floor 1) on
+    /** Level tab — currently-selected stage index (0-based) whose PB
+     *  is shown in the bottom my-rank row. Defaults to 0 (Stage 1) on
      *  first open; changes when the player taps a row. */
     private selectedLevelIdx: number = 0;
-
-    /** Set when show()/onTabClick opens the LEVEL tab: on the next
-     *  paintRows we should auto-scroll to the player's progress
-     *  boundary (bottom of the reverse-ordered list is where the
-     *  cleared range lives, so the default scrollToTop shown all-
-     *  uncleared 99F..14F, hiding the interesting cleared rows).
-     *  Consumed (reset to false) once the scroll fires so subsequent
-     *  data refreshes / re-paints don't yank the scroll back. */
-    private _pendingLevelAutoScroll: boolean = false;
 
     // ============================================================
     //  Lifecycle
@@ -274,16 +264,13 @@ export class LeaderboardController extends Component {
         this.currentMode = mode;
         this.refresh();
         log(`[Leaderboard] show() done — pool=${this.rowPool.length} content children=${this.content?.children.length ?? '(no content)'}`);
-        // Level tab: defer scroll to paintRows (needs to know how many
-        // rows the player has cleared, which comes from LevelProgress
-        // and paints after refresh's fetch resolves). Other tabs snap
-        // to top immediately — instant, no animation, so the player
-        // never sees mid-scroll flash from a previous session's pos.
-        if (mode === 'level') {
-            this._pendingLevelAutoScroll = true;
-        } else if (this.scrollView) {
-            this.scrollView.scrollToTop(0);
-        }
+        // All tabs (level, endless, blind) snap to top on open now.
+        // Level tab used to defer + auto-scroll to the cleared range
+        // when the order was reversed and cleared rows sat at the
+        // bottom of the list; with forward ordering, cleared rows are
+        // at the TOP, so the default scrollToTop already lands the
+        // player on the interesting part.
+        if (this.scrollView) this.scrollView.scrollToTop(0);
     }
 
     public hide(): void {
@@ -408,15 +395,10 @@ export class LeaderboardController extends Component {
         if (this.currentMode === mode) return;
         this.currentMode = mode;
         this.refresh();
-        // Same policy as show(): endless / blind snap to top; level
-        // defers to paintRows so the scroll can target the player's
-        // cleared range (bottom of the reversed list) rather than the
-        // all-uncleared 99F..14F top the default scroll would show.
-        if (mode === 'level') {
-            this._pendingLevelAutoScroll = true;
-        } else if (this.scrollView) {
-            this.scrollView.scrollToTop(0);
-        }
+        // Any tab switch resets scroll to top so the player always
+        // starts at rank 1 (or Stage 1 on the level tab) for the
+        // newly-picked mode.
+        if (this.scrollView) this.scrollView.scrollToTop(0);
     }
 
     // ============================================================
@@ -632,27 +614,6 @@ export class LeaderboardController extends Component {
             const layout = this.content.getComponent(Layout);
             if (layout) layout.updateLayout(true);
         }
-        // Level tab: consume the "auto-scroll to progress boundary"
-        // request set by show() / onTabClick. The list is Bottom-To-Top
-        // Layout with the array in LOW → HIGH order, so array[0]=1F
-        // sits at the visual bottom and array[98]=99F at the visual
-        // top. Cleared rows occupy floors 1..(maxClearedIdx+1) — i.e.
-        // the bottom of the list. scrollToBottom(0) reveals them
-        // immediately without an animation flash.
-        //
-        // If the player has cleared nothing yet, fall back to
-        // scrollToTop so 99F is visible (nothing meaningful at the
-        // bottom either way, but keeping the "start at top" behavior
-        // for a fresh player is less disorienting than an empty
-        // bottom-of-list view).
-        if (isLevel && this._pendingLevelAutoScroll && this.scrollView) {
-            this._pendingLevelAutoScroll = false;
-            if (LevelProgress.maxClearedIdx >= 0) {
-                this.scrollView.scrollToBottom(0);
-            } else {
-                this.scrollView.scrollToTop(0);
-            }
-        }
     }
 
     /** Instantiate additional row Prefab copies until the pool has
@@ -736,23 +697,20 @@ export class LeaderboardController extends Component {
             // for now — extra empty rows just render "—".
             const TOTAL_LEVELS = 99;
             const out: LeaderboardEntry[] = [];
-            // Iterate HIGH → LOW so the first array item is 99F. The
-            // scene's Content Layout is Top-To-Bottom (Cocos enum
-            // LayoutVerticalDirection.TOP_TO_BOTTOM = 1, matching
+            // Iterate LOW → HIGH so the first array item is Stage 1
+            // (levelIdx 0) and the last is Stage 99. The scene's
+            // Content Layout is Top-To-Bottom
+            // (LayoutVerticalDirection.TOP_TO_BOTTOM = 1, matching
             // _verticalDirection: 1 in Game.scene), which places the
-            // FIRST child at the top of the container. Result: 99F at
-            // top, 1F at bottom — the intended "tower theme" reverse
-            // order.
+            // FIRST child at the top of the container. Result: "관卡 1"
+            // at top, "관卡 99" at bottom — natural forward order
+            // matching all the other stage-number displays (level
+            // select label, fate preview, HUD floor).
             //
-            // Cleared floors occupy the BOTTOM end of the list (floor
-            // N = array index 99-N, so floor 1 is the last row, floor
-            // (maxClearedIdx+1) is a few rows above it). scrollToBottom
-            // in paintRows reveals that range on open.
-            //
-            // The `rank` field stays as the true floor number (idx+1)
-            // so downstream selection logic that matches on rank still
-            // works regardless of array order.
-            for (let idx = TOTAL_LEVELS - 1; idx >= 0; idx--) {
+            // The `rank` field is the 1-based stage number (idx + 1),
+            // used both as the row's rank column AND as the reverse
+            // lookup key in onLevelRowClicked (levelIdx = rank - 1).
+            for (let idx = 0; idx < TOTAL_LEVELS; idx++) {
                 const top = byIdx.get(idx);
                 if (top) {
                     const mm = Math.floor(top.elapsedSec / 60).toString().padStart(2, '0');
