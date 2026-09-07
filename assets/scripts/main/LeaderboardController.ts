@@ -67,6 +67,7 @@ import { t, subscribe as subscribeI18n } from '../core/i18n/I18n';
 import { LeaderboardRow } from './LeaderboardRow';
 import { BackKeyManager } from './BackKeyManager';
 import { getLang, subscribe as subscribeLang } from '../core/i18n/I18n';
+import { LevelProgress } from '../core/LevelProgress';
 import { fetchTop, fetchMyRank, fetchLevelTops, fetchMyLevelTimes, LeaderboardApiEntry, LeaderboardApiMode, LevelTopEntry, MyLevelTimeEntry, MyRankResult } from '../core/LeaderboardApi';
 import { PlayerProfile } from '../core/PlayerProfile';
 
@@ -198,6 +199,12 @@ export class LeaderboardController extends Component {
      *  first open; changes when the player taps a row. */
     private selectedLevelIdx: number = 0;
 
+    /** Set when show()/onTabClick opens the LEVEL tab. Consumed once
+     *  the next async paintRows completes so the auto-scroll lands
+     *  against a settled Content Layout (a scroll issued before the
+     *  fetch's paint resolves ends up nowhere). */
+    private _pendingLevelAutoScroll: boolean = false;
+
     // ============================================================
     //  Lifecycle
     // ============================================================
@@ -264,13 +271,15 @@ export class LeaderboardController extends Component {
         this.currentMode = mode;
         this.refresh();
         log(`[Leaderboard] show() done — pool=${this.rowPool.length} content children=${this.content?.children.length ?? '(no content)'}`);
-        // All tabs (level, endless, blind) snap to top on open now.
-        // Level tab used to defer + auto-scroll to the cleared range
-        // when the order was reversed and cleared rows sat at the
-        // bottom of the list; with forward ordering, cleared rows are
-        // at the TOP, so the default scrollToTop already lands the
-        // player on the interesting part.
-        if (this.scrollView) this.scrollView.scrollToTop(0);
+        // Level tab: defer scroll to paintRows so the auto-scroll can
+        // target the player's highest-cleared row after the async
+        // fetch resolves and Layout settles. Endless / blind snap to
+        // top now.
+        if (mode === 'level') {
+            this._pendingLevelAutoScroll = true;
+        } else if (this.scrollView) {
+            this.scrollView.scrollToTop(0);
+        }
     }
 
     public hide(): void {
@@ -395,10 +404,14 @@ export class LeaderboardController extends Component {
         if (this.currentMode === mode) return;
         this.currentMode = mode;
         this.refresh();
-        // Any tab switch resets scroll to top so the player always
-        // starts at rank 1 (or Stage 1 on the level tab) for the
-        // newly-picked mode.
-        if (this.scrollView) this.scrollView.scrollToTop(0);
+        // Same policy as show(): level tab defers scroll to paintRows
+        // (want to land on the player's latest cleared row), other
+        // tabs snap to top for rank-1-first.
+        if (mode === 'level') {
+            this._pendingLevelAutoScroll = true;
+        } else if (this.scrollView) {
+            this.scrollView.scrollToTop(0);
+        }
     }
 
     // ============================================================
@@ -613,6 +626,28 @@ export class LeaderboardController extends Component {
         if (this.content) {
             const layout = this.content.getComponent(Layout);
             if (layout) layout.updateLayout(true);
+        }
+        // Level tab: consume the auto-scroll request set by show() /
+        // onTabClick and scroll to the player's LAST cleared row so
+        // they immediately see the tail of their progress rather than
+        // Stage 1 at the top. maxClearedIdx is the highest 0-based
+        // levelIdx cleared; under forward ordering + Top-To-Bottom
+        // Content Layout, that row sits `maxClearedIdx / (TOTAL-1)`
+        // of the way down the content. scrollToPercentVertical(0)
+        // duration keeps it flash-free.
+        //
+        // Falls back to scrollToTop for a fresh player (nothing
+        // cleared, maxClearedIdx = -1) — Stage 1 at the top is the
+        // sensible starting view.
+        if (isLevel && this._pendingLevelAutoScroll && this.scrollView) {
+            this._pendingLevelAutoScroll = false;
+            const maxCleared = LevelProgress.maxClearedIdx;
+            if (maxCleared >= 0 && n > 1) {
+                const pct = Math.max(0, Math.min(1, maxCleared / (n - 1)));
+                this.scrollView.scrollToPercentVertical(pct, 0, false);
+            } else {
+                this.scrollView.scrollToTop(0);
+            }
         }
     }
 
