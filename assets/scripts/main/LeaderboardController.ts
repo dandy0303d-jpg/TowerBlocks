@@ -736,19 +736,23 @@ export class LeaderboardController extends Component {
             // for now — extra empty rows just render "—".
             const TOTAL_LEVELS = 99;
             const out: LeaderboardEntry[] = [];
-            // Iterate LOW → HIGH so that when the scene's Content Layout
-            // is Bottom-To-Top (currently _verticalDirection: 1 in
-            // Game.scene), the last-array-index row (99F, levelIdx=98)
-            // ends up at the TOP of the content, giving the intended
-            // reversed on-screen order "99층 → 1층". If a future
-            // scene edit flips the Layout to Top-To-Bottom, this loop
-            // will need to invert — the on-screen order is a product
-            // of BOTH iteration direction AND Layout verticalDirection.
+            // Iterate HIGH → LOW so the first array item is 99F. The
+            // scene's Content Layout is Top-To-Bottom (Cocos enum
+            // LayoutVerticalDirection.TOP_TO_BOTTOM = 1, matching
+            // _verticalDirection: 1 in Game.scene), which places the
+            // FIRST child at the top of the container. Result: 99F at
+            // top, 1F at bottom — the intended "tower theme" reverse
+            // order.
+            //
+            // Cleared floors occupy the BOTTOM end of the list (floor
+            // N = array index 99-N, so floor 1 is the last row, floor
+            // (maxClearedIdx+1) is a few rows above it). scrollToBottom
+            // in paintRows reveals that range on open.
             //
             // The `rank` field stays as the true floor number (idx+1)
             // so downstream selection logic that matches on rank still
             // works regardless of array order.
-            for (let idx = 0; idx < TOTAL_LEVELS; idx++) {
+            for (let idx = TOTAL_LEVELS - 1; idx >= 0; idx--) {
                 const top = byIdx.get(idx);
                 if (top) {
                     const mm = Math.floor(top.elapsedSec / 60).toString().padStart(2, '0');
