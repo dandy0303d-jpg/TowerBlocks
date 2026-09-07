@@ -7231,7 +7231,7 @@
       "a": 255
     },
     "_spriteFrame": {
-      "__uuid__": "2d68208c-09a6-49c2-9a12-07544e2e3dec@f9941",
+      "__uuid__": "1a40a27a-4818-47b7-9a00-d7d0fa7f5075@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
     "_type": 0,
@@ -8268,7 +8268,7 @@
       "a": 255
     },
     "_spriteFrame": {
-      "__uuid__": "8802be5b-a94c-4f9f-a9c0-5502ee40a87d@f9941",
+      "__uuid__": "c6c6841c-4ffd-44b7-b54b-c1ad97eb5fa2@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
     "_type": 0,
@@ -51373,12 +51373,6 @@
     "menuControllerNode": {
       "__id__": 15
     },
-    "titleLabel": {
-      "__id__": 1052
-    },
-    "titleLabel": {
-      "__id__": 1052
-    },
     "agreeAllToggle": {
       "__id__": 1223
     },
@@ -51850,18 +51844,6 @@
     },
     "authoredPickerPaidRefreshLabel": {
       "__id__": 865
-    },
-    "authoredPickerPaidRefreshButton": {
-      "__id__": 685
-    },
-    "authoredPickerPaidRefreshLabel": {
-      "__id__": 677
-    },
-    "authoredPickerPaidRefreshButton": {
-      "__id__": 685
-    },
-    "authoredPickerPaidRefreshLabel": {
-      "__id__": 677
     },
     "authoredShapeshifterOverlay": {
       "__id__": 880
