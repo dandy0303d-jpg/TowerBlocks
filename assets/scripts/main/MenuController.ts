@@ -942,6 +942,20 @@ export class MenuController extends Component {
     //  Panel state transitions
     // ============================================================
     public showModeSelect(): void {
+        // Defense-in-depth: submit any pending endless/blind height
+        // BEFORE tearing down gameplay. The pause overlay's Home
+        // button already calls this via HudController, but there are
+        // several other paths into showModeSelect (result-panel Home
+        // in game-over, level-clear return, direct route from
+        // TutorialController, etc). Calling here means EVERY return-
+        // to-menu path from a live endless/blind run has its height
+        // recorded — no matter which button/gesture the player used.
+        // No-op in level mode or when height is 0. Fire-and-forget.
+        try {
+            this.gameController?.submitEndlessHeightIfApplicable('mode-select-return');
+        } catch (e) {
+            console.warn('[MenuController] submitEndlessHeightIfApplicable threw during showModeSelect:', (e as Error)?.message);
+        }
         // Defensive: whichever path got us here (tap return button,
         // enter a level, back key), drop the level-select back
         // handler so it doesn't linger and fire from the wrong
