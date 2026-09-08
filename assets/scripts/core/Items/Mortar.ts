@@ -126,14 +126,13 @@ export class MortarState {
  *  nothing fillable. */
 export function computeMortarPlan(
     state: BoardState,
-    reservedHeight: number = 0,
+    // Kept in the signature for backwards-compat with the existing
+    // GameState caller. Ignored now — the reserved zone used to be a
+    // no-drip barrier; that restriction was lifted so mortar can fill
+    // designer-authored holes in the gray foundation too.
+    _reservedHeight: number = 0,
 ): Array<{ r: number; c: number; color: CellValue }> {
     const H = state.board.length;
-    // Bottom `reservedHeight` rows are the level's gray foundation — they
-    // may include null holes by design (task #42: "each reserved row = 23
-    // solids + 1 random hole"). Mortar must NOT drip into those holes,
-    // so we cap the writable region at `firstReservedRow`.
-    const firstReservedRow = reservedHeight > 0 ? H - reservedHeight : H;
     // Mutable snapshot — fills here become the next pass's drippers.
     const sim: (CellValue | null)[][] = state.board.map(row => row.slice());
     const plan: Array<{ r: number; c: number; color: CellValue }> = [];
@@ -146,7 +145,6 @@ export function computeMortarPlan(
                 const v = sim[r][c];
                 if (!isColoredCell(v)) continue;
                 if (r + 1 >= H) continue;
-                if (r + 1 >= firstReservedRow) continue;   // never drip INTO reserved
                 if (sim[r + 1][c] !== null) continue;      // below must be empty
                 plan.push({ r: r + 1, c, color: v as CellValue });
                 sim[r + 1][c] = v;
@@ -182,17 +180,15 @@ export function computeMortarFallbackPlan(
     rng: () => number = Math.random,
     fallbackColor?: CellValue,
     exclude?: ReadonlySet<string>,
-    reservedHeight: number = 0,
+    // Kept for backwards-compat with the GameState caller; ignored now
+    // — the reserved-zone barrier was removed so mortar fills any empty
+    // cell top-down, including holes in the gray foundation.
+    _reservedHeight: number = 0,
 ): Array<{ r: number; c: number; color: CellValue }> {
     if (cap <= 0) return [];
     const H = state.board.length;
-    // Bottom `reservedHeight` rows are the level's gray foundation. In
-    // level mode those rows may contain designer-authored null holes;
-    // mortar must never fill them, so we start the scan just ABOVE the
-    // reserved zone rather than at the true bottom.
-    const scanStartRow = reservedHeight > 0
-        ? Math.max(0, H - reservedHeight - 1)
-        : H - 1;
+    // Scan bottom-up from the true bottom edge.
+    const scanStartRow = H - 1;
     // Pick the fill colour: first colored cell on the board, otherwise
     // a random standard tetromino type (so the mortar still does
     // something visible when the board is completely empty).
