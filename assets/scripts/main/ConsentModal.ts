@@ -37,6 +37,7 @@
 import { _decorator, Component, Node, Label, Button, Toggle, Sprite, sys } from 'cc';
 import { t, getLang, subscribe as subscribeI18n } from '../core/i18n/I18n';
 import { fetchConsentStatus, postConsent, ConsentStatusResult } from '../core/ConsentApi';
+import { AnalyticsApi } from '../core/AnalyticsApi';
 import { BACKEND_BASE_URL } from '../core/BackendConfig';
 
 const { ccclass, property } = _decorator;
@@ -300,6 +301,17 @@ export class ConsentModal extends Component {
                 marketingOptIn: !!this.marketingToggle?.isChecked,
             });
             console.log('[Consent] recorded — resuming boot');
+            // ToS + Privacy include analytics language, so acceptance
+            // is what flips Firebase collection ON for this player
+            // (consent scheme A — default-off, opt-in). If we ever add
+            // a separate analytics-specific checkbox, key this off
+            // that checkbox's isChecked instead.
+            AnalyticsApi.setEnabled(true);
+            AnalyticsApi.logCustom('consent_accepted', {
+                tos_version:     this._currentTos,
+                privacy_version: this._currentPrivacy,
+                marketing_opt_in: this.marketingToggle?.isChecked ? 1 : 0,
+            });
             if (this.root) this.root.active = false;
             const cb = this._onCompleteResolver;
             this._onCompleteResolver = null;

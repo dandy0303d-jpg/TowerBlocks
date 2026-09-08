@@ -32,6 +32,7 @@ import { ITEM_KEYS, ITEM_BASE_PROBS, MagicItemKey, ENERGY_FULL_THRESHOLD, COLORS
 import { FATE_SHAPES, fateIndexOfShape, pickFateIndex, pickFateIndex4Connected, FATE_SHAPES_4CONNECTED_INDICES, fateShapeAsCustomPiece } from '../core/FateShapes';
 import { CustomPieceDef, LevelData } from '../core/Types';
 import { getKeysMode, subscribe as subscribeSettings } from '../core/Settings';
+import { AnalyticsApi } from '../core/AnalyticsApi';
 import { BgmManager } from '../audio/BgmManager';
 import { FontManager } from '../core/FontManager';
 import { SoundManager } from '../audio/SoundManager';
@@ -2414,17 +2415,32 @@ export class HudController extends Component {
             PlayerProfile.setDailyFreeRemaining('fate', 0);
             this.updateFateRerollButtonLabel();
             try {
+                AnalyticsApi.logCustom('ad_shown', { placement: 'fate_reroll' });
                 const r = await Providers.ads.showRewardedAd();
                 if (r.kind === 'rewarded') {
+                    // Firebase `earn_virtual_currency` — populates the
+                    // virtual-economy report. `value` here is 1 because
+                    // the "currency" earned is a single reroll ticket,
+                    // not gems.
+                    AnalyticsApi.logAdReward({
+                        virtualCurrencyName: 'fate_reroll',
+                        value:               1,
+                        placement:           'fate_reroll',
+                    });
                     this.onFateReroll();
                     this.updateFateRerollButtonLabel();
                     return;
                 }
                 if (r.kind === 'dismissed') {
                     console.log('[FateModal] ad dismissed early — no reroll');
+                    AnalyticsApi.logCustom('ad_dismissed', { placement: 'fate_reroll' });
                     return;
                 }
                 console.warn('[FateModal] ad error:', r.reason);
+                AnalyticsApi.logCustom('ad_error', {
+                    placement: 'fate_reroll',
+                    reason: String(r.reason ?? 'unknown'),
+                });
                 ToastManager.instance?.show(t('picker.adRefresh.failed'));
             } catch (e) {
                 console.warn('[FateModal] showRewardedAd threw:', (e as Error)?.message ?? e);
@@ -3676,6 +3692,9 @@ export class HudController extends Component {
             .then((r) => {
                 console.log(`[FateModal] paid refresh OK (tier=${tier}) — spent=${r.gemsSpent} balance=${r.balance}`);
                 this._paidRefreshUsed.fate++;
+                AnalyticsApi.logCustom('refresh_used', {
+                    kind: 'fate', tier, gems_spent: r.gemsSpent, balance_after: r.balance,
+                });
                 this.onFateReroll();
                 // Repaint so the next tier's cost + updated remaining
                 // count show immediately.
@@ -3707,6 +3726,9 @@ export class HudController extends Component {
             .then((r) => {
                 console.log(`[Picker] paid refresh OK (tier=${tier}) — spent=${r.gemsSpent} balance=${r.balance}`);
                 this._paidRefreshUsed.magic++;
+                AnalyticsApi.logCustom('refresh_used', {
+                    kind: 'magic', tier, gems_spent: r.gemsSpent, balance_after: r.balance,
+                });
                 this.gameController?.gameState?.refreshEnergyPicker();
                 // Repaint the button so the next tier + updated
                 // remaining count show immediately.

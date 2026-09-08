@@ -25,6 +25,26 @@ apply plugin: 'com.android.application'
 // AppActivity.java can't find com.cocos.game.GoogleWebOAuthBridge.
 apply plugin: 'kotlin-android'
 
+// ─── Firebase — Google Services plugin, conditional apply ─────
+// Firebase Analytics / Crashlytics / Remote Config need the Google
+// Services Gradle plugin to process `google-services.json` at build
+// time. That JSON is NOT in git (it contains project-specific keys),
+// so we only apply the plugin when the file is present. Machines
+// without the config just skip Firebase init — FirebaseBridge.kt
+// notices the missing FirebaseApp and becomes inert, so the game
+// still builds and runs (data collection is simply off).
+//
+// To enable Firebase on your machine: drop google-services.json into
+// this app/ directory (same dir as this build.gradle), rebuild.
+if (file('google-services.json').exists()) {
+    apply plugin: 'com.google.gms.google-services'
+    apply plugin: 'com.google.firebase.crashlytics'
+    project.ext.firebaseEnabled = true
+} else {
+    logger.warn("[Firebase] google-services.json not found in app/ — Firebase disabled")
+    project.ext.firebaseEnabled = false
+}
+
 RES_PATH = RES_PATH.replace("\\", "/")
 COCOS_ENGINE_PATH = COCOS_ENGINE_PATH.replace("\\", "/")
 
@@ -162,4 +182,27 @@ dependencies {
     // classpath (2.1.21); mismatched stdlib on some devices trips
     // "NoSuchMethodError" on Kotlin intrinsics.
     implementation "org.jetbrains.kotlin:kotlin-stdlib:2.1.21"
+
+    // =========================================================
+    // Firebase — Analytics, Crashlytics, Remote Config
+    // =========================================================
+    // BoM (bill of materials) pins mutually-compatible versions across
+    // all firebase-* artifacts. Bump the BoM version and all sub-libs
+    // stay in lock-step. Modules listed below are enough for the three
+    // features we use today; add more (messaging, dynamiclinks, ...)
+    // by appending the artifact name only (no version needed — BoM
+    // provides it).
+    //
+    // Analytics is intentionally listed even though Crashlytics + RC
+    // both transitively depend on it — makes the intent explicit and
+    // survives dependency graph shuffles across BoM upgrades.
+    //
+    // These lines are always emitted; if google-services.json is
+    // missing the plugin skip above means the classpath resolves but
+    // Firebase.initializeApp() returns null at runtime and the bridge
+    // becomes inert. No harm in shipping the classes.
+    implementation platform('com.google.firebase:firebase-bom:33.7.0')
+    implementation 'com.google.firebase:firebase-analytics'
+    implementation 'com.google.firebase:firebase-crashlytics'
+    implementation 'com.google.firebase:firebase-config'
 }

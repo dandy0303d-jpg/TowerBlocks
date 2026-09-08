@@ -57,6 +57,7 @@ import { FontManager } from '../core/FontManager';
 import { LevelProgress } from '../core/LevelProgress';
 import { deletePlayerSelf } from '../core/PlayerApi';
 import { IS_DEV_BUILD } from '../core/BuildConfig';
+import { AnalyticsApi } from '../core/AnalyticsApi';
 import { fetchConsentStatus } from '../core/ConsentApi';
 import { ConsentModal } from './ConsentModal';
 import { GoogleWebOAuth } from '../channels/google/GoogleWebOAuth';
@@ -926,6 +927,10 @@ export class MenuController extends Component {
         }
         if (!status.needsConsent) {
             console.log('[MenuController] consent OK — versions match');
+            // Prior-session consent still applies — flip analytics on
+            // WITHOUT logging a new consent_accepted event (that fires
+            // only from the modal path). Idempotent on the native side.
+            AnalyticsApi.setEnabled(true);
             return;
         }
         const modal = this.consentModalNode.getComponent(ConsentModal);
