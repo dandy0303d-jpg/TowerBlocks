@@ -56,6 +56,13 @@ public class AppActivity extends CocosActivity {
         // Companion onNewIntent() below forwards the OAuth redirect back
         // to the bridge for parsing.
         com.cocos.game.GoogleWebOAuthBridge.install(this);
+
+        // Firebase bridge — Analytics, Crashlytics, Remote Config.
+        // install() initializes FirebaseApp (or no-ops if
+        // google-services.json is missing) and leaves data collection
+        // DISABLED until TS side flips it on via AnalyticsApi
+        // .setEnabled(true) — see consent scheme A in AnalyticsApi.ts.
+        com.cocos.game.FirebaseBridge.install(this);
     }
 
     @Override

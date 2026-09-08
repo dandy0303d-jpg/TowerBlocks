@@ -15,6 +15,11 @@ buildscript {
         // last known-good version that plays with AGP 8.8.0 + our
         // channel-specific SDKs (LevelPlay et al. drag in stdlib 2.x).
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.21"
+        // Firebase plugins — classpath is always available; app-level
+        // apply is conditional on google-services.json existing (see
+        // app/build.gradle). Harmless when unused.
+        classpath 'com.google.gms:google-services:4.4.2'
+        classpath 'com.google.firebase:firebase-crashlytics-gradle:3.0.2'
 
         // NOTE: Do not place your application dependencies here; they belong
         // in the individual module build.gradle files

@@ -34,6 +34,8 @@ import { LevelProgress } from '../core/LevelProgress';
 import { PlayerProfile } from '../core/PlayerProfile';
 import { fetchMyLevelTimes } from '../core/LeaderboardApi';
 import { t, initFromSystemLang } from '../core/i18n/I18n';
+import { AnalyticsApi } from '../core/AnalyticsApi';
+import { BUILD_CHANNEL } from '../core/BuildConfig';
 
 const { ccclass, property } = _decorator;
 
@@ -181,6 +183,17 @@ export class LoadingController extends Component {
         console.log('[Loading] beginBoot — starting boot pipeline');
         const startTs = performance.now();
         this.setProgress(0.05);
+
+        // ─── Firebase boot: tag channel + kick off Remote Config ────
+        // setUserProperty is a one-shot per boot and cheap. Setting it
+        // BEFORE we know the uuid is fine — user-property is device-
+        // scoped, uuid is set later by PlayerProfile.ensureRegistered.
+        // fetchRemoteConfig() is fire-and-forget: values used later
+        // in the game come from local cache if the fetch hasn't
+        // completed yet, and the fresh values apply on the NEXT boot.
+        AnalyticsApi.setUserProperty('channel', BUILD_CHANNEL);
+        AnalyticsApi.fetchRemoteConfig();
+        AnalyticsApi.breadcrumb('boot start');
 
         // Frame 1: FX pool warmup (relatively cheap, one node per pool).
         setTimeout(() => this.beginBootFrame2(startTs), 16);

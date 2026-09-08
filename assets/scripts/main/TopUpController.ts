@@ -57,6 +57,7 @@ import {
     WalletSku,
 } from '../core/WalletApi';
 import { Providers } from '../core/channels/Providers';
+import { AnalyticsApi } from '../core/AnalyticsApi';
 import { ToastManager } from './ToastManager';
 import { BackKeyManager } from './BackKeyManager';
 
@@ -360,6 +361,14 @@ export class TopUpController extends Component {
      *  re-deliver the pending consume on next `buy()` acknowledgment. */
     private doPurchase(sku: WalletSku): void {
         this.showToast(t('topup.processing'));
+        // Firebase predefined event — signals intent to purchase.
+        // Value is priceCents/100 to match Firebase's expected major
+        // units. The eventual `purchase` event uses the same value.
+        AnalyticsApi.logBeginCheckout({
+            currency: sku.currency,
+            value:    sku.priceCents / 100,
+            sku:      sku.id,
+        });
         Providers.purchase.buy(sku.id)
             .then((receipt) => {
                 // Step 2: send receipt to server for validation + credit.
@@ -376,6 +385,14 @@ export class TopUpController extends Component {
                         'info',
                     );
                     log(`[TopUp] purchase ok — sku=${sku.id} +${res.gemsAdded} gems, balance=${res.balance}, kind=${receipt.paymentKind}`);
+                    // Firebase predefined `purchase` event — flows into
+                    // Revenue / ARPU / LTV reports automatically.
+                    AnalyticsApi.logPurchase({
+                        currency:      sku.currency,
+                        value:         sku.priceCents / 100,
+                        transactionId: receipt.transactionId,
+                        sku:           sku.id,
+                    });
                     // Step 3: acknowledge / consume — best-effort, don't
                     // roll back on failure. Server has already credited.
                     Providers.purchase
@@ -391,10 +408,19 @@ export class TopUpController extends Component {
                 if (err && typeof err.message === 'string'
                     && err.message.startsWith('user-cancelled')) {
                     log(`[TopUp] purchase cancelled by user (sku=${sku.id})`);
+                    AnalyticsApi.logCustom('purchase_cancelled', { sku: sku.id });
                     return;
                 }
                 this.showToast(t('topup.failBody', { reason: err.message }), 'error');
                 console.warn('[TopUp] purchase failed:', err.message);
+                AnalyticsApi.logCustom('purchase_failed', {
+                    sku:    sku.id,
+                    reason: String(err?.message ?? 'unknown'),
+                });
+                AnalyticsApi.logError(err instanceof Error ? err : String(err), {
+                    where: 'TopUpController.doPurchase',
+                    sku:   sku.id,
+                });
             });
     }
 
