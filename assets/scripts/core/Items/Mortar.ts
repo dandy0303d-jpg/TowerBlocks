@@ -187,8 +187,6 @@ export function computeMortarFallbackPlan(
 ): Array<{ r: number; c: number; color: CellValue }> {
     if (cap <= 0) return [];
     const H = state.board.length;
-    // Scan bottom-up from the true bottom edge.
-    const scanStartRow = H - 1;
     // Pick the fill colour: first colored cell on the board, otherwise
     // a random standard tetromino type (so the mortar still does
     // something visible when the board is completely empty).
@@ -205,13 +203,45 @@ export function computeMortarFallbackPlan(
         color = fallbackColor
             ?? (BAG_TYPES[Math.floor(rng() * BAG_TYPES.length)] as CellValue);
     }
+
+    // Two-pass fill (bottom-up in each pass):
+    //   Pass 1 — rows that contain any colored cell. Fill their null
+    //            cells first; these are where the player is actively
+    //            building the task pattern so extra fills there matter
+    //            most.
+    //   Pass 2 — rows that are gray-only ('X' present, no colored).
+    //            Fill their null holes (designer-authored gaps in the
+    //            reserved foundation) only if pass 1 didn't reach cap.
+    //   Empty rows (no colored and no 'X') are NEVER touched — filling
+    //   them would place floating cells that read as "mortar
+    //   misfired". Falling short of cap is the correct visible
+    //   behaviour when the board really has nothing left to paint.
     const plan: Array<{ r: number; c: number; color: CellValue }> = [];
-    for (let r = scanStartRow; r >= 0 && plan.length < cap; r--) {
+    const fillRow = (r: number) => {
         for (let c = 0; c < COLS && plan.length < cap; c++) {
             if (state.board[r][c] !== null) continue;
             if (exclude && exclude.has(`${r},${c}`)) continue;
-            plan.push({ r, c, color });
+            plan.push({ r, c, color: color as CellValue });
         }
+    };
+    // Pass 1 — colored rows, bottom-up.
+    for (let r = H - 1; r >= 0 && plan.length < cap; r--) {
+        let hasColored = false;
+        for (let c = 0; c < COLS; c++) {
+            if (isColoredCell(state.board[r][c])) { hasColored = true; break; }
+        }
+        if (hasColored) fillRow(r);
+    }
+    if (plan.length >= cap) return plan;
+    // Pass 2 — gray-only rows, bottom-up.
+    for (let r = H - 1; r >= 0 && plan.length < cap; r--) {
+        let hasColored = false, hasGray = false;
+        for (let c = 0; c < COLS; c++) {
+            const v = state.board[r][c];
+            if (isColoredCell(v)) { hasColored = true; break; }
+            if (v === 'X') hasGray = true;
+        }
+        if (!hasColored && hasGray) fillRow(r);
     }
     return plan;
 }
