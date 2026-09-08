@@ -76,7 +76,9 @@ export function applyDiagonalGravity(state: BoardState, reservedTop: number): Ce
     for (let r = 0; r < reservedTop; r++) {
         for (let c = 0; c < COLS; c++) {
             const v = state.board[r][c];
-            if (v && v !== 'X' && v !== 'H') origR.set(`${r}-${c}`, r);
+            // Track original row for every movable cell (colored + 'X').
+            // Only 'H' hail is truly pinned.
+            if (v && v !== 'H') origR.set(`${r}-${c}`, r);
         }
     }
 
@@ -93,7 +95,16 @@ export function applyDiagonalGravity(state: BoardState, reservedTop: number): Ce
                 const key = `${r}-${c}`;
                 if (visited.has(key)) continue;
                 const v = state.board[r][c];
-                if (!v || v === 'X' || v === 'H') continue;
+                // 'H' (hail) is a mid-air barrier that never moves. Everything
+            // else — colored cells AND 'X' gray-foundation cells — can
+            // fall under gravity if there's empty space below. In normal
+            // piece-lock physics `reservedTop` caps the scan so gravity
+            // never even considers the reserved-zone rows (their 'X'
+            // cells stay put). In the boom-catchup paths that pass
+            // reservedTop = state.board.length, this lets gray bricks
+            // above a boom-cleared foundation hole ALSO fall to the
+            // true bottom instead of hovering above the void.
+            if (!v || v === 'H') continue;
                 visited.add(key);
                 const cluster: Array<{ r: number; c: number }> = [{ r, c }];
                 const queue: Array<{ r: number; c: number }> = [{ r, c }];
@@ -106,7 +117,10 @@ export function applyDiagonalGravity(state: BoardState, reservedTop: number): Ce
                         const nKey = `${nr}-${nc}`;
                         if (visited.has(nKey)) continue;
                         const nv = state.board[nr][nc];
-                        if (!nv || nv === 'X' || nv === 'H') continue;
+                        // Cluster-connect ANY movable cell (colored + 'X').
+                        // Keeps a boom-torn structure — including surviving
+                        // gray bricks — falling together as one shape.
+                        if (!nv || nv === 'H') continue;
                         visited.add(nKey);
                         cluster.push({ r: nr, c: nc });
                         queue.push({ r: nr, c: nc });
