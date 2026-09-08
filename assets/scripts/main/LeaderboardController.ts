@@ -643,7 +643,15 @@ export class LeaderboardController extends Component {
         if (isLevel && this._pendingLevelAutoScroll && this.scrollView) {
             this._pendingLevelAutoScroll = false;
             const maxCleared = LevelProgress.maxClearedIdx;
-            const targetRow  = this.rowPool[maxCleared] ?? null;
+            // Rows are painted HIGH → LOW (see fetchEntriesAsync), so
+            // pool position for stage N is (TOTAL_LEVELS - 1 - N). The
+            // last-cleared floor's row therefore lives at pool position
+            // TOTAL_LEVELS - 1 - maxCleared. Falls back to scrollToTop
+            // when maxCleared = -1 (nothing cleared yet).
+            const TOTAL_LEVELS = 99;
+            const targetRow  = maxCleared >= 0
+                ? this.rowPool[TOTAL_LEVELS - 1 - maxCleared] ?? null
+                : null;
             const contentUi  = this.content?.getComponent(UITransform) ?? null;
             const viewUi     = this.scrollView.node.getComponent(UITransform) ?? null;
             const rowUi      = targetRow?.node.getComponent(UITransform) ?? null;
@@ -757,20 +765,20 @@ export class LeaderboardController extends Component {
             // for now — extra empty rows just render "—".
             const TOTAL_LEVELS = 99;
             const out: LeaderboardEntry[] = [];
-            // Iterate LOW → HIGH so the first array item is Stage 1
-            // (levelIdx 0) and the last is Stage 99. The scene's
+            // Iterate HIGH → LOW so the first array item is Stage 99
+            // (levelIdx 98) and the last is Stage 1. The scene's
             // Content Layout is Top-To-Bottom
             // (LayoutVerticalDirection.TOP_TO_BOTTOM = 1, matching
             // _verticalDirection: 1 in Game.scene), which places the
-            // FIRST child at the top of the container. Result: "관卡 1"
-            // at top, "관卡 99" at bottom — natural forward order
-            // matching all the other stage-number displays (level
-            // select label, fate preview, HUD floor).
+            // FIRST child at the top of the container. Result: "관卡 99"
+            // at top, "관卡 1" at bottom — reverse (endgame-first)
+            // order so the freshest / hardest floors are visible
+            // without scrolling.
             //
             // The `rank` field is the 1-based stage number (idx + 1),
             // used both as the row's rank column AND as the reverse
             // lookup key in onLevelRowClicked (levelIdx = rank - 1).
-            for (let idx = 0; idx < TOTAL_LEVELS; idx++) {
+            for (let idx = TOTAL_LEVELS - 1; idx >= 0; idx--) {
                 const top = byIdx.get(idx);
                 if (top) {
                     const mm = Math.floor(top.elapsedSec / 60).toString().padStart(2, '0');
