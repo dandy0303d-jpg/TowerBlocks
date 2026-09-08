@@ -1442,17 +1442,16 @@ export class LevelSelectStage3D extends Component {
     }
 
     /** Spawn a big number at the top of the visible stack, in place
-     *  of the top separator ring. Under forward stage numbering the
-     *  value shown is `currentLevelIdx` — the count of cleared stages,
-     *  which is also the 1-based stage number of the just-cleared top
-     *  cube (a fresh player at level 0 has cleared 0 → we hide the
-     *  counter; a player who just beat Stage 13 has currentLevelIdx=13
-     *  → the plaque reads "13"). Uses the same 3D pixel-font as the
-     *  per-level numbers but 1.6× the size, tinted a slightly cooler
-     *  gold. */
+     *  of the top separator ring. The value shown is the 1-based stage
+     *  number of the TOP-VISIBLE cube (`currentLevelIdx + 1`) — i.e.
+     *  the stage the player is about to play. Matches the leaderboard's
+     *  1-based stage numbering so both surfaces agree on which stage
+     *  is "current". Example: a player who just beat Stage 12 has
+     *  currentLevelIdx = 12 (next to play), so the plaque reads "13".
+     *  Fresh player (currentLevelIdx = 0) → plaque reads "1". */
     private spawnTopCounter(topLevelIdx: number): void {
-        const cleared = this.currentLevelIdx;
-        if (cleared <= 0) return;   // nothing cleared yet — hide the counter
+        const nextStage = this.currentLevelIdx + 1;
+        if (nextStage <= 0) return;   // defensive — should never trip
 
         // Position: LAY the number FLAT on top of the tower like a lid.
         // Digit rows now extend along Z (near→far from camera) instead
@@ -1463,7 +1462,7 @@ export class LevelSelectStage3D extends Component {
         const bodyStartRow   = FOUNDATION_ROWS + slotFromBottom * LEVEL_TOTAL_ROWS;
         const topY = (bodyStartRow + LEVEL_BODY_ROWS) * this.rowHeight;
 
-        const digits = String(cleared).split('');
+        const digits = String(nextStage).split('');
         const px = 0.6;                 // pixel edge length (world units)
         const gap = px;                  // 1-pixel gap between digits
         const digitW = 3 * px;
