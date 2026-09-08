@@ -1369,7 +1369,13 @@ export class GameState {
             // without this the downstream clearLines /
             // convertCompleteRowsToGray path skips gravity whenever
             // there are no full rows.
-            const fellMoves = applyDiagonalGravity(this.state, this.computeReservedTop());
+            //
+            // Pass state.board.length instead of the real reservedTop
+            // so falling cells drop THROUGH any holes the boom
+            // punched into the gray foundation and settle at the
+            // true bottom of the column. Surviving 'X' cells still
+            // act as obstacles.
+            const fellMoves = applyDiagonalGravity(this.state, this.state.board.length);
             if (fellMoves.length) this.hooks.onCellsFell?.(fellMoves);
         }
 
