@@ -88,7 +88,12 @@ let bgmMode:     AudioMode   = loadAudio(STORAGE_KEY_BGM, 'on');
 let sfxMode:     AudioMode   = loadAudio(STORAGE_KEY_SFX, 'on');
 // Volume levels: default to full unless the saved mode was 'off'
 // (respects the earlier on/off toggle for users upgrading).
-let bgmVolume:   number      = loadAudioVolume(STORAGE_KEY_BGM_VOL, bgmMode === 'off' ? 0 : 0.5);
+// Default lowered from 0.5 → 0.25: the mastered BGM stems come in
+// hotter than the SFX bus, so at 0.5 they were consistently drowning
+// out lock/clear feedback. Only affects fresh installs; users who
+// picked a level via the settings row keep their choice via
+// STORAGE_KEY_BGM_VOL.
+let bgmVolume:   number      = loadAudioVolume(STORAGE_KEY_BGM_VOL, bgmMode === 'off' ? 0 : 0.25);
 let sfxVolume:   number      = loadAudioVolume(STORAGE_KEY_SFX_VOL, sfxMode === 'off' ? 0 : 0.8);
 
 type Subscriber = () => void;
