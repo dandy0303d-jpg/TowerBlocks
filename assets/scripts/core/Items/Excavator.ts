@@ -42,36 +42,52 @@ export function activateExcavator(
     fromTop: boolean = false,
     rowCount: number = 3,
 ): boolean {
-    // 1. Find the first `rowCount` rows containing at least one solid
-    //    cell (colored OR gray 'X'). Scan direction depends on the
-    //    variant: bottom-up for the bottom family, top-down for the
-    //    top family. Gray-only reserved rows now count as valid targets
-    //    since the gray-is-bomb-proof rule was lifted.
+    // 1. Two-pass row picking. Colored rows are cleared FIRST; gray-only
+    //    reserved rows are only touched if pass 1 didn't produce enough.
+    //    "Colored row" = at least one isColoredCell entry. "Gray-only row"
+    //    = at least one 'X' but no colored cells.
+    //    Scan direction depends on the variant: bottom-up for the bottom
+    //    family, top-down for the top family.
     const target = Math.max(1, Math.floor(rowCount));
-    const rows: number[] = [];
     const isSolid = (v: CellValue | null) => isColoredCell(v) || v === 'X';
+    const rowKind = (r: number): 'colored' | 'gray' | 'empty' => {
+        let hasColored = false, hasGray = false;
+        for (let c = 0; c < COLS; c++) {
+            const v = state.board[r][c];
+            if (isColoredCell(v)) { hasColored = true; break; }
+            if (v === 'X') hasGray = true;
+        }
+        if (hasColored) return 'colored';
+        if (hasGray)    return 'gray';
+        return 'empty';
+    };
+
+    const H = state.board.length;
+    const orderedIdxs: number[] = [];
     if (fromTop) {
-        for (let r = 0; r < state.board.length && rows.length < target; r++) {
-            for (let c = 0; c < COLS; c++) {
-                if (isSolid(state.board[r][c])) {
-                    rows.push(r);
-                    break;
-                }
-            }
-        }
-        // `spliceRows` (below) requires rows in DESCENDING order; reverse.
-        rows.reverse();
+        for (let r = 0; r < H; r++) orderedIdxs.push(r);
     } else {
-        for (let r = state.board.length - 1; r >= 0 && rows.length < target; r--) {
-            for (let c = 0; c < COLS; c++) {
-                if (isSolid(state.board[r][c])) {
-                    rows.push(r);
-                    break;
-                }
-            }
-        }
+        for (let r = H - 1; r >= 0; r--) orderedIdxs.push(r);
     }
-    if (!rows.length) return false;
+
+    const coloredRows: number[] = [];
+    const grayRows:    number[] = [];
+    for (const r of orderedIdxs) {
+        const k = rowKind(r);
+        if      (k === 'colored') coloredRows.push(r);
+        else if (k === 'gray')    grayRows.push(r);
+    }
+
+    let picked = coloredRows.slice(0, target);
+    if (picked.length < target) {
+        picked = picked.concat(grayRows.slice(0, target - picked.length));
+    }
+    if (!picked.length) return false;
+
+    // spliceRows requires DESCENDING row indices — sort accordingly.
+    // (Mixing scan directions between colored and gray picks means we
+    // can't rely on the natural iteration order.)
+    const rows: number[] = picked.slice().sort((a, b) => b - a);
 
     // 2. Snapshot + clear each picked row's solid cells (colored + gray).
     for (const r of rows) {
