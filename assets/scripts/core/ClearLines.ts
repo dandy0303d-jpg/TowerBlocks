@@ -157,6 +157,17 @@ export function clearLines(
         onBoomActivated: (r, c, level, cleared) => hooks.onBoomTriggered?.(r, c, level, cleared),
     });
 
+    // Second gravity pass — booms punch NEW holes in the interior of
+    // the tower on their way out (each boom's diamond blast happens
+    // AFTER the step-6 gravity above), so cells sitting on top of a
+    // boom-cleared cell stay floating without another sweep. The
+    // other prop chains (chest / meteor / blizzard / wrecker / hail /
+    // rocket / gatling) either don't clear cells themselves or run
+    // their own gravity inline (wrecker), so booms are the one that
+    // needs this catch-up pass here.
+    const boomFellMoves = applyDiagonalGravity(state, reservedTop);
+    if (boomFellMoves.length && hooks.onCellsFell) hooks.onCellsFell(boomFellMoves);
+
     if (rowsToSplice.length > 0 || rowsToPartial.length > 0) {
         hooks.onClearSound?.(1);
     }
