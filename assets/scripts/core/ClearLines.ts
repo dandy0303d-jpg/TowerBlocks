@@ -165,7 +165,14 @@ export function clearLines(
     // rocket / gatling) either don't clear cells themselves or run
     // their own gravity inline (wrecker), so booms are the one that
     // needs this catch-up pass here.
-    const boomFellMoves = applyDiagonalGravity(state, reservedTop);
+    //
+    // Pass reservedTop = state.board.length so falling cells drop
+    // ALL THE WAY to the true bottom (through any nulls the boom
+    // punched into the reserved foundation). 'X' cells in the
+    // reserved zone still act as obstacles — falling cells stack on
+    // them — so an intact foundation catches drops at its top edge
+    // just like before.
+    const boomFellMoves = applyDiagonalGravity(state, state.board.length);
     if (boomFellMoves.length && hooks.onCellsFell) hooks.onCellsFell(boomFellMoves);
 
     if (rowsToSplice.length > 0 || rowsToPartial.length > 0) {
