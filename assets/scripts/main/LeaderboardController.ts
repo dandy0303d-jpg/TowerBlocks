@@ -58,8 +58,6 @@ import {
     Button,
     Prefab,
     ScrollView,
-    UITransform,
-    Vec2,
     Widget,
     instantiate,
     log,
@@ -69,7 +67,6 @@ import { t, subscribe as subscribeI18n } from '../core/i18n/I18n';
 import { LeaderboardRow } from './LeaderboardRow';
 import { BackKeyManager } from './BackKeyManager';
 import { getLang, subscribe as subscribeLang } from '../core/i18n/I18n';
-import { LevelProgress } from '../core/LevelProgress';
 import { fetchTop, fetchMyRank, fetchLevelTops, fetchMyLevelTimes, LeaderboardApiEntry, LeaderboardApiMode, LevelTopEntry, MyLevelTimeEntry, MyRankResult } from '../core/LeaderboardApi';
 import { PlayerProfile } from '../core/PlayerProfile';
 
@@ -630,57 +627,13 @@ export class LeaderboardController extends Component {
             if (layout) layout.updateLayout(true);
         }
         // Level tab: consume the auto-scroll request set by show() /
-        // onTabClick and land the player's LAST cleared row near the
-        // BOTTOM of the visible area, so the cleared rows above it
-        // fill most of the viewport (and a couple of uncleared rows
-        // peek in below as a hint of what's next). Previous version
-        // put the row near the top of the viewport, which hid all the
-        // cleared progress above it and read as "scrolled too far".
-        //
-        // Falls back to scrollToTop for a fresh player (nothing
-        // cleared, maxClearedIdx = -1) — Stage 1 at the top is the
-        // sensible starting view.
+        // onTabClick. With sparse-only rows (only floors that have a
+        // clear on record), the list is already sorted HIGH → LOW, so
+        // scrollToTop puts the highest cleared floor right at the top
+        // — the natural entry view. No per-row math needed.
         if (isLevel && this._pendingLevelAutoScroll && this.scrollView) {
             this._pendingLevelAutoScroll = false;
-            const maxCleared = LevelProgress.maxClearedIdx;
-            // Rows are painted HIGH → LOW (see fetchEntriesAsync), so
-            // pool position for stage N is (TOTAL_LEVELS - 1 - N). The
-            // last-cleared floor's row therefore lives at pool position
-            // TOTAL_LEVELS - 1 - maxCleared. Falls back to scrollToTop
-            // when maxCleared = -1 (nothing cleared yet).
-            const TOTAL_LEVELS = 99;
-            const targetRow  = maxCleared >= 0
-                ? this.rowPool[TOTAL_LEVELS - 1 - maxCleared] ?? null
-                : null;
-            const contentUi  = this.content?.getComponent(UITransform) ?? null;
-            const viewUi     = this.scrollView.node.getComponent(UITransform) ?? null;
-            const rowUi      = targetRow?.node.getComponent(UITransform) ?? null;
-            if (maxCleared >= 0 && targetRow && contentUi && viewUi && rowUi) {
-                // Content anchor is typically (0.5, 1) — top-center —
-                // so a row painted at content-local y = -rowYFromTop
-                // sits `rowYFromTop` pixels below the content's top
-                // edge. scrollView.scrollToOffset(0, y) then treats y
-                // as "shift the content up by y pixels" so the point
-                // at y from content top lands at the top of the view.
-                //
-                // We want the row's BOTTOM edge to sit ~1 row above
-                // the view's bottom edge — the row itself plus one
-                // extra row's worth of uncleared "—" visible below it.
-                const rowYFromTop = -targetRow.node.position.y;
-                const rowH        = rowUi.height;
-                const viewH       = viewUi.height;
-                const contentH    = contentUi.height;
-                const maxScroll   = Math.max(0, contentH - viewH);
-                // Row bottom (in "distance from content top") =
-                // rowYFromTop + rowH/2 (with row anchor at center);
-                // we want that bottom to be viewH - rowH*1 from top
-                // of view → offset = rowYFromTop + rowH/2 - (viewH - rowH).
-                const y = rowYFromTop + rowH / 2 - (viewH - rowH);
-                const clamped = Math.max(0, Math.min(maxScroll, y));
-                this.scrollView.scrollToOffset(new Vec2(0, clamped), 0);
-            } else {
-                this.scrollView.scrollToTop(0);
-            }
+            this.scrollView.scrollToTop(0);
         }
     }
 
@@ -778,39 +731,30 @@ export class LeaderboardController extends Component {
             // The `rank` field is the 1-based stage number (idx + 1),
             // used both as the row's rank column AND as the reverse
             // lookup key in onLevelRowClicked (levelIdx = rank - 1).
+            // Only emit rows for floors that HAVE a top clear on record.
+            // The old behavior filled the whole 1..99 grid with "—"
+            // placeholders, which turned the leaderboard into a mostly-
+            // empty list on a fresh server. Sparse-only is cleaner and
+            // avoids scrolling through blanks.
             for (let idx = TOTAL_LEVELS - 1; idx >= 0; idx--) {
                 const top = byIdx.get(idx);
-                if (top) {
-                    const mm = Math.floor(top.elapsedSec / 60).toString().padStart(2, '0');
-                    const ss = (top.elapsedSec % 60).toString().padStart(2, '0');
-                    out.push({
-                        rank:       idx + 1,   // floor number (1..99)
-                        rankLabel:  t('level.floorName', { n: idx + 1 }),  // "스테이지 99층" / "Level 99"
-                        name:       top.name,
-                        score:      top.elapsedSec,     // raw seconds — honest sort field
-                        scoreLabel: `${mm}:${ss}`,     // painter-facing display
-                        avatarIdx:  top.avatarIdx > 0 ? top.avatarIdx : null,
-                        // Level tab: isYou is NOT "you own this row" — it's
-                        // "this row is the currently-selected floor". Kept
-                        // false here; paintRows applies the selection-based
-                        // override at render time.
-                        isYou:      false,
-                        hideBadges: true,   // no gold/silver/bronze on floor number
-                    });
-                } else {
-                    // No clear yet for this floor — empty placeholder row.
-                    // LeaderboardRow paints "—" for empty name / score.
-                    out.push({
-                        rank:       idx + 1,
-                        rankLabel:  t('level.floorName', { n: idx + 1 }),
-                        name:       '—',
-                        score:      0,
-                        scoreLabel: '—',
-                        avatarIdx:  null,
-                        isYou:      false,
-                        hideBadges: true,
-                    });
-                }
+                if (!top) continue;   // skip floors with no clear yet
+                const mm = Math.floor(top.elapsedSec / 60).toString().padStart(2, '0');
+                const ss = (top.elapsedSec % 60).toString().padStart(2, '0');
+                out.push({
+                    rank:       idx + 1,   // floor number (1..99)
+                    rankLabel:  t('level.floorName', { n: idx + 1 }),
+                    name:       top.name,
+                    score:      top.elapsedSec,     // raw seconds — honest sort field
+                    scoreLabel: `${mm}:${ss}`,     // painter-facing display
+                    avatarIdx:  top.avatarIdx > 0 ? top.avatarIdx : null,
+                    // Level tab: isYou is NOT "you own this row" — it's
+                    // "this row is the currently-selected floor". Kept
+                    // false here; paintRows applies the selection-based
+                    // override at render time.
+                    isYou:      false,
+                    hideBadges: true,   // no gold/silver/bronze on floor number
+                });
             }
             return out;
         }
