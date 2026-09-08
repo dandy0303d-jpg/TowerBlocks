@@ -16,6 +16,15 @@ buildscript {
     }
     dependencies {
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.21"
+        // Firebase plugin classpaths — Cocos IGNORES the top-level
+        // `native/engine/android/build.gradle` buildscript block (see
+        // the note above), so the Google Services + Crashlytics
+        // plugins MUST also be declared here or `apply plugin:
+        // 'com.google.gms.google-services'` below fails with
+        // "Plugin with id ... not found". Harmless when Firebase is
+        // disabled (no google-services.json → plugins aren't applied).
+        classpath 'com.google.gms:google-services:4.4.2'
+        classpath 'com.google.firebase:firebase-crashlytics-gradle:3.0.2'
     }
 }
 
