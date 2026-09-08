@@ -30,3 +30,19 @@
  *  or entry point that must not ship to players (level reset, one-key
  *  win, admin backdoors, mock data, etc). */
 export const IS_DEV_BUILD: boolean = false;
+
+/** Channel identifier — set to one of:
+ *    'dev'           on develop
+ *    'main'          on main
+ *    'google_play'   on channel/google-play
+ *    'app_store'     on channel/app-store
+ *    'onestore'      on channel/onestore
+ *    'onestore_beta' on channel/onestore-beta
+ *
+ *  Surfaces in Firebase Analytics as a user-property so the dashboard
+ *  can slice DAU / retention / revenue by channel. Set once at boot
+ *  by AnalyticsApi.setUserProperty('channel', BUILD_CHANNEL).
+ *
+ *  Merge conflict on this file is expected and desired (same convention
+ *  as IS_DEV_BUILD above) — always keep the TARGET branch's value. */
+export const BUILD_CHANNEL: string = 'app_store';

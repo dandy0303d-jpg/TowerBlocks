@@ -37,6 +37,7 @@ import { submitScore, submitLevelTime } from '../core/LeaderboardApi';
 // isn't required; leaving the calls unconditional keeps the two
 // branches (Apple / Android future) merge-friendly.
 import { GameCenter, GC_LEADERBOARD, GC_ACHIEVEMENT } from '../channels/apple/GameCenter';
+import { AnalyticsApi } from '../core/AnalyticsApi';
 import { buildTutorialLevel } from '../core/TutorialLevelData';
 // Settings.gestureMode currently unused — the gesture system was simplified
 // to "left-half tap/hold/drag" (no flick branch). Import kept commented for
@@ -687,10 +688,21 @@ export class GameController extends Component {
                         this._gameOverAdCounter = 0;
                         void (async () => {
                             const { AdManager } = await import('../channels/apple/AdManager');
+                            AnalyticsApi.logCustom('ad_shown', { placement: 'game_over_interstitial' });
                             const res = await AdManager.showInterstitial();
                             if (!res.success) log(`[Ads] interstitial not shown — ${res.kind}: ${res.error}`);
                         })();
                     }
+                    // ---- Firebase: stage_fail (custom event) ----
+                    // Firebase's predefined `level_end` doesn't cover
+                    // "failed with a distinct reason", so we log a
+                    // custom stage_fail with the fail-reason string
+                    // + mode + level for slicing.
+                    AnalyticsApi.logCustom('stage_fail', {
+                        mode:   String(this.gameState?.mode ?? 'unknown'),
+                        level:  this._activeLevelIdx + 1,
+                        reason: String(r ?? 'unknown'),
+                    });
                     // ---- Leaderboard submission ----
                     // Endless / blind: submit the tower height reached this run.
                     // Level mode game-over is a FAIL, not a completion — skip.
@@ -746,6 +758,9 @@ export class GameController extends Component {
                             if (!r.success) console.warn('[TowerBlocks][GC] achievement report failed:', r.error);
                             else            log(`[TowerBlocks][GC] achievement progress = ${pct.toFixed(1)}%`);
                         });
+                        // Firebase predefined event — populates Progression
+                        // report in the console (stage-N clear rate + time).
+                        AnalyticsApi.logLevelEnd('level', this._activeLevelIdx + 1, elapsedSec, true);
                     }
                     // `level_win` SFX intentionally NOT played here —
                     // line_clear + shatter audio is still playing and
@@ -3497,6 +3512,8 @@ export class GameController extends Component {
             log(`[TowerBlocks] level ${idx + 1} not found (have ${this.flatLevels.length} levels).`);
             return;
         }
+        // Firebase predefined event — populates Progression report.
+        AnalyticsApi.logLevelStart('level', idx + 1);
         try {
             const lvl = validateLevelData(this.flatLevels[idx]);
             this.clearPendingPopups();
@@ -4150,6 +4167,11 @@ export class GameController extends Component {
         this.clearPendingPopups();
         this._activeLevelIdx = -1;
         this.clearBlindHudArtifacts();
+        // Endless mode has no "level" per se — log with level=0 so
+        // level_end for endless (fired from submitEndlessHeight, if
+        // we add it there) can match. Not counted in Progression
+        // funnel since 'endless:0' won't match any level_start row.
+        AnalyticsApi.logCustom('mode_start', { mode: 'endless' });
         // Reset the per-run auto-submit tracker so the first
         // ENDLESS_AUTO_SUBMIT_INTERVAL boundary of the NEW run fires
         // even if the previous run had already submitted at higher
@@ -4240,6 +4262,7 @@ export class GameController extends Component {
         if (!this.gameState) return;
         this.clearPendingPopups();
         this._activeLevelIdx = -1;
+        AnalyticsApi.logCustom('mode_start', { mode: 'blind' });
         // Blind mode shares the endless auto-submit tracker (same
         // `submitEndlessHeightIfApplicable` code path via
         // onEndlessMilestone) — reset per run so the first 50-layer
@@ -4306,6 +4329,16 @@ export class GameController extends Component {
         log(`[TowerBlocks] submitting ${mode} score ${score} to leaderboard (${reason})`);
         submitScore(mode as 'endless' | 'blind', score).catch(err => {
             console.warn('[TowerBlocks] leaderboard submit failed:', err.message);
+        });
+        // Firebase mode-run summary event. Carries the final height +
+        // exit reason so we can look at engagement (avg run height per
+        // mode) and drop-off (quits vs deaths). Not the Firebase
+        // predefined `post_score` because we want the mode filter
+        // baked into a single event name.
+        AnalyticsApi.logCustom('mode_end', {
+            mode,
+            score,
+            reason,
         });
     }
 

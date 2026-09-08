@@ -23,6 +23,7 @@
 
 import { sys } from 'cc';
 import { registerPlayer, updatePlayerProfile, fetchPlayerProfile, refreshPlayerToken } from './LeaderboardApi';
+import { AnalyticsApi } from './AnalyticsApi';
 import type { DailyFreeState } from './LeaderboardApi';
 import { setBearerToken } from './Http';
 import { GameCenter } from '../channels/apple/GameCenter';
@@ -439,6 +440,11 @@ class Profile {
             const storedToken = sys.localStorage.getItem(TOKEN_KEY);
             const storedExp   = parseInt(sys.localStorage.getItem(TOKEN_EXP_KEY) || '0', 10);
             if (storedToken) setBearerToken(storedToken);
+            // Wire the returning-player uuid into Firebase so events
+            // are attributed correctly. Safe even if data collection
+            // is still gated by consent — Firebase just holds the id.
+            AnalyticsApi.setUserId(sys.localStorage.getItem(UUID_KEY) || null);
+            AnalyticsApi.logCustom('login_success', { method: 'stored_token' });
             const now = Math.floor(Date.now() / 1000);
             const secondsLeft = storedExp - now;
             if (!storedToken || secondsLeft <= 0) {
@@ -498,6 +504,16 @@ class Profile {
             this._uuid = uuid;
             this._name = nickname;
             this._accountType = 'anonymous';
+            // First-time registration → tell Firebase who the player is
+            // + fire a lifetime-once event we can filter on later. Both
+            // events are also fired even if analytics is currently
+            // consent-gated: SDK holds the id and drops the event body,
+            // no PII leaks.
+            AnalyticsApi.setUserId(uuid);
+            AnalyticsApi.logCustom('player_register', {
+                account_type: 'anonymous',
+            });
+            AnalyticsApi.logCustom('login_success', { method: 'register' });
             console.log('[PlayerProfile] registered with server:', uuid, nickname);
 
             // Opportunistically link Game Center to this fresh uuid so
@@ -508,6 +524,9 @@ class Profile {
             }
         } catch (err) {
             console.warn('[PlayerProfile] server register failed — falling back to local uuid, will retry next launch. Error:', err);
+            AnalyticsApi.logError(err instanceof Error ? err : String(err), {
+                where: 'PlayerProfile.ensureRegistered',
+            });
             void this.uuid;
         }
     }

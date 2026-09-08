@@ -80,6 +80,17 @@ Thumbs.db
 *.swp
 
 #//////////////////////////
+# Firebase — config files carry project-specific API keys.
+# Each developer / build machine drops these in locally.
+# See docs/FIREBASE.md for setup + where to place them.
+#//////////////////////////
+native/engine/android/app/google-services.json
+native/engine/ios/GoogleService-Info.plist
+# Guard against strays anywhere else in the tree
+**/google-services.json
+**/GoogleService-Info.plist
+
+#//////////////////////////
 # Stray external repos (unrelated to the game — kept out of history)
 #//////////////////////////
 open-source-mac-os-apps/

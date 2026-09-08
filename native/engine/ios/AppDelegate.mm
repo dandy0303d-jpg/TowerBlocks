@@ -42,6 +42,11 @@
 // #import "service/ads/AppLovinBridgeGlue.h"
 #import "service/ads/AdMobBridgeGlue.h"
 #import "service/ClipboardBridgeGlue.h"
+// Firebase — Analytics, Crashlytics, Remote Config. The bridge glue
+// lives on the channel/app-store branch (like other iOS-native
+// bridges); on other branches this import will fail to resolve, but
+// only channel/app-store ever builds iOS anyway.
+#import "service/FirebaseBridgeGlue.h"
 #import <AppTrackingTransparency/AppTrackingTransparency.h>
 
 @implementation AppDelegate
@@ -52,6 +57,16 @@
 #pragma mark Application lifecycle
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+    // Firebase must be [FIRApp configure]'d BEFORE any Firebase-touching
+    // code runs. Doing it first thing in didFinishLaunching keeps
+    // Crashlytics able to catch early crashes and Analytics able to
+    // log the first `session_start`. install() is a no-op when
+    // GoogleService-Info.plist is missing from the app bundle, so
+    // dev machines without the plist just get an inert bridge.
+    // Data collection stays OFF until AnalyticsApi.setEnabled(true)
+    // fires from the consent flow (scheme A).
+    [FirebaseBridgeGlue install];
+
     [[SDKWrapper shared] application:application didFinishLaunchingWithOptions:launchOptions];
     appDelegateBridge = [[AppDelegateBridge alloc] init];
     
