@@ -204,44 +204,59 @@ export function computeMortarFallbackPlan(
             ?? (BAG_TYPES[Math.floor(rng() * BAG_TYPES.length)] as CellValue);
     }
 
-    // Two-pass fill (bottom-up in each pass):
-    //   Pass 1 — rows that contain any colored cell. Fill their null
-    //            cells first; these are where the player is actively
-    //            building the task pattern so extra fills there matter
-    //            most.
+    // Two-pass fill (bottom-up in each pass) to PICK which rows the
+    // mortar wants to serve:
+    //   Pass 1 — rows that contain any colored cell.
     //   Pass 2 — rows that are gray-only ('X' present, no colored).
-    //            Fill their null holes (designer-authored gaps in the
-    //            reserved foundation) only if pass 1 didn't reach cap.
-    //   Empty rows (no colored and no 'X') are NEVER touched — filling
-    //   them would place floating cells that read as "mortar
-    //   misfired". Falling short of cap is the correct visible
-    //   behaviour when the board really has nothing left to paint.
-    const plan: Array<{ r: number; c: number; color: CellValue }> = [];
+    //   Empty rows are never TARGETED here, but a targeted drop may
+    //   still fall THROUGH an empty row below during the resting-
+    //   position adjustment at the end.
+    const targets: Array<{ r: number; c: number; color: CellValue }> = [];
     const fillRow = (r: number) => {
-        for (let c = 0; c < COLS && plan.length < cap; c++) {
+        for (let c = 0; c < COLS && targets.length < cap; c++) {
             if (state.board[r][c] !== null) continue;
             if (exclude && exclude.has(`${r},${c}`)) continue;
-            plan.push({ r, c, color: color as CellValue });
+            targets.push({ r, c, color: color as CellValue });
         }
     };
     // Pass 1 — colored rows, bottom-up.
-    for (let r = H - 1; r >= 0 && plan.length < cap; r--) {
+    for (let r = H - 1; r >= 0 && targets.length < cap; r--) {
         let hasColored = false;
         for (let c = 0; c < COLS; c++) {
             if (isColoredCell(state.board[r][c])) { hasColored = true; break; }
         }
         if (hasColored) fillRow(r);
     }
-    if (plan.length >= cap) return plan;
     // Pass 2 — gray-only rows, bottom-up.
-    for (let r = H - 1; r >= 0 && plan.length < cap; r--) {
-        let hasColored = false, hasGray = false;
-        for (let c = 0; c < COLS; c++) {
-            const v = state.board[r][c];
-            if (isColoredCell(v)) { hasColored = true; break; }
-            if (v === 'X') hasGray = true;
+    if (targets.length < cap) {
+        for (let r = H - 1; r >= 0 && targets.length < cap; r--) {
+            let hasColored = false, hasGray = false;
+            for (let c = 0; c < COLS; c++) {
+                const v = state.board[r][c];
+                if (isColoredCell(v)) { hasColored = true; break; }
+                if (v === 'X') hasGray = true;
+            }
+            if (!hasColored && hasGray) fillRow(r);
         }
-        if (!hasColored && hasGray) fillRow(r);
+    }
+    // Resting-position pass — for each target, drop the intended row
+    // DOWN to the lowest empty cell in the same column at-or-below it.
+    // Otherwise a mortar drop aimed at a colored row above an empty
+    // one (or above a gray row that has holes below) would sit
+    // floating on top of the empty space. Claimed cells stack so
+    // multiple drops in the same column pile up correctly.
+    const claimed = new Set<string>();
+    if (exclude) for (const k of exclude) claimed.add(k);
+    const plan: Array<{ r: number; c: number; color: CellValue }> = [];
+    for (const t of targets) {
+        let finalR = t.r;
+        for (let r = t.r + 1; r < H; r++) {
+            if (state.board[r][t.c] !== null) break;
+            if (claimed.has(`${r},${t.c}`))    break;
+            finalR = r;
+        }
+        claimed.add(`${finalR},${t.c}`);
+        plan.push({ r: finalR, c: t.c, color: t.color });
     }
     return plan;
 }
