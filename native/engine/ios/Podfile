@@ -46,6 +46,22 @@ target 'CocosGame' do
   # the base pod. Pin to a known-good major version to avoid surprise
   # breaking changes; bump after testing with each Google release.
   pod 'Google-Mobile-Ads-SDK', '~> 11.0'
+
+  # ─── Firebase — Analytics, Crashlytics, Remote Config ────────
+  # These three cover the tetritower analytics needs (event logging,
+  # crash reporting, live-remote flag flips). The Firebase iOS SDK
+  # transitively pulls FirebaseCore + FirebaseInstallations, both
+  # required by the three modules listed. Pin to a known-good
+  # version and bump after testing each Firebase release.
+  #
+  # Requires GoogleService-Info.plist to live in the main bundle —
+  # drop it into native/engine/ios/ locally (not in git); Cocos
+  # copies it into the generated Xcode project on each build.
+  # See FirebaseBridgeGlue.mm install() — missing plist makes the
+  # bridge inert, the app still boots.
+  pod 'FirebaseAnalytics',    '~> 11.6'
+  pod 'FirebaseCrashlytics',  '~> 11.6'
+  pod 'FirebaseRemoteConfig', '~> 11.6'
 end
 
 # Silence Xcode 15 sandbox warnings on newer CocoaPods versions and

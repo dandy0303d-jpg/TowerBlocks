@@ -72,6 +72,11 @@ list(APPEND CC_ALL_SOURCES
     ${CC_PROJECT_DIR}/service/ads/AdMobBridgeGlue.mm
     ${CC_PROJECT_DIR}/service/ClipboardBridgeGlue.h
     ${CC_PROJECT_DIR}/service/ClipboardBridgeGlue.mm
+    # Firebase bridge — Analytics, Crashlytics, Remote Config.
+    # No Swift companion here; the .mm uses `@import Firebase*` module
+    # imports directly, so all logic lives in one file.
+    ${CC_PROJECT_DIR}/service/FirebaseBridgeGlue.h
+    ${CC_PROJECT_DIR}/service/FirebaseBridgeGlue.mm
 )
 
 # Bundle the privacy manifest (Apple 2024-05 requirement) into the
