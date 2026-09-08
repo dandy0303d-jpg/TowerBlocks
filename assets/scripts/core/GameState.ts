@@ -1116,35 +1116,20 @@ export class GameState {
                 consumed = activateExcavator(this.state, this.computeReservedTop(), this.makeClearHooks(), true, 3);
                 break;
             case 'shapeshifter':
-                // Fire the picker unconditionally — even when there's no
-                // live piece yet (this happens when the energy picker
-                // deferred the next spawn to wait for FX and the player
-                // selects shapeshifter right there). The apply callback
-                // decides where to route the new shape based on whether
-                // the current piece carries embedded props (bombs / booms
-                // / wreckers) — those are precious and losing them to a
-                // shapeshifter transform feels bad.
-                //   - current piece has NO embed props → swap current
-                //   - current piece has embed props   → keep current
-                //     playing, apply the shape to the NEXT piece instead
-                //   - no current piece                → apply to NEXT
+                // Always route the shape swap to the NEXT piece — never
+                // yank the piece the player is actively steering. Applies
+                // in every mode (endless / blind / level) for consistency.
+                // Embedded next-piece props are dropped since they were
+                // assigned to a different tetromino shape and would
+                // misalign against the new outline.
                 consumed = true;
                 this.hooks.onShapeshifterRequest?.((newType: PieceType) => {
-                    const cur = this.current;
-                    const curHasProps = cur ? hasEmbedProps(cur) : false;
-                    if (cur && !curHasProps) {
-                        this.current = applyShapeshifterPick(cur, newType);
-                    } else {
-                        // Route to next piece: replace nextType, drop any
-                        // next-piece embed props (they were assigned to a
-                        // DIFFERENT tetromino shape and would misalign).
-                        this.nextType         = newType;
-                        this.nextShape        = null;
-                        this.nextBombsShape   = makeEmptyBombs(SHAPES[newType]);
-                        this.nextBoomsShape   = makeEmptyBooms(SHAPES[newType]);
-                        this.nextWreckersShape = makeEmptyWreckers(SHAPES[newType]);
-                        this.hooks.onNextChanged?.(this.nextType);
-                    }
+                    this.nextType          = newType;
+                    this.nextShape         = null;
+                    this.nextBombsShape    = makeEmptyBombs(SHAPES[newType]);
+                    this.nextBoomsShape    = makeEmptyBooms(SHAPES[newType]);
+                    this.nextWreckersShape = makeEmptyWreckers(SHAPES[newType]);
+                    this.hooks.onNextChanged?.(this.nextType);
                 });
                 break;
             case 'rewind':
