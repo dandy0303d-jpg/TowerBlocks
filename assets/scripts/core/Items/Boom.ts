@@ -5,10 +5,12 @@
  * boom fires its diamond.
  *
  * Effect: every cell within Manhattan distance `level` of the host gets
- * cleared. Stones take 1 HP. The gray reserved zone ('X') is bomb-proof.
- * Other props (chest / meteor / wrecker / hail / rocket / gatling / other
- * booms) sitting in the blast zone get orphaned when their host clears —
- * the caller's `processClearedXxx` chain catches them.
+ * cleared. Stones take 1 HP. Gray reserved cells ('X') are also cleared
+ * (the foundation-is-bomb-proof rule was lifted so magic + embedded
+ * props can chew through the gray zone). Other props (chest / meteor /
+ * wrecker / hail / rocket / gatling / other booms) sitting in the blast
+ * zone get orphaned when their host clears — the caller's
+ * `processClearedXxx` chain catches them.
  */
 
 import { COLS, CellValue } from '../Constants';
@@ -36,8 +38,9 @@ export function activateBoom(
         const w = radius - Math.abs(dr);
         for (let dc = -w; dc <= w; dc++) {
             const c = wrap(centerC + dc);
-            // Reserved zone is bomb-proof.
-            if (state.board[r][c] === 'X') continue;
+            // Gray reserved cells are NO LONGER bomb-proof — the
+            // restriction was lifted so magic + embedded props can
+            // punch through the foundation like they do the task zone.
             // Stone HP decrement — surviving stones keep their host cell.
             const hp = state.boardStones && state.boardStones[r] ? state.boardStones[r][c] : null;
             if (hp !== null && hp > 0) {

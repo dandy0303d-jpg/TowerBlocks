@@ -169,18 +169,19 @@ export class RocketState {
             const newIntY = Math.floor(rk.y);
 
             let consumed = false;
+            const H = state.board.length;
             const scanFrom = Math.max(0, prevIntY);
-            const scanTo   = Math.min(reservedTop - 1, newIntY);
+            const scanTo   = Math.min(H - 1, newIntY);
             for (let r = scanFrom; r <= scanTo; r++) {
                 const v = state.board[r][rk.col];
                 if (v === null) continue;
-                // Any non-null cell stops the rocket. If it's colorable,
-                // clear the cell + fire prop hooks (chest grants, boom
-                // detonates, etc.); if it's gray reserved / hail, the
-                // rocket just absorbs into it — bullet vanishes and
-                // plays a shatter FX in place, but the target cell
-                // survives (the wall / hail is bomb-proof).
-                if (isColoredCell(v)) {
+                // Any non-null cell stops the rocket. Colored AND gray
+                // 'X' cells both get cleared (gray-is-bomb-proof was
+                // lifted so magic + embedded props chew through the
+                // foundation). Hail 'H' still absorbs the rocket
+                // without being cleared — hail is a separate barrier
+                // system, not the reserved zone.
+                if (isColoredCell(v) || v === 'X') {
                     state.board[r][rk.col] = null;
                     triggerHitProps(state, r, rk.col, hooks, reservedTop);
                 }
@@ -192,7 +193,7 @@ export class RocketState {
             }
             if (consumed) continue;
             // Off the bottom without hitting anything → fizzle.
-            if (rk.y >= reservedTop) {
+            if (rk.y >= H) {
                 this.falling.splice(i, 1);
                 resolved++;
             }

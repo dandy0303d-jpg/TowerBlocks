@@ -106,7 +106,12 @@ export function pickWreckerPlan(
     const candidates: Array<{ r: number; c: number }> = [];
     for (let r = 0; r < state.board.length; r++) {
         for (let c = 0; c < COLS; c++) {
-            if (!isColoredCell(state.board[r][c])) continue;
+            // Gray 'X' cells are eligible targets now — the
+            // gray-is-bomb-proof rule was lifted, and wrecker uses the
+            // same broad "any solid cell" definition as the other
+            // magic + embedded props.
+            const v = state.board[r][c];
+            if (!isColoredCell(v) && v !== 'X') continue;
             if (state.boardBombs     && state.boardBombs[r]     && state.boardBombs[r][c])     continue;
             if (state.boardBooms     && state.boardBooms[r]     && state.boardBooms[r][c])     continue;
             if (state.boardChests    && state.boardChests[r]    && state.boardChests[r][c])    continue;

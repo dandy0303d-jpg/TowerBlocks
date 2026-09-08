@@ -42,15 +42,18 @@ export function activateExcavator(
     fromTop: boolean = false,
     rowCount: number = 3,
 ): boolean {
-    // 1. Find the first `rowCount` rows containing at least one colored cell.
-    //    Scan direction depends on the variant: bottom-up for the bottom
-    //    family, top-down for the top family.
+    // 1. Find the first `rowCount` rows containing at least one solid
+    //    cell (colored OR gray 'X'). Scan direction depends on the
+    //    variant: bottom-up for the bottom family, top-down for the
+    //    top family. Gray-only reserved rows now count as valid targets
+    //    since the gray-is-bomb-proof rule was lifted.
     const target = Math.max(1, Math.floor(rowCount));
     const rows: number[] = [];
+    const isSolid = (v: CellValue | null) => isColoredCell(v) || v === 'X';
     if (fromTop) {
         for (let r = 0; r < state.board.length && rows.length < target; r++) {
             for (let c = 0; c < COLS; c++) {
-                if (isColoredCell(state.board[r][c])) {
+                if (isSolid(state.board[r][c])) {
                     rows.push(r);
                     break;
                 }
@@ -61,7 +64,7 @@ export function activateExcavator(
     } else {
         for (let r = state.board.length - 1; r >= 0 && rows.length < target; r--) {
             for (let c = 0; c < COLS; c++) {
-                if (isColoredCell(state.board[r][c])) {
+                if (isSolid(state.board[r][c])) {
                     rows.push(r);
                     break;
                 }
@@ -70,17 +73,17 @@ export function activateExcavator(
     }
     if (!rows.length) return false;
 
-    // 2. Snapshot + clear each picked row's colored cells (gray X stays).
+    // 2. Snapshot + clear each picked row's solid cells (colored + gray).
     for (const r of rows) {
         const content: (CellValue | null)[] = new Array(COLS).fill(null);
         for (let c = 0; c < COLS; c++) {
-            if (isColoredCell(state.board[r][c])) {
+            if (isSolid(state.board[r][c])) {
                 content[c] = state.board[r][c];
             }
         }
         hooks.onPartialShatter?.(r, content);
         for (let c = 0; c < COLS; c++) {
-            if (isColoredCell(state.board[r][c])) {
+            if (isSolid(state.board[r][c])) {
                 state.board[r][c] = null;
                 if (state.boardBombs && state.boardBombs[r])   state.boardBombs[r][c]   = null;
                 if (state.boardStones && state.boardStones[r]) state.boardStones[r][c]  = null;
