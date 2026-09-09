@@ -57,6 +57,42 @@ if (file('google-services.json').exists()) {
 RES_PATH = RES_PATH.replace("\\", "/")
 COCOS_ENGINE_PATH = COCOS_ENGINE_PATH.replace("\\", "/")
 
+// ─── Auto-bumped versionCode + versionName ─────────────────────
+// Persisted in app/version.properties (tracked in git, one file per
+// channel branch so each store keeps its own numbering line). Each
+// time we invoke a task that produces a shippable artifact
+// (assemble* / bundle*), versionCode += 1 and versionName's patch
+// segment += 1. Sync-only invocations (Android Studio's Gradle sync,
+// clean, cache tasks) do NOT bump — that would spin the counter on
+// every IDE open.
+def versionProps    = new Properties()
+def versionPropFile = file('version.properties')
+if (versionPropFile.exists()) {
+    versionPropFile.withReader { versionProps.load(it) }
+} else {
+    versionProps.setProperty('VERSION_CODE', '1')
+    versionProps.setProperty('VERSION_NAME', '1.0.0')
+}
+def _vCode = versionProps.getProperty('VERSION_CODE').toInteger()
+def _vName = versionProps.getProperty('VERSION_NAME')
+def _shouldBump = gradle.startParameter.taskNames.any { n ->
+    def s = n.toLowerCase()
+    s.contains('assemble') || s.contains('bundle') || s.contains('install')
+}
+if (_shouldBump) {
+    _vCode += 1
+    def parts = _vName.tokenize('.')
+    while (parts.size() < 3) parts << '0'
+    parts[2] = ((parts[2] as int) + 1).toString()
+    _vName = parts.join('.')
+    versionProps.setProperty('VERSION_CODE', _vCode.toString())
+    versionProps.setProperty('VERSION_NAME', _vName)
+    versionPropFile.withWriter { versionProps.store(it, null) }
+    logger.lifecycle("[version] bumped to versionCode=${_vCode} versionName=${_vName}")
+}
+project.ext.autoVersionCode = _vCode
+project.ext.autoVersionName = _vName
+
 buildDir = "${RES_PATH}/proj/build/${project.name ==~ /^[_a-zA-Z0-9-]+$/ ? project.name : 'CocosGame'}"
 android {
     compileSdkVersion PROP_COMPILE_SDK_VERSION.toInteger()
@@ -85,8 +121,10 @@ android {
         // Build panel (currently 34 on this machine — that's what
         // triggered the Play Console "target API 36 이상" error).
         targetSdkVersion 36
-        versionCode 1
-        versionName "1.0"
+        // Sourced from app/version.properties, auto-bumped above when
+        // an assemble/bundle/install task is on the graph.
+        versionCode project.ext.autoVersionCode
+        versionName project.ext.autoVersionName
 
         externalNativeBuild {
             cmake {
