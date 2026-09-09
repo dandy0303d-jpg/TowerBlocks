@@ -75,9 +75,16 @@ if (versionPropFile.exists()) {
 }
 def _vCode = versionProps.getProperty('VERSION_CODE').toInteger()
 def _vName = versionProps.getProperty('VERSION_NAME')
+// Only bump on RELEASE artifact tasks — debug builds (Studio Run,
+// installDebug, assembleDebug) leave version.properties alone so
+// gradle's incremental cache stays intact and Run stays fast.
 def _shouldBump = gradle.startParameter.taskNames.any { n ->
     def s = n.toLowerCase()
-    s.contains('assemble') || s.contains('bundle') || s.contains('install')
+    // assembleRelease / bundleRelease / packageRelease / installRelease,
+    // plus the top-level meta-tasks "assemble" / "bundle" when
+    // invoked bare (some CI scripts do that).
+    s.contains('release') && (s.contains('assemble') || s.contains('bundle') || s.contains('package') || s.contains('install'))
+        || s == 'assemble' || s == 'bundle'
 }
 if (_shouldBump) {
     _vCode += 1
