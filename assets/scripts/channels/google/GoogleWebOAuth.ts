@@ -425,7 +425,14 @@ export const GoogleWebOAuth = {
 /** POST the authorization code + PKCE verifier to Google's token
  *  endpoint and return the id_token. Google's response also carries
  *  access_token / expires_in / scope, but we discard those — the
- *  id_token is all the server needs to identify the user. */
+ *  id_token is all the server needs to identify the user.
+ *
+ *  Uses XMLHttpRequest instead of fetch — Cocos Creator 3.x on Android
+ *  bundles a fetch polyfill that silently hangs on some devices (see
+ *  Http.ts's header comment for the same rationale). Symptom: signIn()
+ *  Promise never resolves, no error toast, browser closes with no
+ *  follow-up UI. XHR is plumbed straight through JSB into Android's
+ *  HTTP stack and has robust native timeouts. */
 async function exchangeCodeForIdToken(code: string, codeVerifier: string): Promise<string> {
     const body = encodeFormValue({
         grant_type:    'authorization_code',
@@ -434,21 +441,27 @@ async function exchangeCodeForIdToken(code: string, codeVerifier: string): Promi
         redirect_uri:  GOOGLE_OAUTH_REDIRECT_URI,
         code_verifier: codeVerifier,
     });
-    let res: Response;
-    try {
-        res = await fetch(GOOGLE_TOKEN_ENDPOINT, {
-            method:  'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body,
-        });
-    } catch (e) {
-        throw new Error(`google-oauth: token endpoint unreachable (${(e as Error).message})`);
-    }
-    if (!res.ok) {
-        const text = await res.text().catch(() => '');
-        throw new Error(`google-oauth: token endpoint HTTP ${res.status} — ${text.slice(0, 200)}`);
-    }
-    const json = await res.json().catch(() => null);
+    const TOKEN_TIMEOUT_MS = 15_000;
+    const raw: string = await new Promise<string>((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', GOOGLE_TOKEN_ENDPOINT, true);
+        xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded');
+        xhr.timeout = TOKEN_TIMEOUT_MS;
+        xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+                resolve(xhr.responseText);
+            } else {
+                reject(new Error(
+                    `google-oauth: token endpoint HTTP ${xhr.status} — ${(xhr.responseText || '').slice(0, 200)}`,
+                ));
+            }
+        };
+        xhr.onerror   = () => reject(new Error('google-oauth: token endpoint unreachable (network)'));
+        xhr.ontimeout = () => reject(new Error('google-oauth: token endpoint timeout'));
+        xhr.send(body);
+    });
+    let json: any = null;
+    try { json = JSON.parse(raw); } catch { /* fall through — idToken check below trips */ }
     const idToken = json?.id_token;
     if (typeof idToken !== 'string' || !idToken.length) {
         throw new Error('google-oauth: token response missing id_token');
