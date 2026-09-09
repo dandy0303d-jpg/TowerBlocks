@@ -52,6 +52,7 @@ class _BackKeyManager {
      *  by different scenes. MenuController wires this in onLoad. */
     public install(): void {
         if (this._installed) return;
+        console.log('[BackKeyManager] install() called — native=' + sys.isNative + ' os=' + sys.os);
         // Editor / web / desktop preview path: Cocos delivers Escape
         // (and MOBILE_BACK where it works) through the normal input
         // dispatcher, so we keep this hookup for dev parity.
@@ -64,13 +65,33 @@ class _BackKeyManager {
         // dispatch path as an Escape key would.
         if (sys.isNative && sys.os === sys.OS.ANDROID) {
             try {
-                const jbw = (native as any)?.jsbBridgeWrapper;
+                // Mirror GoogleWebOAuth's bridge-accessor pattern —
+                // stock Cocos 3.8 exposes `native.jsbBridgeWrapper`,
+                // some template builds only hoist it as
+                // `jsb.JsbBridgeWrapper.getInstance()`.
+                const n: any = native as any;
+                const g: any = (globalThis as any);
+                let jbw: any = n?.jsbBridgeWrapper;
+                if (!jbw || typeof jbw.addNativeEventListener !== 'function') {
+                    const legacy: any = g?.jsb?.JsbBridgeWrapper;
+                    if (legacy) {
+                        jbw = typeof legacy.getInstance === 'function'
+                            ? legacy.getInstance()
+                            : legacy;
+                    }
+                }
+                console.log('[BackKeyManager] bridge lookup — native.jsbBridgeWrapper='
+                    + !!n?.jsbBridgeWrapper
+                    + ' jsb.JsbBridgeWrapper=' + !!g?.jsb?.JsbBridgeWrapper
+                    + ' resolved=' + (!!jbw && typeof jbw.addNativeEventListener === 'function'));
                 if (jbw && typeof jbw.addNativeEventListener === 'function') {
-                    jbw.addNativeEventListener('androidBack', () => {
+                    jbw.addNativeEventListener('androidBack', (arg: string) => {
+                        console.log('[BackKeyManager] androidBack received (arg=' + arg + '), stack=' + this._stack.length + ' default=' + !!this._default);
                         void this._dispatch();
                     });
+                    console.log('[BackKeyManager] native listener installed OK');
                 } else {
-                    console.warn('[BackKeyManager] jsbBridgeWrapper unavailable — hardware back key will not fire on this build');
+                    console.warn('[BackKeyManager] jsbBridgeWrapper unavailable — hardware back key will not fire. keys(native)=' + Object.keys(n || {}).join(','));
                 }
             } catch (e) {
                 console.warn('[BackKeyManager] bridge install failed:', (e as Error)?.message);
