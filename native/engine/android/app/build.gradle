@@ -79,7 +79,12 @@ android {
     defaultConfig {
         applicationId APPLICATION_ID
         minSdkVersion PROP_MIN_SDK_VERSION
-        targetSdkVersion PROP_TARGET_SDK_VERSION
+        // Force targetSdk = 36. Google Play (Aug 2025 policy) requires
+        // 36+ for new uploads, and we don't want the target level to
+        // silently drop back to whatever's set in the Cocos Creator
+        // Build panel (currently 34 on this machine — that's what
+        // triggered the Play Console "target API 36 이상" error).
+        targetSdkVersion 36
         versionCode 1
         versionName "1.0"
 
