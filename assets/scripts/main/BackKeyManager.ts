@@ -113,10 +113,6 @@ class _BackKeyManager {
                     const prev = typeof nb.onNative === 'function' ? nb.onNative : null;
                     console.log('[BackKeyManager] hooking native.bridge.onNative — prev existed=' + !!prev);
                     nb.onNative = (event: string, arg: string) => {
-                        // Log every event so we can see what actually
-                        // reaches JS from Java. Cheap during dev; can
-                        // be tightened later once the pipe is proven.
-                        console.log('[BackKeyManager] onNative event="' + event + '" argLen=' + (arg?.length ?? 0));
                         if (event === 'androidBack') {
                             void this._dispatch();
                             // Also forward to prev so the wrapper's
