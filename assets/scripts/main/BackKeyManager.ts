@@ -86,12 +86,49 @@ class _BackKeyManager {
                     + ' resolved=' + (!!jbw && typeof jbw.addNativeEventListener === 'function'));
                 if (jbw && typeof jbw.addNativeEventListener === 'function') {
                     jbw.addNativeEventListener('androidBack', (arg: string) => {
-                        console.log('[BackKeyManager] androidBack received (arg=' + arg + '), stack=' + this._stack.length + ' default=' + !!this._default);
+                        console.log('[BackKeyManager] androidBack received via wrapper (arg=' + arg + '), stack=' + this._stack.length + ' default=' + !!this._default);
                         void this._dispatch();
                     });
-                    console.log('[BackKeyManager] native listener installed OK');
+                    console.log('[BackKeyManager] wrapper listener installed OK');
                 } else {
-                    console.warn('[BackKeyManager] jsbBridgeWrapper unavailable — hardware back key will not fire. keys(native)=' + Object.keys(n || {}).join(','));
+                    console.warn('[BackKeyManager] jsbBridgeWrapper unavailable — falling back to raw native.bridge.onNative');
+                }
+
+                // ── Low-level fallback: hook `native.bridge.onNative`
+                // directly. In Cocos 3.8 the wrapper is *supposed* to
+                // install this hook itself and fan out to per-event
+                // listeners, but on this device+build the fan-out
+                // never fires for `androidBack` even though
+                // `dispatchEventToScript("androidBack", "")` is called
+                // from AppActivity.dispatchKeyEvent (verified in
+                // logcat). Overriding onNative directly gives us a
+                // guaranteed pipe. We chain-preserve any pre-existing
+                // handler so other subscribers (e.g. the wrapper
+                // itself) keep working; anything installed AFTER us
+                // (e.g. GoogleBillingProvider.wire()) has to chain in
+                // the same way or it'll clobber us — that's a
+                // separate bug to fix in whichever provider does so.
+                const nb: any = (native as any).bridge;
+                if (nb) {
+                    const prev = typeof nb.onNative === 'function' ? nb.onNative : null;
+                    console.log('[BackKeyManager] hooking native.bridge.onNative — prev existed=' + !!prev);
+                    nb.onNative = (event: string, arg: string) => {
+                        // Log every event so we can see what actually
+                        // reaches JS from Java. Cheap during dev; can
+                        // be tightened later once the pipe is proven.
+                        console.log('[BackKeyManager] onNative event="' + event + '" argLen=' + (arg?.length ?? 0));
+                        if (event === 'androidBack') {
+                            void this._dispatch();
+                            // Also forward to prev so the wrapper's
+                            // own subscribers (if any) still hear it.
+                        }
+                        if (prev) {
+                            try { prev(event, arg); }
+                            catch (e) { console.warn('[BackKeyManager] prev onNative threw:', (e as Error)?.message); }
+                        }
+                    };
+                } else {
+                    console.warn('[BackKeyManager] native.bridge missing — cannot install raw fallback');
                 }
             } catch (e) {
                 console.warn('[BackKeyManager] bridge install failed:', (e as Error)?.message);
