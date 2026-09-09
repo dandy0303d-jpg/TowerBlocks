@@ -17,6 +17,8 @@ import {
     Canvas,
     director,
     Font,
+    game,
+    Game,
     tween,
     Tween,
     log,
@@ -24,6 +26,7 @@ import {
 import { ensureDimBackdrop } from './UiHelpers';
 import { GameController } from './GameController';
 import { ToastManager } from './ToastManager';
+import { BackKeyManager } from './BackKeyManager';
 // NOTE: MenuController is referenced via getComponent('MenuController')
 // at runtime (string-lookup) — direct import would create a circular
 // dependency (HudController → MenuController → HudController) that
@@ -399,6 +402,42 @@ export class HudController extends Component {
      *  early-exit when nothing changed (avoids re-drawing / re-showing
      *  the overlay every tick). */
     private pauseUiLastPaused: boolean = false;
+    /** Whether the in-game back handler is currently pushed onto
+     *  BackKeyManager's stack. Tracked so update() can push exactly once
+     *  when gameplay becomes active and pop exactly once when it ends,
+     *  without spamming push/pop every frame. */
+    private _gameBackPushed: boolean = false;
+    /** Cached arrow func so BackKeyManager.pop() can find the same
+     *  reference we pushed with. Toggles pause on/off — if the pause
+     *  overlay is open, resume; otherwise, open it. Returns true so
+     *  BackKeyManager treats the press as consumed and doesn't fall
+     *  through to the main-menu exit-confirm handler. Silently no-ops
+     *  during tutorial / game-over / not-running to leave those states
+     *  unmodified. */
+    private _gameBack = (): boolean => {
+        const gs = this.gameController?.gameState;
+        if (!gs || !gs.running || gs.gameOver || gs.tutorialActive) return false;
+        // togglePause() itself gates on running/gameOver — the tutorial
+        // gate above is our own extra guard (same reason the pause
+        // button hides in update() when tutorialActive).
+        gs.togglePause();
+        this.refreshPauseUi();
+        return true;
+    };
+    /** Suspended by the OS while we're in the middle of a run — Android
+     *  home / recents, iOS app-switcher, incoming call, etc. Cocos
+     *  fires Game.EVENT_HIDE for all of these. We flip `paused=true`
+     *  so the simulation freezes and the pause overlay is visible
+     *  when the player returns. We do NOT auto-resume on
+     *  Game.EVENT_SHOW — that would tank the player mid-tetromino if
+     *  they briefly glanced at a notification. Let them tap Continue. */
+    private _onAppHide = (): void => {
+        const gs = this.gameController?.gameState;
+        if (!gs || !gs.running || gs.gameOver || gs.tutorialActive) return;
+        if (gs.paused) return;
+        gs.paused = true;
+        this.refreshPauseUi();
+    };
     /** Graphics canvas for the NEXT-piece preview. Each frame we paint
      *  the queued shape as a faux-3D mini-tower so the player can read
      *  what's coming at a glance. */
@@ -575,6 +614,19 @@ export class HudController extends Component {
         log('[TowerBlocks] HudController.onLoad');
     }
 
+    /** Called when the component / its node is deactivated. Fires when
+     *  the game scene is torn down or the HUD is hidden between runs.
+     *  Pop the in-game back handler so returning to the main menu (or
+     *  any other screen that renders HUD-off) doesn't leave a dead
+     *  handler at the top of BackKeyManager's stack — that would
+     *  swallow the first back press on whatever screen took over. */
+    onDisable(): void {
+        if (this._gameBackPushed) {
+            BackKeyManager.pop(this._gameBack);
+            this._gameBackPushed = false;
+        }
+    }
+
     onDestroy(): void {
         // Unsubscribe from the Settings store so we don't keep a stale
         // callback referencing a destroyed node.
@@ -587,6 +639,16 @@ export class HudController extends Component {
             clearTimeout(handle as unknown as ReturnType<typeof setTimeout>);
         }
         this.holdIntervals.clear();
+        // Detach the app-lifecycle listener — the singleton `game`
+        // outlives the scene, so leaving this subscribed would keep
+        // us referenced past destroy.
+        game.off(Game.EVENT_HIDE, this._onAppHide, this);
+        // Same for BackKeyManager — pop the in-game handler so
+        // BackKeyManager doesn't hold a ref to a destroyed component.
+        if (this._gameBackPushed) {
+            BackKeyManager.pop(this._gameBack);
+            this._gameBackPushed = false;
+        }
     }
 
     start(): void {
@@ -600,6 +662,10 @@ export class HudController extends Component {
         // and open modals repaint their dynamic content (item names,
         // rarity badges, etc.).
         this.i18nUnsub = subscribeI18n(() => this.onLangChanged());
+        // Auto-pause when the app is backgrounded (Android home /
+        // recents / incoming call, iOS app-switcher, etc.). See the
+        // _onAppHide handler for why we don't wire EVENT_SHOW.
+        game.on(Game.EVENT_HIDE, this._onAppHide, this);
     }
 
     /** Register a Label as i18n-driven: sets its initial string via
@@ -810,6 +876,22 @@ export class HudController extends Component {
         // the UI to reflect that immediately. Cheap early exit when
         // nothing changed keeps this from thrashing.
         this.syncPauseUi();
+
+        // Wire the hardware back key into gameplay: while a run is
+        // active (running, not game-over, not tutorial), push a
+        // handler that toggles pause; when the run ends or gets torn
+        // down, pop it so back returns to whatever menu / popup owns
+        // the screen next. Same push/pop discipline every other panel
+        // uses — one boolean guard so we don't churn the stack every
+        // frame.
+        const gameplayActive = g.running && !g.gameOver && !g.tutorialActive;
+        if (gameplayActive && !this._gameBackPushed) {
+            BackKeyManager.push(this._gameBack);
+            this._gameBackPushed = true;
+        } else if (!gameplayActive && this._gameBackPushed) {
+            BackKeyManager.pop(this._gameBack);
+            this._gameBackPushed = false;
+        }
 
         // Hide the pause BUTTON (not the overlay — the pause overlay
         // is a separate concern) whenever the tutorial is active.
