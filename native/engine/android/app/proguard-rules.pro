@@ -93,6 +93,19 @@
 -keep class com.cocos.lib.JsbBridge { *; }
 -keep class com.cocos.lib.JsbBridgeWrapper { *; }
 
+# -------------------------------------------------------------
+# R8 optimization tuning — improves the "난독화 / 최적화 / 축소 비율"
+# scores Google Play Console reports on each App Bundle.
+# -------------------------------------------------------------
+# Repackage every non-`-keep`ed class into a single anonymous
+# package. Shrinks the DEX string table AND makes obfuscated names
+# much less useful to reverse-engineer.
+-repackageclasses ''
+# Let R8 rewrite public/protected members to package-private when
+# that unlocks additional inlining / dead-code removal. Safe with
+# the -keep rules above pinning our reflection entry points.
+-allowaccessmodification
+
 # This is generated automatically by the Android Gradle plugin.
 -dontwarn android.hardware.BatteryState
 -dontwarn android.hardware.lights.Light
