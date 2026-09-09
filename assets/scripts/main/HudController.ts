@@ -417,6 +417,14 @@ export class HudController extends Component {
     private _gameBack = (): boolean => {
         const gs = this.gameController?.gameState;
         if (!gs || !gs.running || gs.gameOver || gs.tutorialActive) return false;
+        // BackKeyManager._dispatch pops us AFTER this returns (that's
+        // the standard popup contract — handler runs once, then
+        // vanishes). We flip our own guard here so the next update()
+        // tick re-pushes while gameplay is still active. Without this
+        // the second back-press would fall through to the main-menu
+        // exit-confirm default handler, which is exactly the "wanted
+        // resume, got 'quit game?' dialog" bug.
+        this._gameBackPushed = false;
         // togglePause() itself gates on running/gameOver — the tutorial
         // gate above is our own extra guard (same reason the pause
         // button hides in update() when tutorialActive).
