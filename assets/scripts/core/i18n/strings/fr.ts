@@ -162,6 +162,8 @@ export const FR: Record<string, string> = {
     'result.replay':     'Rejouer',
     'result.levelSelect':'Niveaux',
     'result.home':       'Accueil',
+    'result.reviveAd':   '🎬 Voir la pub pour revivre',
+    'result.reviveAd.failed': 'Échec du chargement de la publicité, réessayez plus tard',
 
     'lang.toggle':       'Français',
 

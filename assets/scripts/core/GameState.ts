@@ -236,6 +236,11 @@ export class GameState {
     paused:      boolean  = false;
     gameOver:    boolean  = false;
     failureReason: FailureReason | null = null;
+    /** Set to true after the one-shot "watch ad to revive" is spent in
+     *  endless / blind mode. Reset to false at every startEndless /
+     *  startBlind so each fresh run gets its own single revive. Result
+     *  panel checks this to decide whether to show the revive button. */
+    endlessReviveUsed: boolean = false;
 
     currentLevel:        LevelData | null = null;
     levelReservedHeight: number = 0;
@@ -588,6 +593,8 @@ export class GameState {
         this.modalPaused = false;
         this.gameOver = false;
         this.failureReason = null;
+        // Fresh run — the one-shot revive is available again.
+        this.endlessReviveUsed = false;
         this.current = null;
         this.holdType = null;
         this.holdShape = null;
@@ -1764,6 +1771,80 @@ export class GameState {
         this.gameOver = true;
         this.running = false;
         this.hooks.onGameOver?.(reason);
+    }
+
+    /** Watch-ad revive — endless / blind mode only. Called after the
+     *  rewarded-ad completes successfully. Clears the top N solid rows
+     *  (default 5) to buy the player breathing room, drops any floating
+     *  cells with a diagonal gravity pass, unfreezes the game-over
+     *  flags, and marks the one-shot revive as spent. Cumulative score
+     *  / height / inventory are all preserved. Returns true if the
+     *  revive actually ran; false if it was rejected (already revived
+     *  this run, or not currently in a game-over state).
+     *
+     *  The result panel is NOT dismissed here — the caller is expected
+     *  to do that (via MenuController). */
+    public reviveEndless(clearRows: number = 5): boolean {
+        if (!this.gameOver) return false;
+        if (this.endlessReviveUsed) return false;
+        // Level mode has its own retry flow — revive is endless / blind
+        // only. Cheap defence-in-depth against a caller wiring the
+        // button in the wrong mode.
+        if (this.mode !== 'endless' && this.mode !== 'blind') return false;
+        this.endlessReviveUsed = true;
+        // ---- Clear the top N rows containing any solid cell. Scan
+        //      top-down; each row that has at least one non-null cell
+        //      gets emptied. Stop after N such rows are wiped.
+        const H = this.state.board.length;
+        let wiped = 0;
+        for (let r = 0; r < H && wiped < clearRows; r++) {
+            let hasSolid = false;
+            for (let c = 0; c < COLS; c++) {
+                if (this.state.board[r][c] != null) { hasSolid = true; break; }
+            }
+            if (!hasSolid) continue;
+            for (let c = 0; c < COLS; c++) {
+                this.state.board[r][c] = null;
+                if (this.state.boardBombs    && this.state.boardBombs[r])    this.state.boardBombs[r][c]    = null;
+                if (this.state.boardBooms    && this.state.boardBooms[r])    this.state.boardBooms[r][c]    = null;
+                if (this.state.boardWreckers && this.state.boardWreckers[r]) this.state.boardWreckers[r][c] = null;
+                if (this.state.boardStones   && this.state.boardStones[r])   this.state.boardStones[r][c]   = null;
+                if (this.state.boardChests   && this.state.boardChests[r])   this.state.boardChests[r][c]   = null;
+                if (this.state.boardMeteors  && this.state.boardMeteors[r])  this.state.boardMeteors[r][c]  = null;
+                if (this.state.boardBlizzards&& this.state.boardBlizzards[r])this.state.boardBlizzards[r][c]= null;
+                if (this.state.boardHails    && this.state.boardHails[r])    this.state.boardHails[r][c]    = null;
+                if (this.state.boardRockets  && this.state.boardRockets[r])  this.state.boardRockets[r][c]  = null;
+                if (this.state.boardGatlings && this.state.boardGatlings[r]) this.state.boardGatlings[r][c] = null;
+            }
+            wiped++;
+        }
+        // Drop any survivors that lost support. Pass state.board.length
+        // as reservedTop so gravity uses the true bottom (endless has
+        // no reserved zone anyway, but keeps this defensive).
+        applyDiagonalGravity(this.state, this.state.board.length);
+        // Reset the failure state so the tick loop resumes.
+        this.gameOver      = false;
+        this.failureReason = null;
+        this.paused        = false;
+        this.running       = true;
+        // Kill any in-flight lock delay so the next tick starts clean.
+        this.isGrounded = false;
+        this.lockDelay  = 0;
+        this.lockResets = 0;
+        // Spawn a fresh piece — the one that killed the player is gone,
+        // and the next-piece queue rolls forward naturally. Piece uses
+        // the same spawn helper as the normal pipeline (spawnCollisionFail
+        // will still trigger if the new piece STILL can't fit, but with
+        // 5 rows cleared that's extremely unlikely).
+        this.current = spawn(this.nextType, this.lastSpawnCenterCol, this.nextBombsShape, this.nextShape, this.nextBoomsShape, this.nextWreckersShape);
+        const d = this.bag.pick();
+        this.nextType          = d.type;
+        this.nextShape         = d.shape;
+        this.nextBombsShape    = makeEmptyBombs(this.nextShape ?? SHAPES[this.nextType]);
+        this.nextBoomsShape    = makeEmptyBooms(this.nextShape ?? SHAPES[this.nextType]);
+        this.nextWreckersShape = makeEmptyWreckers(this.nextShape ?? SHAPES[this.nextType]);
+        this.hooks.onNextChanged?.(this.nextType);
+        return true;
     }
 
     private grantOneChest(): void {

@@ -58,6 +58,7 @@ import { LevelProgress } from '../core/LevelProgress';
 import { deletePlayerSelf } from '../core/PlayerApi';
 import { IS_DEV_BUILD } from '../core/BuildConfig';
 import { AnalyticsApi } from '../core/AnalyticsApi';
+import { Providers } from '../core/channels/Providers';
 import { fetchConsentStatus } from '../core/ConsentApi';
 import { ConsentModal } from './ConsentModal';
 import { GoogleWebOAuth } from '../channels/google/GoogleWebOAuth';
@@ -1572,17 +1573,72 @@ export class MenuController extends Component {
                 { label: t('result.retry'), action: () => this.startLevel(this.currentLevelIdx) },
                 { label: t('result.home'),  action: () => { this.dismissResultPanel(); this.showModeSelect(); } },
             ];
-        } else if (this.blindModeActive) {
-            return [
-                { label: t('result.endlessRetry'), action: () => this.startBlind() },
-                { label: t('result.home'),         action: () => { this.dismissResultPanel(); this.showModeSelect(); } },
-            ];
-        } else {
-            return [
-                { label: t('result.endlessRetry'), action: () => this.startEndless() },
-                { label: t('result.home'),         action: () => { this.dismissResultPanel(); this.showModeSelect(); } },
-            ];
         }
+        // Endless / blind — same buttons for both. Prepend a one-shot
+        // "watch ad to revive" button unless the current run already
+        // spent it. Order matters: revive → retry → home so the
+        // primary continuation is left-most.
+        const gs = this.gameController?.gameState;
+        const canRevive = !!gs && !gs.endlessReviveUsed;
+        const retryAction = this.blindModeActive
+            ? () => this.startBlind()
+            : () => this.startEndless();
+        const buttons: Array<{ label: string; action: () => void }> = [];
+        if (canRevive) {
+            buttons.push({ label: t('result.reviveAd'), action: () => this.onReviveAdClicked() });
+        }
+        buttons.push({ label: t('result.endlessRetry'), action: retryAction });
+        buttons.push({ label: t('result.home'),         action: () => { this.dismissResultPanel(); this.showModeSelect(); } });
+        return buttons;
+    }
+
+    /** Endless / blind "watch ad to revive" click handler. Runs the
+     *  rewarded-ad flow via Providers.ads; on `rewarded` the game
+     *  state's own reviveEndless() clears the top rows and unfreezes
+     *  the run. On dismiss / error we leave the result panel up so
+     *  the player can still tap retry or home. Mock ad provider
+     *  (main / non-channel builds) resolves 'rewarded' instantly so
+     *  this exercises end-to-end in editor / plain APK; channels
+     *  swap in a real ad SDK at boot time. */
+    private onReviveAdClicked(): void {
+        void (async () => {
+            try {
+                AnalyticsApi.logCustom('ad_shown', { placement: 'endless_revive' });
+                const r = await Providers.ads.showRewardedAd();
+                if (r.kind === 'rewarded') {
+                    AnalyticsApi.logAdReward({
+                        virtualCurrencyName: 'endless_revive',
+                        value:               1,
+                        placement:           'endless_revive',
+                    });
+                    // Fire the game-side revive. False return means the
+                    // state didn't accept it (edge case: player tapped
+                    // twice or something reset the game). Leave the
+                    // panel up either way.
+                    const ok = this.gameController?.gameState?.reviveEndless(5);
+                    if (ok) {
+                        this.dismissResultPanel();
+                    } else {
+                        ToastManager.instance?.show(t('result.reviveAd.failed'));
+                    }
+                    return;
+                }
+                if (r.kind === 'dismissed') {
+                    AnalyticsApi.logCustom('ad_dismissed', { placement: 'endless_revive' });
+                    // Silent — the player chose to skip.
+                    return;
+                }
+                console.warn('[Revive] ad error:', r.reason);
+                AnalyticsApi.logCustom('ad_error', {
+                    placement: 'endless_revive',
+                    reason: String(r.reason ?? 'unknown'),
+                });
+                ToastManager.instance?.show(t('result.reviveAd.failed'));
+            } catch (e) {
+                console.warn('[Revive] showRewardedAd threw:', (e as Error)?.message ?? e);
+                ToastManager.instance?.show(t('result.reviveAd.failed'));
+            }
+        })();
     }
 
     private dismissResultPanel(): void {
