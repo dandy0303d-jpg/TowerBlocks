@@ -186,6 +186,11 @@ export const EN: Record<string, string> = {
     'result.home':       'Home',
     'result.reviveAd':   '🎬 Watch ad to revive',
     'result.reviveAd.failed': 'Ad failed to load, try again later',
+    'result.reviveTitle':        'Revive?',
+    'result.reviveCountdown':    'Offer expires in {n}s',
+    'result.reviveGems':         '💎 {n} to revive',
+    'result.reviveGems.failed':  'Revive failed, try again later',
+    'result.reviveGems.notEnough':'Not enough gems — top up first',
 
     // ---------- Language toggle ----------
     // Shows the CURRENT language ("you are here") — click to cycle.
