@@ -3196,11 +3196,19 @@ export class HudController extends Component {
         if (!shape || !shape.length) return;
         // Find filled-cell bbox so we can centre the piece in the canvas.
         const h = shape.length;
-        const w = shape[0].length;
+        // Use MAX row width, not row[0]'s — FATE_SHAPES contains ragged
+        // shapes like `[[1,1,1],[0,0,0,1]]` where row[0].length would
+        // clip filled cells in later, wider rows. This was the "level
+        // 28 fate piece显示不全" bug — the piece's rightmost cell sat
+        // outside the loop's column range and never rendered.
+        let w = 0;
+        for (const row of shape) if (row && row.length > w) w = row.length;
         let minR = h, maxR = -1, minC = w, maxC = -1;
         for (let r = 0; r < h; r++) {
-            for (let c = 0; c < w; c++) {
-                if (shape[r][c]) {
+            const row = shape[r];
+            if (!row) continue;
+            for (let c = 0; c < row.length; c++) {
+                if (row[c]) {
                     if (r < minR) minR = r;
                     if (r > maxR) maxR = r;
                     if (c < minC) minC = c;
@@ -3211,9 +3219,14 @@ export class HudController extends Component {
         if (maxR < 0) return;        // empty shape
         const bw = maxC - minC + 1;
         const bh = maxR - minR + 1;
-        // Canvas dimensions match the NextShape node (PREVIEW_W - 16, PREVIEW_H - 30).
-        const CANV_W = 124;
-        const CANV_H = 60;
+        // Canvas dimensions — read from the node's UITransform so the
+        // shape scales to whatever size the scene has authored the
+        // preview at. Fallback constants match the historical hard-
+        // coded (124, 60) so a scene without a UITransform still
+        // renders sanely.
+        const ut = g.node.getComponent(UITransform);
+        const CANV_W = ut ? Math.max(1, ut.width)  : 124;
+        const CANV_H = ut ? Math.max(1, ut.height) : 60;
         const cell = Math.floor(Math.min((CANV_W - 8) / bw, (CANV_H - 8) / bh));
         const totalW = cell * bw, totalH = cell * bh;
         const offX = -totalW / 2;
@@ -3221,8 +3234,12 @@ export class HudController extends Component {
         const base = this.hexToCcColor(COLORS[type as CellValue] || '#6dd5ff');
         const tileSf = this.authoredSmallBlockSprite;
         for (let r = 0; r < h; r++) {
-            for (let c = 0; c < w; c++) {
-                if (!shape[r][c]) continue;
+            const row = shape[r];
+            if (!row) continue;
+            // Iterate up to THIS row's actual length — same ragged-shape
+            // guard as the bbox scan above.
+            for (let c = 0; c < row.length; c++) {
+                if (!row[c]) continue;
                 const x = offX + (c - minC) * cell;
                 const y = offY - (r - minR) * cell;
                 if (tileSf) {
@@ -3295,14 +3312,27 @@ export class HudController extends Component {
 
         const shape = FATE_SHAPES[this.fateCurrentIdx];
         if (!shape || !shape.length) return;
-        const h = shape.length, w = shape[0].length;
-        const PREV = 240;
-        // Fixed reference bbox — all 99 fate shapes cap at 4×4. Divide
-        // by the ref (not the per-shape w/h) so every shape uses the
-        // SAME unit cell size. Smaller shapes get centered with unused
+        const h = shape.length;
+        // Use MAX row length — several FATE_SHAPES entries are ragged
+        // (row[0] narrower than a later row); using row[0].length would
+        // silently drop cells off the right edge. Same bug fix as
+        // paintNextPreview.
+        let w = 0;
+        for (const row of shape) if (row && row.length > w) w = row.length;
+        // Preview canvas — read from the node's UITransform instead of
+        // assuming 240. Scenes can size the fate-shape canvas anywhere
+        // from ~180 (compact modal) to ~320 (large celebration modal);
+        // the shape should scale into whatever the author set. Fall
+        // back to 240 if UITransform is missing.
+        const ut = this.fateShapeGfx.node.getComponent(UITransform);
+        const PREV_W = ut ? Math.max(1, ut.width)  : 240;
+        const PREV_H = ut ? Math.max(1, ut.height) : 240;
+        // Fixed reference bbox — all fate shapes cap at 4×4. Dividing
+        // by the ref (not the per-shape w/h) keeps every shape at the
+        // SAME unit cell size; smaller shapes get centered with unused
         // space around them instead of blowing up their cells to fill.
         const REF_W = 4, REF_H = 4;
-        const cell = Math.floor(Math.min(PREV / REF_W, PREV / REF_H));
+        const cell = Math.floor(Math.min(PREV_W / REF_W, PREV_H / REF_H));
         const totalW = cell * w, totalH = cell * h;
         const offX = -totalW / 2, offY = totalH / 2 - cell;
         const colHex = COLORS[this.fateCurrentBase as CellValue] || '#6dd5ff';
@@ -3319,8 +3349,10 @@ export class HudController extends Component {
         // to visually erode after repeated opens.
         const tileSf = this.authoredSmallBlockSprite;
         for (let r = 0; r < h; r++) {
-            for (let c = 0; c < w; c++) {
-                if (!shape[r][c]) continue;
+            const row = shape[r];
+            if (!row) continue;
+            for (let c = 0; c < row.length; c++) {
+                if (!row[c]) continue;
                 const x = offX + c * cell;
                 const y = offY - r * cell;
                 const cellNode = new Node(`FateCell_${r}_${c}`);
