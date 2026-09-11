@@ -1733,17 +1733,14 @@ export class MenuController extends Component {
                         value:               1,
                         placement:           'endless_revive',
                     });
-                    const ok = this.gameController?.gameState?.reviveEndless(5);
-                    if (ok) {
-                        this.dismissResultPanel();
-                        return;
-                    }
-                    // Revive was rejected client-side (shouldn't happen
-                    // in practice — gs.gameOver checked before showing
-                    // the prompt). Fall through to the fail panel.
-                    ToastManager.instance?.show(t('result.reviveAd.failed'));
+                    // Dismiss the revive prompt first so the tower is
+                    // visible under the row-blast sweep, then hand off
+                    // to the game controller to play the wipe FX and
+                    // fire gameState.reviveEndless() at the end.
                     this.dismissResultPanel();
-                    onSkip();
+                    if (this.gameController) {
+                        this.gameController.playReviveWipe(() => { /* onDone */ });
+                    }
                     return;
                 }
                 if (r.kind === 'dismissed') {
@@ -1780,13 +1777,13 @@ export class MenuController extends Component {
             try {
                 const r = await purchaseRevive();
                 if (r.ok) {
-                    const ok = this.gameController?.gameState?.reviveEndless(5);
-                    if (ok) {
-                        this.dismissResultPanel();
-                        return;
-                    }
+                    // Same sequence as the ad path — hide the prompt
+                    // first, then let GameController play the row-blast
+                    // sweep and finalize the revive.
                     this.dismissResultPanel();
-                    onSkip();
+                    if (this.gameController) {
+                        this.gameController.playReviveWipe(() => { /* onDone */ });
+                    }
                     return;
                 }
                 // Server rejected — usually insufficient-gems. Toast +

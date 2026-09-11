@@ -27,6 +27,7 @@ import {
     Button,
 } from 'cc';
 import { COLS, COLORS, CellValue, ENDLESS_HEIGHT_LIMIT, ENDLESS_GRAY_CAP } from '../core/Constants';
+import { isColoredCell } from '../core/Board';
 import { SoundManager } from '../audio/SoundManager';
 import { HapticsManager } from '../audio/HapticsManager';
 import { getControlMode, subscribe as subscribeSettings } from '../core/Settings';
@@ -3791,6 +3792,70 @@ export class GameController extends Component {
         n.active = true;
         this.rowBlastDetonateFx = fx;
         log('[TowerBlocks] row-blast detonate FX pre-built.');
+    }
+
+    /** Revive celebration: wait a short beat, sweep the row-blast
+     *  ribbon FX up EVERY colored row (bottom-up staggered), THEN
+     *  actually wipe the board via `gameState.reviveEndless()`. The
+     *  visual sells the "one big chain detonation" fantasy that
+     *  justifies the ad-watch / gem-spend cost.
+     *
+     *  Sequence:
+     *    1. 500 ms hold — lets the revive prompt fully fade so the
+     *       player sees the tower again before things start blowing up.
+     *    2. For each colored row (bottom-up), fire spawnRibbonDetonate
+     *       staggered by RIBBON_STAGGER_MS. Only ONE fx node exists,
+     *       so calling too fast would just overwrite the position;
+     *       the stagger lets each pop read as its own row.
+     *    3. Wait REVIVE_POST_FX_MS after the last row's fx starts,
+     *       then call reviveEndless (nulls the cells + spawns fresh
+     *       piece + un-freezes running).
+     *    4. Fire onDone so the caller can dismiss any lingering UI.
+     *
+     *  onDone runs even when nothing to blast (empty board) so the
+     *  caller's completion callback is unconditional. */
+    public playReviveWipe(onDone: () => void): void {
+        const gs = this.gameState;
+        if (!gs) { onDone(); return; }
+        // Collect colored rows (bottom-up so the wave visually reads
+        // as sweeping the tower upward from the base).
+        const H = gs.state.board.length;
+        const rows: number[] = [];
+        for (let r = H - 1; r >= 0; r--) {
+            let hasColored = false;
+            for (let c = 0; c < COLS; c++) {
+                if (isColoredCell(gs.state.board[r][c])) { hasColored = true; break; }
+            }
+            if (hasColored) rows.push(r);
+        }
+
+        const RIBBON_STAGGER_MS = 100;
+        const PRE_HOLD_MS       = 500;
+        const REVIVE_POST_FX_MS = 250;
+
+        const finish = () => {
+            gs.reviveEndless();
+            onDone();
+        };
+
+        if (rows.length === 0) {
+            // Nothing to sweep — still honour the hold so the flow
+            // feels consistent (revive prompt → brief hold → resume).
+            setTimeout(finish, PRE_HOLD_MS);
+            return;
+        }
+
+        setTimeout(() => {
+            for (let i = 0; i < rows.length; i++) {
+                const r = rows[i];
+                setTimeout(() => this.spawnRibbonDetonate(r), i * RIBBON_STAGGER_MS);
+            }
+            // Wait for the LAST fx to finish before doing the wipe.
+            // rowBlastDetonateFx.duration is in seconds; convert.
+            const lastFxDurationMs = (this.rowBlastDetonateFx?.duration ?? 0.4) * 1000;
+            const totalMs = (rows.length - 1) * RIBBON_STAGGER_MS + lastFxDurationMs + REVIVE_POST_FX_MS;
+            setTimeout(finish, totalMs);
+        }, PRE_HOLD_MS);
     }
 
     /** Trigger the pre-built ribbon detonation FX at row `r`'s height.
