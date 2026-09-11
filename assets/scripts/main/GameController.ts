@@ -3887,6 +3887,29 @@ export class GameController extends Component {
                     this.onShatter(r, content);
                     SoundManager.instance?.play('line_clear');
                     HapticsManager.impact('medium');
+                    // Delete THIS row's colored cells (and parallel
+                    // prop layers) right when its flash fires — the
+                    // tower visibly "melts" bottom-up as the wave
+                    // sweeps rather than snapping empty in one shot
+                    // at the end. Flash uses the cached `content`
+                    // snapshot so the visual still paints the proper
+                    // colors. Leaves 'X' / 'H' foundation alone so
+                    // blind mode's reserved zone stays.
+                    const st = gs.state;
+                    for (let c = 0; c < COLS; c++) {
+                        if (!isColoredCell(st.board[r][c])) continue;
+                        st.board[r][c] = null;
+                        if (st.boardBombs     && st.boardBombs[r])     st.boardBombs[r][c]     = null;
+                        if (st.boardBooms     && st.boardBooms[r])     st.boardBooms[r][c]     = null;
+                        if (st.boardWreckers  && st.boardWreckers[r])  st.boardWreckers[r][c]  = null;
+                        if (st.boardStones    && st.boardStones[r])    st.boardStones[r][c]    = null;
+                        if (st.boardChests    && st.boardChests[r])    st.boardChests[r][c]    = null;
+                        if (st.boardMeteors   && st.boardMeteors[r])   st.boardMeteors[r][c]   = null;
+                        if (st.boardBlizzards && st.boardBlizzards[r]) st.boardBlizzards[r][c] = null;
+                        if (st.boardHails     && st.boardHails[r])     st.boardHails[r][c]     = null;
+                        if (st.boardRockets   && st.boardRockets[r])   st.boardRockets[r][c]   = null;
+                        if (st.boardGatlings  && st.boardGatlings[r])  st.boardGatlings[r][c]  = null;
+                    }
                 }, i * STAGGER_MS);
             }
             const totalMs = (rows.length - 1) * STAGGER_MS + FLASH_LIFE_MS;
