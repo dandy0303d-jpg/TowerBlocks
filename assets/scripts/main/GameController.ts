@@ -3821,20 +3821,20 @@ export class GameController extends Component {
         log('[TowerBlocks] row-blast detonate FX pre-built.');
     }
 
-    /** Revive celebration: wait a short beat, sweep the row-blast
-     *  ribbon FX up EVERY colored row (bottom-up staggered), THEN
-     *  actually wipe the board via `gameState.reviveEndless()`. The
-     *  visual sells the "one big chain detonation" fantasy that
-     *  justifies the ad-watch / gem-spend cost.
+    /** Revive celebration: wait a short beat, then play the standard
+     *  row-clear rainbow flash (`onShatter` → `queueFlash`) on every
+     *  colored row bottom-up staggered, then actually wipe the board
+     *  via `gameState.reviveEndless()`. The visual + audio match a
+     *  real row-bomb detonation so it reads as "one giant chain
+     *  detonation" the ad-watch / gem-spend paid for.
      *
      *  Sequence:
      *    1. 500 ms hold — lets the revive prompt fully fade so the
      *       player sees the tower again before things start blowing up.
-     *    2. For each colored row (bottom-up), fire spawnRibbonDetonate
-     *       staggered by RIBBON_STAGGER_MS. Only ONE fx node exists,
-     *       so calling too fast would just overwrite the position;
-     *       the stagger lets each pop read as its own row.
-     *    3. Wait REVIVE_POST_FX_MS after the last row's fx starts,
+     *    2. For each colored row (bottom-up), queue the row-clear
+     *       flash + line_clear SFX + medium haptic — SAME wiring as
+     *       the real onPartialShatter hook.
+     *    3. Wait FLASH_LIFE_MS after the last row's flash queues,
      *       then call reviveEndless (nulls the cells + spawns fresh
      *       piece + un-freezes running).
      *    4. Fire onDone so the caller can dismiss any lingering UI.
@@ -3845,20 +3845,26 @@ export class GameController extends Component {
         const gs = this.gameState;
         if (!gs) { onDone(); return; }
         // Collect colored rows (bottom-up so the wave visually reads
-        // as sweeping the tower upward from the base).
+        // as sweeping the tower upward from the base). Snapshot the
+        // row content NOW so the flash renderer paints the actual
+        // colors the player sees at revive time — reviveEndless()
+        // will null everything a few frames later.
         const H = gs.state.board.length;
-        const rows: number[] = [];
+        const rows: Array<{ r: number; content: (CellValue | null)[] }> = [];
         for (let r = H - 1; r >= 0; r--) {
             let hasColored = false;
+            const content: (CellValue | null)[] = new Array(COLS).fill(null);
             for (let c = 0; c < COLS; c++) {
-                if (isColoredCell(gs.state.board[r][c])) { hasColored = true; break; }
+                const v = gs.state.board[r][c];
+                if (isColoredCell(v)) { hasColored = true; content[c] = v; }
             }
-            if (hasColored) rows.push(r);
+            if (hasColored) rows.push({ r, content });
         }
 
-        const RIBBON_STAGGER_MS = 100;
-        const PRE_HOLD_MS       = 500;
-        const REVIVE_POST_FX_MS = 250;
+        const STAGGER_MS   = 100;
+        const PRE_HOLD_MS  = 500;
+        // Flash lifetime — matches this.flashDuration (@property, default 0.5s).
+        const FLASH_LIFE_MS = Math.max(300, this.flashDuration * 1000);
 
         const finish = () => {
             gs.reviveEndless();
@@ -3874,21 +3880,16 @@ export class GameController extends Component {
 
         setTimeout(() => {
             for (let i = 0; i < rows.length; i++) {
-                const r = rows[i];
+                const { r, content } = rows[i];
                 setTimeout(() => {
-                    this.spawnRibbonDetonate(r);
-                    // Same SFX + haptic the col-bomb detonation plays.
-                    // Fires per row so a tall tower gets a satisfying
-                    // rat-a-tat of explosions instead of one silent
-                    // visual sweep.
-                    SoundManager.instance?.play('bomb_boom');
-                    HapticsManager.impact('heavy');
-                }, i * RIBBON_STAGGER_MS);
+                    // Same wiring as the onPartialShatter clearHook —
+                    // rainbow flash + line_clear + medium haptic.
+                    this.onShatter(r, content);
+                    SoundManager.instance?.play('line_clear');
+                    HapticsManager.impact('medium');
+                }, i * STAGGER_MS);
             }
-            // Wait for the LAST fx to finish before doing the wipe.
-            // rowBlastDetonateFx.duration is in seconds; convert.
-            const lastFxDurationMs = (this.rowBlastDetonateFx?.duration ?? 0.4) * 1000;
-            const totalMs = (rows.length - 1) * RIBBON_STAGGER_MS + lastFxDurationMs + REVIVE_POST_FX_MS;
+            const totalMs = (rows.length - 1) * STAGGER_MS + FLASH_LIFE_MS;
             setTimeout(finish, totalMs);
         }, PRE_HOLD_MS);
     }
