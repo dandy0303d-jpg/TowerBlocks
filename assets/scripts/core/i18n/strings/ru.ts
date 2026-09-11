@@ -163,6 +163,8 @@ export const RU: Record<string, string> = {
     'result.replay':     'Реплей',
     'result.levelSelect':'Уровни',
     'result.home':       'Домой',
+    'result.reviveAd':   '🎬 Смотреть рекламу для возрождения',
+    'result.reviveAd.failed': 'Не удалось загрузить рекламу, попробуйте позже',
 
     'lang.toggle':       'Русский',
 

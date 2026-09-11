@@ -182,6 +182,8 @@ export const ES: Record<string, string> = {
     'result.replay':     'Repetir',
     'result.levelSelect':'Niveles',
     'result.home':       'Inicio',
+    'result.reviveAd':   '🎬 Ver anuncio para revivir',
+    'result.reviveAd.failed': 'No se pudo cargar el anuncio, inténtalo más tarde',
 
     // ---------- Toggle idioma ----------
     'lang.toggle':       'Español',

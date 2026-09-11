@@ -164,6 +164,8 @@ export const DE: Record<string, string> = {
     'result.replay':     'Wiederholen',
     'result.levelSelect':'Level',
     'result.home':       'Start',
+    'result.reviveAd':   '🎬 Werbung ansehen, um wiederzubeleben',
+    'result.reviveAd.failed': 'Werbung konnte nicht geladen werden, bitte später erneut versuchen',
 
     'lang.toggle':       'Deutsch',
 

@@ -26,6 +26,8 @@
 
 import { IPurchaseProvider } from './IPurchaseProvider';
 import { MockPurchaseProvider } from './MockPurchaseProvider';
+import { IAdProvider } from './IAdProvider';
+import { MockAdProvider } from './MockAdProvider';
 
 export class Providers {
     /** Purchase / IAP. Defaults to `MockPurchaseProvider` — main
@@ -37,5 +39,15 @@ export class Providers {
      *  a chance to trigger a purchase. */
     static setPurchase(p: IPurchaseProvider): void {
         this.purchase = p;
+    }
+
+    /** Rewarded-video ads. Defaults to `MockAdProvider` — dev builds
+     *  see an instantly-completing fake ad so the reward flow works
+     *  end-to-end without any real SDK. */
+    static ads: IAdProvider = new MockAdProvider();
+
+    /** Register a channel-specific ad provider at boot time. */
+    static setAds(p: IAdProvider): void {
+        this.ads = p;
     }
 }
