@@ -21,7 +21,7 @@
  */
 
 import { COLS, CellValue } from '../Constants';
-import { BoardState } from '../Types';
+import { BoardState, BombKind } from '../Types';
 import { isColoredCell } from '../Board';
 import {
     ClearLinesHooks,
@@ -34,6 +34,7 @@ import {
     spliceRows,
 } from '../ClearLines';
 import { applyDiagonalGravity } from '../ColumnGravity';
+import { detonateBombs, DetonateHooks, BombSeed } from '../Detonate';
 /** Returns true if any rows were dug (i.e. the inventory entry is consumed). */
 export function activateExcavator(
     state: BoardState,
@@ -62,32 +63,69 @@ export function activateExcavator(
         return 'empty';
     };
 
-    const H = state.board.length;
-    const orderedIdxs: number[] = [];
-    if (fromTop) {
-        for (let r = 0; r < H; r++) orderedIdxs.push(r);
-    } else {
-        for (let r = H - 1; r >= 0; r--) orderedIdxs.push(r);
+    /** Two-pass row picker: colored rows first, gray-only fallback if we
+     *  came up short. Returns rows in descending order (matches
+     *  `spliceRows` contract). Factored out so we can re-pick after a
+     *  bomb chain detonation shifts row indices. */
+    const pickRows = (): number[] => {
+        const H = state.board.length;
+        const orderedIdxs: number[] = [];
+        if (fromTop) {
+            for (let r = 0; r < H; r++) orderedIdxs.push(r);
+        } else {
+            for (let r = H - 1; r >= 0; r--) orderedIdxs.push(r);
+        }
+        const coloredRows: number[] = [];
+        const grayRows:    number[] = [];
+        for (const r of orderedIdxs) {
+            const k = rowKind(r);
+            if      (k === 'colored') coloredRows.push(r);
+            else if (k === 'gray')    grayRows.push(r);
+        }
+        let out = coloredRows.slice(0, target);
+        if (out.length < target) {
+            out = out.concat(grayRows.slice(0, target - out.length));
+        }
+        return out.slice().sort((a, b) => b - a);
+    };
+
+    const initialPicked = pickRows();
+    if (!initialPicked.length) return false;
+
+    // ── Row/col bomb pre-detonation ──────────────────────────────
+    // If any of the picked rows contain a row/col bomb, seed those
+    // into `detonateBombs` FIRST so the bomb's row/col blast fires
+    // (and chains through any adjacent bombs) BEFORE the excavator
+    // does its own row splice. Without this the previous impl just
+    // nulled the bomb marker along with the rest of the cell — the
+    // player saw the bomb visual disappear but got no rowN/colN
+    // expansion. detonateBombs handles its own splice + gravity.
+    if (state.boardBombs) {
+        const bombSeeds: BombSeed[] = [];
+        for (const r of initialPicked) {
+            for (let c = 0; c < COLS; c++) {
+                const k = state.boardBombs[r] && state.boardBombs[r][c];
+                if (k) {
+                    bombSeeds.push({ r, c, kind: k as BombKind });
+                    // Consume the marker so detonateBombs' chain
+                    // step doesn't try to re-fire it as a neighbour.
+                    state.boardBombs[r][c] = null;
+                }
+            }
+        }
+        if (bombSeeds.length > 0) {
+            detonateBombs(state, bombSeeds, reservedTop, hooks as DetonateHooks);
+        }
     }
 
-    const coloredRows: number[] = [];
-    const grayRows:    number[] = [];
-    for (const r of orderedIdxs) {
-        const k = rowKind(r);
-        if      (k === 'colored') coloredRows.push(r);
-        else if (k === 'gray')    grayRows.push(r);
-    }
-
-    let picked = coloredRows.slice(0, target);
-    if (picked.length < target) {
-        picked = picked.concat(grayRows.slice(0, target - picked.length));
-    }
-    if (!picked.length) return false;
-
-    // spliceRows requires DESCENDING row indices — sort accordingly.
-    // (Mixing scan directions between colored and gray picks means we
-    // can't rely on the natural iteration order.)
-    const rows: number[] = picked.slice().sort((a, b) => b - a);
+    // Re-pick on the (possibly transformed) board. The bomb chain may
+    // have cleared some of the originally picked rows already; re-run
+    // the two-pass picker to fill the remaining excavator quota with
+    // whatever colored/gray rows are still standing. If the bomb chain
+    // consumed enough that nothing's left to dig, the item still
+    // counts as consumed — the bomb blast IS the dig, in effect.
+    const rows = pickRows();
+    if (!rows.length) return true;
 
     // 2. Snapshot + clear each picked row's solid cells (colored + gray).
     for (const r of rows) {
