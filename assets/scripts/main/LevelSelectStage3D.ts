@@ -1258,26 +1258,59 @@ export class LevelSelectStage3D extends Component {
         }
     }
 
-    /** Pick a fate shape for `levelIdx` from the game's 99-shape pool
-     *  and return the set of `${dispRow},${dispCol}` display-grid keys
+    /** Per-level custom-piece shapes injected by MenuController before
+     *  showForLevel. Indexed by levelIdx. When set, computeFateDisplayCells
+     *  uses the level's actual customPiece.shape instead of falling back
+     *  to the built-in 99-shape pool. Length may be shorter than
+     *  totalLevels — indexes past the end fall back to the pool. */
+    private levelShapes: Array<number[][] | null> = [];
+    public setLevelShapes(shapes: Array<number[][] | null | undefined>): void {
+        this.levelShapes = shapes.map(s => (s && s.length ? (s as number[][]) : null));
+    }
+
+    /** Pick a fate shape for `levelIdx` — prefer the actual level's
+     *  customPiece.shape (set via setLevelShapes) so the tower matches
+     *  what the player sees in the fate modal + gameplay. Falls back to
+     *  the built-in 99-shape pool for stub / endless entries.
+     *  Returns the set of `${dispRow},${dispCol}` display-grid keys
      *  where its filled cells land (centered in the 6×6 area). */
     private computeFateDisplayCells(levelIdx: number): Set<string> {
         const set = new Set<string>();
-        const idx = levelIdx % GAME_FATE_SHAPES.length;
-        const shape = GAME_FATE_SHAPES[idx];
+        let shape: number[][] | undefined | null = this.levelShapes[levelIdx];
+        if (!shape || !shape.length) {
+            const idx = levelIdx % GAME_FATE_SHAPES.length;
+            shape = GAME_FATE_SHAPES[idx];
+        }
         if (!shape || !shape.length) return set;
 
         // Bbox of the shape.
-        const rowsN = shape.length;
-        const colsN = shape[0].length;
+        // Bbox the shape to its filled cells so a small piece centers
+        // properly in the 6×6 display area. customPiece.shape is often
+        // a padded 4×4 grid — bboxing collapses the padding so a 2×3
+        // T-piece renders as 2×3, not 4×4.
+        let minR = shape.length, maxR = -1, minC = Infinity, maxC = -1;
+        for (let r = 0; r < shape.length; r++) {
+            const row = shape[r];
+            if (!row) continue;
+            for (let c = 0; c < row.length; c++) {
+                if (!row[c]) continue;
+                if (r < minR) minR = r; if (r > maxR) maxR = r;
+                if (c < minC) minC = c; if (c > maxC) maxC = c;
+            }
+        }
+        if (maxR < 0) return set;
+        const rowsN = maxR - minR + 1;
+        const colsN = maxC - minC + 1;
         // Center in 6×6 (integer offsets — floor bias goes to top-left).
         const rowOff = Math.floor((DISPLAY_H - rowsN) / 2);
         const colOff = Math.floor((DISPLAY_W - colsN) / 2);
-        for (let r = 0; r < rowsN; r++) {
-            for (let c = 0; c < colsN; c++) {
-                if (!shape[r][c]) continue;
-                const dispRow = rowOff + r;
-                const dispCol = colOff + c;
+        for (let r = 0; r < shape.length; r++) {
+            const row = shape[r];
+            if (!row) continue;
+            for (let c = 0; c < row.length; c++) {
+                if (!row[c]) continue;
+                const dispRow = rowOff + (r - minR);
+                const dispCol = colOff + (c - minC);
                 if (dispRow < 0 || dispRow >= DISPLAY_H) continue;
                 if (dispCol < 0 || dispCol >= DISPLAY_W) continue;
                 set.add(`${dispRow},${dispCol}`);

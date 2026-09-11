@@ -1166,6 +1166,19 @@ export class MenuController extends Component {
         // showModeSelect) so back only fires the return when the
         // player is actually on level-select.
         BackKeyManager.push(this._levelSelectBack);
+        // Feed the stage the actual per-level customPiece shapes so
+        // each tower cube displays the level's real fate piece
+        // (LevelSelectStage3D used to fall back to GAME_FATE_SHAPES
+        // [idx % 99], which for level 100+ or any level whose custom
+        // piece isn't in the 99-shape pool would show the wrong shape).
+        const flat = (this.gameController as any)?.flatLevels as Array<any> | undefined;
+        if (flat && typeof this.levelStage3D.setLevelShapes === 'function') {
+            this.levelStage3D.setLevelShapes(
+                flat.map(l => (l && l.customPiece && Array.isArray(l.customPiece.shape))
+                    ? l.customPiece.shape
+                    : null),
+            );
+        }
         this.levelStage3D.showForLevel(
             LevelProgress.currentIdx,
             (idx: number) => this.enterLevelFromStage3D(idx),
