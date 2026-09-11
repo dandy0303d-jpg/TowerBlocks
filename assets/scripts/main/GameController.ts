@@ -3844,6 +3844,14 @@ export class GameController extends Component {
     public playReviveWipe(onDone: () => void): void {
         const gs = this.gameState;
         if (!gs) { onDone(); return; }
+        // Clear the falling piece IMMEDIATELY — it's the one that
+        // just spawn-collided (or was mid-fall when game-over
+        // fired) and stays visible as a floating tetromino above
+        // the tower otherwise. reviveEndless() spawns a fresh one
+        // at the end; between now and then, the play field should
+        // look like it belongs to the sweep animation, not carry
+        // the "dead" piece into it.
+        gs.current = null;
         // Collect colored rows (bottom-up so the wave visually reads
         // as sweeping the tower upward from the base). Snapshot the
         // row content NOW so the flash renderer paints the actual
