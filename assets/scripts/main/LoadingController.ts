@@ -288,6 +288,22 @@ export class LoadingController extends Component {
                 if (this.levelStage3D) {
                     this.levelStage3D.node.active = true;
                     const startIdx = LevelProgress.currentIdx ?? 0;
+                    // Feed the stage the actual per-level customPiece
+                    // shapes BEFORE prebuild — otherwise the tower is
+                    // built with GAME_FATE_SHAPES[idx % 99] fallback
+                    // and each cube shows the wrong piece. Same as
+                    // MenuController.showLevelSelect does, but has to
+                    // happen here too so the cached tower the cached-
+                    // path in showForLevel reuses is correct from the
+                    // start.
+                    const flat = (this.gameController as any)?.flatLevels as Array<any> | undefined;
+                    if (flat && typeof this.levelStage3D.setLevelShapes === 'function') {
+                        this.levelStage3D.setLevelShapes(
+                            flat.map(l => (l && l.customPiece && Array.isArray(l.customPiece.shape))
+                                ? l.customPiece.shape
+                                : null),
+                        );
+                    }
                     this.levelStage3D.prebuild(startIdx);
                     console.log(`[Loading] levelStage3D prebuild done (idx=${startIdx})`);
                 } else {
