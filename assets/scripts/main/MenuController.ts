@@ -1786,12 +1786,28 @@ export class MenuController extends Component {
                     }
                     return;
                 }
-                // Server rejected — usually insufficient-gems. Toast +
-                // hand off to fail panel (player can still retry / home).
-                const key = r.reason === 'insufficient-gems'
-                    ? 'result.reviveGems.notEnough'
-                    : 'result.reviveGems.failed';
-                ToastManager.instance?.show(t(key));
+                if (r.reason === 'insufficient-gems') {
+                    // Not enough gems — send the player straight to the
+                    // top-up panel instead of the fail screen. The
+                    // player already committed to reviving; a fail
+                    // panel + toast tells them "no" without giving
+                    // them a way to fix it. Dismiss the revive prompt
+                    // first so the top-up panel doesn't render under it.
+                    this.dismissResultPanel();
+                    ToastManager.instance?.show(t('result.reviveGems.notEnough'));
+                    if (this.topUpController) {
+                        this.topUpController.show();
+                    }
+                    // Still route to onSkip so the game state
+                    // eventually lands somewhere concrete (fail panel
+                    // behind the top-up sheet). When the player
+                    // dismisses the top-up sheet they see the game-
+                    // over panel underneath and can retry or home.
+                    onSkip();
+                    return;
+                }
+                // Any other server rejection — toast + fail panel.
+                ToastManager.instance?.show(t('result.reviveGems.failed'));
                 this.dismissResultPanel();
                 onSkip();
             } catch (e) {

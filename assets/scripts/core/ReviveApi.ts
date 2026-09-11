@@ -32,7 +32,7 @@ export interface RevivePurchaseResult {
 /** Client-side fallback cost — kept in sync with the server default so
  *  the button label paints something sensible before `fetchReviveCost`
  *  resolves. Server value wins after the fetch.  */
-export const DEFAULT_REVIVE_COST_GEMS = 200;
+export const DEFAULT_REVIVE_COST_GEMS = 60;
 
 export async function fetchReviveCost(): Promise<ReviveCostResult> {
     const url = `${BACKEND_BASE_URL}/revive/cost`;
