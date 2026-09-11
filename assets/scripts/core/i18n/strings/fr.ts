@@ -168,7 +168,7 @@ export const FR: Record<string, string> = {
     'result.reviveCountdown':    'Expire dans {n}s',
     'result.reviveGems':         '💎 {n} pour renaître',
     'result.reviveGems.failed':  'Échec de la renaissance, réessayez plus tard',
-    'result.reviveGems.notEnough':'Gemmes insuffisantes — rechargez d'abord',
+    'result.reviveGems.notEnough':'Gemmes insuffisantes — rechargez avant',
 
     'lang.toggle':       'Français',
 
