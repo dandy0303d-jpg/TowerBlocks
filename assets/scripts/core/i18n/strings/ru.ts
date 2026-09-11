@@ -165,6 +165,11 @@ export const RU: Record<string, string> = {
     'result.home':       'Домой',
     'result.reviveAd':   '🎬 Смотреть рекламу для возрождения',
     'result.reviveAd.failed': 'Не удалось загрузить рекламу, попробуйте позже',
+    'result.reviveTitle':        'Возродиться?',
+    'result.reviveCountdown':    'Осталось {n}с',
+    'result.reviveGems':         '💎 {n} для возрождения',
+    'result.reviveGems.failed':  'Возрождение не удалось, попробуйте позже',
+    'result.reviveGems.notEnough':'Недостаточно кристаллов — сначала пополните',
 
     'lang.toggle':       'Русский',
 

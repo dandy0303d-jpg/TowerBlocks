@@ -190,6 +190,12 @@ export const ZH: Record<string, string> = {
     // 看广告复活（无尽/盲塔 game-over 面板专用）
     'result.reviveAd':   '🎬 看广告复活',
     'result.reviveAd.failed': '广告加载失败，请稍后再试',
+    // 复活弹窗（结果面板复用）
+    'result.reviveTitle':        '复活？',
+    'result.reviveCountdown':    '{n} 秒后失效',
+    'result.reviveGems':         '💎 {n} 复活',
+    'result.reviveGems.failed':  '复活失败，请稍后再试',
+    'result.reviveGems.notEnough':'宝石不够，先充值一下',
 
     // ---------- 切换语言 ----------
     // Toggle 显示**当前**语言（更符合玩家直觉——能一眼看出"我现在在哪个语言"）。
