@@ -164,6 +164,11 @@ export const FR: Record<string, string> = {
     'result.home':       'Accueil',
     'result.reviveAd':   '🎬 Voir la pub pour revivre',
     'result.reviveAd.failed': 'Échec du chargement de la publicité, réessayez plus tard',
+    'result.reviveTitle':        'Renaître ?',
+    'result.reviveCountdown':    'Expire dans {n}s',
+    'result.reviveGems':         '💎 {n} pour renaître',
+    'result.reviveGems.failed':  'Échec de la renaissance, réessayez plus tard',
+    'result.reviveGems.notEnough':'Gemmes insuffisantes — rechargez d'abord',
 
     'lang.toggle':       'Français',
 

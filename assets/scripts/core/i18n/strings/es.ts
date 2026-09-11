@@ -184,6 +184,11 @@ export const ES: Record<string, string> = {
     'result.home':       'Inicio',
     'result.reviveAd':   '🎬 Ver anuncio para revivir',
     'result.reviveAd.failed': 'No se pudo cargar el anuncio, inténtalo más tarde',
+    'result.reviveTitle':        '¿Revivir?',
+    'result.reviveCountdown':    'Expira en {n}s',
+    'result.reviveGems':         '💎 {n} para revivir',
+    'result.reviveGems.failed':  'Reanimación fallida, inténtalo más tarde',
+    'result.reviveGems.notEnough':'Gemas insuficientes — recarga primero',
 
     // ---------- Toggle idioma ----------
     'lang.toggle':       'Español',

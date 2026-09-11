@@ -188,6 +188,11 @@ export const JA: Record<string, string> = {
     'result.home':       'ホーム',
     'result.reviveAd':   '🎬 広告を見て復活',
     'result.reviveAd.failed': '広告の読み込みに失敗しました。しばらくしてからやり直してください',
+    'result.reviveTitle':        '復活する？',
+    'result.reviveCountdown':    '{n}秒後に消えます',
+    'result.reviveGems':         '💎 {n} で復活',
+    'result.reviveGems.failed':  '復活に失敗しました。しばらくしてから再試行',
+    'result.reviveGems.notEnough':'ジェムが足りません — 先にチャージ',
 
     // ---------- 言語切替 ----------
     'lang.toggle':       '日本語',

@@ -59,6 +59,14 @@ import { deletePlayerSelf } from '../core/PlayerApi';
 import { IS_DEV_BUILD } from '../core/BuildConfig';
 import { AnalyticsApi } from '../core/AnalyticsApi';
 import { Providers } from '../core/channels/Providers';
+import { fetchReviveCost, purchaseRevive, DEFAULT_REVIVE_COST_GEMS } from '../core/ReviveApi';
+
+// ============================================================
+//  Endless-mode revive prompt — knobs
+// ============================================================
+/** Seconds the revive prompt sits on screen before it auto-dismisses
+ *  and hands off to the regular game-over panel. */
+const REVIVE_COUNTDOWN_SEC = 10;
 import { fetchConsentStatus } from '../core/ConsentApi';
 import { ConsentModal } from './ConsentModal';
 import { GoogleWebOAuth } from '../channels/google/GoogleWebOAuth';
@@ -1388,15 +1396,36 @@ export class MenuController extends Component {
     /** Endless or level mode game-over (player failed). */
     public showGameOver(reason: number | null): void {
         const isLevel = this.currentLevelIdx >= 0;
+        // Endless / blind + the one-shot revive is still available →
+        // show the revive prompt FIRST. The prompt reuses the authored
+        // result panel with a swap-in title, countdown-driven subtitle,
+        // and two buttons (watch ad / spend gems). If the player picks
+        // one and it succeeds, the run resumes and we never build the
+        // regular fail panel. If they let the countdown lapse (or the
+        // pick fails), the revive prompt hands off to the regular
+        // fail-panel path.
+        const gs = this.gameController?.gameState;
+        const canRevive = !isLevel && !!gs && !gs.endlessReviveUsed;
+        if (canRevive) {
+            this.showRevivePrompt(() => this._showGameOverFinal(reason));
+            return;
+        }
+        this._showGameOverFinal(reason);
+    }
+
+    /** The original "you lost, retry or home" panel path. Extracted so
+     *  showRevivePrompt can fall through to it after countdown expiry
+     *  (or when the revive attempt errored out). Keeps the endless
+     *  height recording in one place so the leaderboard unlock state
+     *  fires exactly once per failed run regardless of which path the
+     *  UI took to get here. */
+    private _showGameOverFinal(reason: number | null): void {
+        const isLevel = this.currentLevelIdx >= 0;
         const title = isLevel ? t('result.levelFail') : t('result.gameOver');
         const subtitle = reason === 1 ? t('result.fail.hole')
                        : reason === 2 ? t('result.fail.tall')
                        : '';
         this.buildResultPanel(title, subtitle, this.makeFailButtons());
-        // Endless/blind: record the just-ended run's cumulative height
-        // so the Blind mode + Leaderboard unlock state updates the
-        // instant the player crosses BLIND_UNLOCK_ENDLESS_LAYERS, without
-        // needing a server round-trip on next boot.
         if (!isLevel) {
             const layers = this.gameController?.gameState?.endlessProgress?.cumulative ?? 0;
             this._recordEndlessRun(layers);
@@ -1574,33 +1603,123 @@ export class MenuController extends Component {
                 { label: t('result.home'),  action: () => { this.dismissResultPanel(); this.showModeSelect(); } },
             ];
         }
-        // Endless / blind — same buttons for both. Prepend a one-shot
-        // "watch ad to revive" button unless the current run already
-        // spent it. Order matters: revive → retry → home so the
-        // primary continuation is left-most.
-        const gs = this.gameController?.gameState;
-        const canRevive = !!gs && !gs.endlessReviveUsed;
         const retryAction = this.blindModeActive
             ? () => this.startBlind()
             : () => this.startEndless();
-        const buttons: Array<{ label: string; action: () => void }> = [];
-        if (canRevive) {
-            buttons.push({ label: t('result.reviveAd'), action: () => this.onReviveAdClicked() });
-        }
-        buttons.push({ label: t('result.endlessRetry'), action: retryAction });
-        buttons.push({ label: t('result.home'),         action: () => { this.dismissResultPanel(); this.showModeSelect(); } });
-        return buttons;
+        return [
+            { label: t('result.endlessRetry'), action: retryAction },
+            { label: t('result.home'),         action: () => { this.dismissResultPanel(); this.showModeSelect(); } },
+        ];
     }
 
-    /** Endless / blind "watch ad to revive" click handler. Runs the
-     *  rewarded-ad flow via Providers.ads; on `rewarded` the game
-     *  state's own reviveEndless() clears the top rows and unfreezes
-     *  the run. On dismiss / error we leave the result panel up so
-     *  the player can still tap retry or home. Mock ad provider
-     *  (main / non-channel builds) resolves 'rewarded' instantly so
-     *  this exercises end-to-end in editor / plain APK; channels
-     *  swap in a real ad SDK at boot time. */
-    private onReviveAdClicked(): void {
+    // ============================================================
+    //  Revive prompt — reuses the authored result panel, shown
+    //  BEFORE the regular game-over panel in endless / blind mode
+    //  when the one-shot revive is still available.
+    // ============================================================
+    /** Client-side default; overwritten by the first successful
+     *  `fetchReviveCost` response. Used for the button label until
+     *  the network round-trip lands. */
+    private _reviveGemCost: number = DEFAULT_REVIVE_COST_GEMS;
+    /** Countdown seconds for the revive prompt. Set once at open time
+     *  and decremented on the interval. */
+    private _reviveCountdownSec: number = 0;
+    private _reviveCountdownTimer: ReturnType<typeof setInterval> | null = null;
+    /** Guard so the "did the player pick something / did we already
+     *  fall through" state is single-shot. Both the countdown callback
+     *  and the button callbacks flip this before doing their work; the
+     *  loser is a no-op. */
+    private _reviveResolved: boolean = false;
+
+    /** Open the revive prompt. `onSkip` runs when the countdown lapses
+     *  or an attempted revive fails — the caller's onSkip is expected
+     *  to fall back to the regular game-over panel. If the player
+     *  successfully revives (ad rewarded or gems spent) the callback
+     *  is NOT invoked — the game just resumes. */
+    private showRevivePrompt(onSkip: () => void): void {
+        this._reviveResolved = false;
+        this._reviveCountdownSec = REVIVE_COUNTDOWN_SEC;
+        // Kick off the gem-cost fetch in the background so the button
+        // label updates from the fallback to the server-authoritative
+        // number as soon as it lands. Non-blocking — the button works
+        // with the fallback price too; server also re-validates on
+        // purchase, so a stale local price is safe.
+        void fetchReviveCost()
+            .then(r => {
+                this._reviveGemCost = r.gems || DEFAULT_REVIVE_COST_GEMS;
+                // If prompt is still on screen, repaint the gem button
+                // label with the fresh number.
+                if (!this._reviveResolved) this._repaintReviveGemButton();
+            })
+            .catch(err => {
+                console.warn('[Revive] fetchReviveCost failed (using default):', String(err?.message ?? err));
+            });
+
+        const buttons: Array<{ label: string; action: () => void }> = [
+            { label: t('result.reviveAd'), action: () => this._onReviveAdClicked(onSkip) },
+            { label: t('result.reviveGems', { n: this._reviveGemCost }),
+              action: () => this._onReviveGemsClicked(onSkip) },
+        ];
+        this.buildResultPanel(
+            t('result.reviveTitle'),
+            this._reviveCountdownSubtitle(this._reviveCountdownSec),
+            buttons,
+        );
+        this._startReviveCountdown(onSkip);
+    }
+
+    private _reviveCountdownSubtitle(sec: number): string {
+        return t('result.reviveCountdown', { n: sec });
+    }
+
+    private _repaintReviveGemButton(): void {
+        // Result panel's gem button is the second one (index 1) — repaint
+        // its label without rebuilding the whole panel so an in-flight
+        // countdown doesn't reset.
+        const btn = this.authoredResultButtons?.[1];
+        if (!btn || !btn.node.isValid) return;
+        const paired = this.authoredResultButtonLabels?.[1];
+        const lab = paired || btn.getComponentInChildren(Label);
+        if (lab) lab.string = t('result.reviveGems', { n: this._reviveGemCost });
+    }
+
+    private _startReviveCountdown(onSkip: () => void): void {
+        this._clearReviveCountdown();
+        this._reviveCountdownTimer = setInterval(() => {
+            this._reviveCountdownSec--;
+            if (this._reviveCountdownSec <= 0) {
+                this._clearReviveCountdown();
+                if (!this._reviveResolved) {
+                    this._reviveResolved = true;
+                    // Dismiss the revive prompt and hand off to the
+                    // regular fail panel. Silent — expiring the timer
+                    // is a normal outcome, not an error.
+                    this.dismissResultPanel();
+                    onSkip();
+                }
+                return;
+            }
+            // Live-update the subtitle only — don't rebuild the panel
+            // (would tear down the button click bindings). authored-
+            // ResultSubtitleLabel is the direct paint target.
+            if (this.authoredResultSubtitleLabel && this.authoredResultSubtitleLabel.node.isValid) {
+                this.authoredResultSubtitleLabel.string = this._reviveCountdownSubtitle(this._reviveCountdownSec);
+            }
+        }, 1000);
+    }
+
+    private _clearReviveCountdown(): void {
+        if (this._reviveCountdownTimer !== null) {
+            clearInterval(this._reviveCountdownTimer);
+            this._reviveCountdownTimer = null;
+        }
+    }
+
+    /** Watch-ad button on the revive prompt. */
+    private _onReviveAdClicked(onSkip: () => void): void {
+        if (this._reviveResolved) return;
+        this._reviveResolved = true;
+        this._clearReviveCountdown();
         void (async () => {
             try {
                 AnalyticsApi.logCustom('ad_shown', { placement: 'endless_revive' });
@@ -1611,21 +1730,25 @@ export class MenuController extends Component {
                         value:               1,
                         placement:           'endless_revive',
                     });
-                    // Fire the game-side revive. False return means the
-                    // state didn't accept it (edge case: player tapped
-                    // twice or something reset the game). Leave the
-                    // panel up either way.
                     const ok = this.gameController?.gameState?.reviveEndless(5);
                     if (ok) {
                         this.dismissResultPanel();
-                    } else {
-                        ToastManager.instance?.show(t('result.reviveAd.failed'));
+                        return;
                     }
+                    // Revive was rejected client-side (shouldn't happen
+                    // in practice — gs.gameOver checked before showing
+                    // the prompt). Fall through to the fail panel.
+                    ToastManager.instance?.show(t('result.reviveAd.failed'));
+                    this.dismissResultPanel();
+                    onSkip();
                     return;
                 }
                 if (r.kind === 'dismissed') {
                     AnalyticsApi.logCustom('ad_dismissed', { placement: 'endless_revive' });
-                    // Silent — the player chose to skip.
+                    // Player closed the ad early — treat as skip and
+                    // route to the fail panel.
+                    this.dismissResultPanel();
+                    onSkip();
                     return;
                 }
                 console.warn('[Revive] ad error:', r.reason);
@@ -1634,9 +1757,48 @@ export class MenuController extends Component {
                     reason: String(r.reason ?? 'unknown'),
                 });
                 ToastManager.instance?.show(t('result.reviveAd.failed'));
+                this.dismissResultPanel();
+                onSkip();
             } catch (e) {
                 console.warn('[Revive] showRewardedAd threw:', (e as Error)?.message ?? e);
                 ToastManager.instance?.show(t('result.reviveAd.failed'));
+                this.dismissResultPanel();
+                onSkip();
+            }
+        })();
+    }
+
+    /** Spend-gems button on the revive prompt. */
+    private _onReviveGemsClicked(onSkip: () => void): void {
+        if (this._reviveResolved) return;
+        this._reviveResolved = true;
+        this._clearReviveCountdown();
+        void (async () => {
+            try {
+                const r = await purchaseRevive();
+                if (r.ok) {
+                    const ok = this.gameController?.gameState?.reviveEndless(5);
+                    if (ok) {
+                        this.dismissResultPanel();
+                        return;
+                    }
+                    this.dismissResultPanel();
+                    onSkip();
+                    return;
+                }
+                // Server rejected — usually insufficient-gems. Toast +
+                // hand off to fail panel (player can still retry / home).
+                const key = r.reason === 'insufficient-gems'
+                    ? 'result.reviveGems.notEnough'
+                    : 'result.reviveGems.failed';
+                ToastManager.instance?.show(t(key));
+                this.dismissResultPanel();
+                onSkip();
+            } catch (e) {
+                console.warn('[Revive] purchaseRevive threw:', (e as Error)?.message ?? e);
+                ToastManager.instance?.show(t('result.reviveGems.failed'));
+                this.dismissResultPanel();
+                onSkip();
             }
         })();
     }

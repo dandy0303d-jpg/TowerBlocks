@@ -184,6 +184,11 @@ export const KO: Record<string, string> = {
     'result.home':       '홈',
     'result.reviveAd':   '🎬 광고 보고 부활',
     'result.reviveAd.failed': '광고를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요',
+    'result.reviveTitle':        '부활?',
+    'result.reviveCountdown':    '{n}초 후 사라져요',
+    'result.reviveGems':         '💎 {n} 부활',
+    'result.reviveGems.failed':  '부활 실패, 잠시 후 다시 시도',
+    'result.reviveGems.notEnough':'젬이 부족해요 — 충전해 주세요',
 
     // ---------- Language toggle ----------
     // Shows the CURRENT language ("you are here") — click to cycle.

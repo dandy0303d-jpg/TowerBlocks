@@ -166,6 +166,11 @@ export const DE: Record<string, string> = {
     'result.home':       'Start',
     'result.reviveAd':   '🎬 Werbung ansehen, um wiederzubeleben',
     'result.reviveAd.failed': 'Werbung konnte nicht geladen werden, bitte später erneut versuchen',
+    'result.reviveTitle':        'Wiederbeleben?',
+    'result.reviveCountdown':    'Angebot läuft in {n}s ab',
+    'result.reviveGems':         '💎 {n} zum Wiederbeleben',
+    'result.reviveGems.failed':  'Wiederbeleben fehlgeschlagen, später erneut versuchen',
+    'result.reviveGems.notEnough':'Nicht genug Edelsteine — zuerst aufladen',
 
     'lang.toggle':       'Deutsch',
 
