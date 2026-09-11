@@ -3848,7 +3848,15 @@ export class GameController extends Component {
         setTimeout(() => {
             for (let i = 0; i < rows.length; i++) {
                 const r = rows[i];
-                setTimeout(() => this.spawnRibbonDetonate(r), i * RIBBON_STAGGER_MS);
+                setTimeout(() => {
+                    this.spawnRibbonDetonate(r);
+                    // Same SFX + haptic the col-bomb detonation plays.
+                    // Fires per row so a tall tower gets a satisfying
+                    // rat-a-tat of explosions instead of one silent
+                    // visual sweep.
+                    SoundManager.instance?.play('bomb_boom');
+                    HapticsManager.impact('heavy');
+                }, i * RIBBON_STAGGER_MS);
             }
             // Wait for the LAST fx to finish before doing the wipe.
             // rowBlastDetonateFx.duration is in seconds; convert.
