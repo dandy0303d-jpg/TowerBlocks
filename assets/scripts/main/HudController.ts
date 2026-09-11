@@ -3235,7 +3235,14 @@ export class HudController extends Component {
         // preview blocks look sometimes big, sometimes small" bug.
         // Smaller shapes just occupy less of the canvas.
         const REF_W = 4, REF_H = 4;
-        const cell = Math.floor(Math.min((CANV_W - 8) / REF_W, (CANV_H - 8) / REF_H));
+        // 1.1x bump on the computed cell size — player wanted the
+        // preview tiles slightly larger than the "everything fits
+        // exactly" default. 4×4 shape still fits inside the canvas
+        // because REF=4 leaves a natural margin (a 4×4 shape at the
+        // bumped cell size occupies REF_W * cell * 1.1 = 4.4 * cell,
+        // still under CANV_W-8 for any reasonable canvas > 40 px).
+        const SIZE_BUMP = 1.1;
+        const cell = Math.floor(Math.min((CANV_W - 8) / REF_W, (CANV_H - 8) / REF_H) * SIZE_BUMP);
         const totalW = cell * bw, totalH = cell * bh;
         const offX = -totalW / 2;
         const offY =  totalH / 2 - cell;
