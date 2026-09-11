@@ -1624,7 +1624,10 @@ export class MenuController extends Component {
     /** Countdown seconds for the revive prompt. Set once at open time
      *  and decremented on the interval. */
     private _reviveCountdownSec: number = 0;
-    private _reviveCountdownTimer: ReturnType<typeof setInterval> | null = null;
+    // setInterval's return type resolves to NodeJS.Timeout under some
+    // tsconfig lib combos which Cocos 3.8's browser TS doesn't know
+    // about; keep as `any` so the compile stays cross-target.
+    private _reviveCountdownTimer: any = null;
     /** Guard so the "did the player pick something / did we already
      *  fall through" state is single-shot. Both the countdown callback
      *  and the button callbacks flip this before doing their work; the
