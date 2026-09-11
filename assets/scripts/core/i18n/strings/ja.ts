@@ -186,6 +186,8 @@ export const JA: Record<string, string> = {
     'result.replay':     'リプレイ',
     'result.levelSelect':'ステージ',
     'result.home':       'ホーム',
+    'result.reviveAd':   '🎬 広告を見て復活',
+    'result.reviveAd.failed': '広告の読み込みに失敗しました。しばらくしてからやり直してください',
 
     // ---------- 言語切替 ----------
     'lang.toggle':       '日本語',

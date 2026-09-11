@@ -184,6 +184,8 @@ export const EN: Record<string, string> = {
     'result.replay':     'Replay',
     'result.levelSelect':'Levels',
     'result.home':       'Home',
+    'result.reviveAd':   '🎬 Watch ad to revive',
+    'result.reviveAd.failed': 'Ad failed to load, try again later',
 
     // ---------- Language toggle ----------
     // Shows the CURRENT language ("you are here") — click to cycle.

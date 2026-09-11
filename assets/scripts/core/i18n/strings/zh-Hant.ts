@@ -184,6 +184,8 @@ export const ZH_HANT: Record<string, string> = {
     'result.replay':     '重玩',
     'result.levelSelect':'選關',
     'result.home':       '主頁',
+    'result.reviveAd':   '🎬 看廣告復活',
+    'result.reviveAd.failed': '廣告載入失敗，請稍後再試',
 
     // ---------- 切換語言 ----------
     'lang.toggle':       '繁體',

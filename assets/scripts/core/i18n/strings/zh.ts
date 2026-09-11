@@ -187,6 +187,9 @@ export const ZH: Record<string, string> = {
     'result.replay':     '重玩',
     'result.levelSelect':'选关',
     'result.home':       '主页',
+    // 看广告复活（无尽/盲塔 game-over 面板专用）
+    'result.reviveAd':   '🎬 看广告复活',
+    'result.reviveAd.failed': '广告加载失败，请稍后再试',
 
     // ---------- 切换语言 ----------
     // Toggle 显示**当前**语言（更符合玩家直觉——能一眼看出"我现在在哪个语言"）。

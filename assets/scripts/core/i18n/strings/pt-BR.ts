@@ -168,6 +168,8 @@ export const PT_BR: Record<string, string> = {
     'result.replay':     'Replay',
     'result.levelSelect':'Fases',
     'result.home':       'Início',
+    'result.reviveAd':   '🎬 Ver anúncio para reviver',
+    'result.reviveAd.failed': 'Falha ao carregar anúncio, tente novamente mais tarde',
 
     'lang.toggle':       'Português',
 
