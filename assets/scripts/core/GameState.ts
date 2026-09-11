@@ -1773,18 +1773,21 @@ export class GameState {
         this.hooks.onGameOver?.(reason);
     }
 
-    /** Watch-ad revive — endless / blind mode only. Called after the
-     *  rewarded-ad completes successfully. Clears the top N solid rows
-     *  (default 5) to buy the player breathing room, drops any floating
-     *  cells with a diagonal gravity pass, unfreezes the game-over
-     *  flags, and marks the one-shot revive as spent. Cumulative score
-     *  / height / inventory are all preserved. Returns true if the
-     *  revive actually ran; false if it was rejected (already revived
-     *  this run, or not currently in a game-over state).
+    /** Endless / blind revive — called after the rewarded ad completes
+     *  OR after the gems purchase succeeds. Wipes every colored (piece
+     *  origin) cell across the whole board — the tower resets to its
+     *  bare foundation ('X' gray + 'H' hail cells stay) so the player
+     *  gets a clean slate. Cumulative score / height / inventory are
+     *  all preserved. Returns true if the revive actually ran; false
+     *  if it was rejected (already revived this run, or not currently
+     *  in a game-over state).
+     *
+     *  The `_clearRows` argument is kept for API stability but is
+     *  ignored — the revive is now full-board.
      *
      *  The result panel is NOT dismissed here — the caller is expected
      *  to do that (via MenuController). */
-    public reviveEndless(clearRows: number = 5): boolean {
+    public reviveEndless(_clearRows: number = 5): boolean {
         if (!this.gameOver) return false;
         if (this.endlessReviveUsed) return false;
         // Level mode has its own retry flow — revive is endless / blind
@@ -1792,18 +1795,18 @@ export class GameState {
         // button in the wrong mode.
         if (this.mode !== 'endless' && this.mode !== 'blind') return false;
         this.endlessReviveUsed = true;
-        // ---- Clear the top N rows containing any solid cell. Scan
-        //      top-down; each row that has at least one non-null cell
-        //      gets emptied. Stop after N such rows are wiped.
+        // ---- Full colored-cell wipe. Iterate every cell; null out
+        //      anything that came from a piece (isColoredCell). Leave
+        //      'X' (gray foundation, endless has none but blind might)
+        //      and 'H' (hail) in place — hail is part of the level
+        //      mechanic, not the player's tower.
+        //      Every parallel prop layer is cleared too so bombs /
+        //      booms / wreckers / chest markers etc. don't get left
+        //      floating on empty cells after the wipe.
         const H = this.state.board.length;
-        let wiped = 0;
-        for (let r = 0; r < H && wiped < clearRows; r++) {
-            let hasSolid = false;
+        for (let r = 0; r < H; r++) {
             for (let c = 0; c < COLS; c++) {
-                if (this.state.board[r][c] != null) { hasSolid = true; break; }
-            }
-            if (!hasSolid) continue;
-            for (let c = 0; c < COLS; c++) {
+                if (!isColoredCell(this.state.board[r][c])) continue;
                 this.state.board[r][c] = null;
                 if (this.state.boardBombs    && this.state.boardBombs[r])    this.state.boardBombs[r][c]    = null;
                 if (this.state.boardBooms    && this.state.boardBooms[r])    this.state.boardBooms[r][c]    = null;
@@ -1816,7 +1819,6 @@ export class GameState {
                 if (this.state.boardRockets  && this.state.boardRockets[r])  this.state.boardRockets[r][c]  = null;
                 if (this.state.boardGatlings && this.state.boardGatlings[r]) this.state.boardGatlings[r][c] = null;
             }
-            wiped++;
         }
         // Drop any survivors that lost support. Pass state.board.length
         // as reservedTop so gravity uses the true bottom (endless has
