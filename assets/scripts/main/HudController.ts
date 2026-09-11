@@ -3227,7 +3227,15 @@ export class HudController extends Component {
         const ut = g.node.getComponent(UITransform);
         const CANV_W = ut ? Math.max(1, ut.width)  : 124;
         const CANV_H = ut ? Math.max(1, ut.height) : 60;
-        const cell = Math.floor(Math.min((CANV_W - 8) / bw, (CANV_H - 8) / bh));
+        // Fixed reference bbox — same trick drawFateShape uses. Divide
+        // by the ref (not the per-shape bw/bh) so every tetromino /
+        // fate piece uses the SAME cell size regardless of its actual
+        // dimensions. Otherwise I (4×1) and O (2×2) would render at
+        // wildly different cell sizes on the same canvas — the "next
+        // preview blocks look sometimes big, sometimes small" bug.
+        // Smaller shapes just occupy less of the canvas.
+        const REF_W = 4, REF_H = 4;
+        const cell = Math.floor(Math.min((CANV_W - 8) / REF_W, (CANV_H - 8) / REF_H));
         const totalW = cell * bw, totalH = cell * bh;
         const offX = -totalW / 2;
         const offY =  totalH / 2 - cell;
