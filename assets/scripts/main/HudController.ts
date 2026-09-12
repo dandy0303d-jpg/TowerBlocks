@@ -564,6 +564,14 @@ export class HudController extends Component {
      *  back to true and undo the "timer visibly leaves the screen"
      *  beat the user asked for. Cleared in resetLevelTimerPosition. */
     private _levelTimerForceHidden: boolean = false;
+
+    /** True between showLevelClearTime and resetLevelTimerPosition —
+     *  gates the pause button, NEXT preview, and energy bar so they
+     *  hide during the scatter/celebration beat and don't compete
+     *  visually with the centered clear-time panel. Distinct from
+     *  _levelTimerForceHidden so a future change to one doesn't
+     *  accidentally unhide the other. */
+    private _hudCelebrationHidden: boolean = false;
     /** Pending setTimeout IDs for the level-clear animation. If a new
      *  level starts (or the HUD tears down) before the animation
      *  finishes, we cancel these so a stray callback doesn't fire
@@ -932,7 +940,8 @@ export class HudController extends Component {
         // write, which Cocos short-circuits when the value is unchanged.
         if (this.authoredPauseButton) {
             const tutorialActive = !!g.tutorialActive;
-            const shouldShow = this._hudOn && !tutorialActive;
+            const shouldShow = this._hudOn && !tutorialActive
+                            && !this._hudCelebrationHidden;
             if (this.authoredPauseButton.node.active !== shouldShow) {
                 this.authoredPauseButton.node.active = shouldShow;
             }
@@ -3512,6 +3521,21 @@ export class HudController extends Component {
             container.active = false;
         }
 
+        // 1b) Hide the rest of the gameplay HUD (pause button, NEXT
+        //     preview, energy bar) so the celebration panel + tower
+        //     scatter FX get a clean stage. Pause button is gated via
+        //     _hudCelebrationHidden in refreshHud (so it can't re-show
+        //     mid-celebration); NEXT preview + energy bar only have a
+        //     one-shot set in setHudVisible, so we hide them directly
+        //     here and restore them in resetLevelTimerPosition when
+        //     the next level starts.
+        this._hudCelebrationHidden = true;
+        if (this.authoredNextPreviewBox) {
+            this.authoredNextPreviewBox.active = false;
+        }
+        const energyNode = this.node.getChildByName('Energy');
+        if (energyNode) energyNode.active = false;
+
         // 2) Fill in the celebration panel's title + "MM:SS" labels.
         //    Title is localized via t('level.congrats'). Leave the
         //    label alone if the slot is null — the artist may have
@@ -3592,6 +3616,20 @@ export class HudController extends Component {
         // Clear the force-hidden latch — a fresh level should let the
         // per-frame refreshHud take back over toggling visibility.
         this._levelTimerForceHidden = false;
+        // Clear the celebration latch + explicitly re-show the NEXT
+        // preview and energy bar. Pause button flips back on its own
+        // via refreshHud's per-frame gate (which now respects
+        // _hudCelebrationHidden). Energy is skipped in blind mode
+        // just like setHudVisible does — no magic items there.
+        this._hudCelebrationHidden = false;
+        if (this._hudOn && this.authoredNextPreviewBox) {
+            this.authoredNextPreviewBox.active = true;
+        }
+        const energyNode = this.node.getChildByName('Energy');
+        if (energyNode && this._hudOn) {
+            const isBlind = this.gameController?.gameState?.mode === 'blind';
+            energyNode.active = !isBlind;
+        }
         // Belt-and-suspenders sunburst cleanup: if the player somehow
         // triggers a new level while the celebration is still on
         // screen (e.g. rapid restart before hideAtMs fires), snap it
