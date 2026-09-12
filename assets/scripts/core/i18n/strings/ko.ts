@@ -117,6 +117,7 @@ export const KO: Record<string, string> = {
     // 排行榜关卡模式专用（塔层数格式）—— 与 level.name 分开，避免影响其它 UI
     'level.floorName':   '스테이지 {n}층',
     'level.clearTime':   '클리어 시간: {time}',
+    'level.congrats':    '스테이지 클리어!',
     'level.enter':       '스테이지 진입',
 
     // ---------- Tutorial ----------

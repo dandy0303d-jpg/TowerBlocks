@@ -98,6 +98,7 @@ export const FR: Record<string, string> = {
     'level.name':        'Niveau {n}',
     'level.floorName':   'Étage {n}',
     'level.clearTime':   'Temps : {time}',
+    'level.congrats':    'Niveau terminé !',
     'level.enter':       'Entrer',
 
     'blind.fail.prompt': 'Défi échoué. Touche pour continuer.',

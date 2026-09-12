@@ -232,6 +232,15 @@ export class HudController extends Component {
     @property({ type: Node, tooltip: '关卡计时 Label 的容器 Node（可选，通常放暂停按钮同级）— tween-to-center 时会移动此 Node。留空时会 tween Label 自己的 node。仅关卡/收集模式显示' })
     authoredLevelTimerContainer: Node | null = null;
 
+    @property({ type: Node, tooltip: '通关庆祝面板 Node（内含 恭喜通关 + 通关时间 + 放射光 + 任何美术）。运行时强制 active=false 起手，通关时 scale 0.15→1 pop-in 300ms 弹入；hide 阶段 scale→0.5 淡出 200ms 后 active=false。可空——不拖则不显示。' })
+    authoredLevelClearPanel: Node | null = null;
+
+    @property({ type: Label, tooltip: '通关庆祝面板里的"恭喜通关"标题 Label。showLevelClearTime 时会把它的 string 填成 t("level.congrats")（各语言已翻译）。可空——不拖则不设置标题（面板里静态字符串也行）。' })
+    authoredLevelClearTitleLabel: Label | null = null;
+
+    @property({ type: Label, tooltip: '通关庆祝面板里显示"MM:SS"的 Label。showLevelClearTime 时会把它的 string 填成 t("level.clearTime", { time })（一般是 "通关时间：MM:SS"）。可空——不拖则不显示时间。' })
+    authoredLevelClearTimeLabel: Label | null = null;
+
     @property({ type: Sprite, tooltip: '层高 Label 背景 Sprite（可选，纯装饰底图；不拖也没关系）— 通常放在 Label 的同级 sibling，UITransform 铺满 Label 的容器' })
     authoredScoreBgSprite: Sprite | null = null;
 
@@ -620,6 +629,16 @@ export class HudController extends Component {
 
     onLoad(): void {
         log('[TowerBlocks] HudController.onLoad');
+        // Hard-hide the sunburst backdrop the moment the HUD boots.
+        // The artist typically leaves the Node active in the scene so
+        // it can be positioned + previewed in the editor, and without
+        // this line that authored state would leak into the first
+        // frame of gameplay (a yellow flash before showLevelClearTime
+        // plays it). Setting active=false directly here guarantees
+        // the sunburst is only ever visible during the celebration.
+        if (this.authoredLevelClearPanel && this.authoredLevelClearPanel.isValid) {
+            this.authoredLevelClearPanel.active = false;
+        }
     }
 
     /** Called when the component / its node is deactivated. Fires when
@@ -3469,69 +3488,74 @@ export class HudController extends Component {
     /** Signature now takes WHOLE SECONDS (matches GameState.levelElapsedSec).
      *  Was previously milliseconds — audit call sites when merging. */
     public showLevelClearTime(elapsedSec: number, onComplete?: () => void): void {
-        if (!this.authoredLevelTimerLabel) {
-            if (onComplete) {
-                const h = setTimeout(onComplete, HudController.LEVEL_CLEAR_TOTAL_MS);
-                this._levelClearTimeouts.push(h);
-            }
-            return;
-        }
+        // New behaviour: no longer moves + scales the HUD timer into
+        // the middle of the screen. Instead, the caller has authored a
+        // dedicated celebration panel (authoredLevelClearPanel) with its
+        // own "MM:SS" label (authoredLevelClearTimeLabel) inside it —
+        // we just fill in the label and pop the whole panel in.
+        //
+        // The small HUD timer is force-hidden for the duration so it
+        // doesn't compete with the panel's centered time display. We
+        // still freeze _levelTimerFrozenSec so per-frame refreshHud
+        // doesn't keep ticking the HUD timer text underneath.
         this._levelTimerFrozenSec = elapsedSec;
+        this._levelTimerLastSec = elapsedSec;
         const mm = Math.floor(elapsedSec / 60).toString().padStart(2, '0');
         const ss = (elapsedSec % 60).toString().padStart(2, '0');
-        this._levelTimerLastSec = elapsedSec;
 
-        const container = this.authoredLevelTimerContainer
-            ?? this.authoredLevelTimerLabel.node;
-        const targetScale = HudController.LEVEL_CLEAR_CENTER_SCALE;
-        // Start the tween IMMEDIATELY (no pre-hold — caller sits on
-        // the FX-drain wait upstream and only calls us at the moment
-        // scatter/level_win are firing). Snapshot the CURRENT live
-        // position / scale RIGHT NOW so resetLevelTimerPosition can
-        // restore to exactly where the timer was just before we moved
-        // it. Live-position snapshot means Widget / Layout / manual
-        // tweaks upstream all just work.
-        this._levelTimerRestPos.set(
-            container.position.x, container.position.y, container.position.z,
-        );
-        this._levelTimerRestScale.set(
-            container.scale.x, container.scale.y, container.scale.z,
-        );
-        this._levelTimerSnapshotCaptured = true;
-        this.authoredLevelTimerLabel.string = t('level.clearTime', { time: `${mm}:${ss}` });
-        // Bump the timer container to the last sibling of its parent so
-        // it renders ON TOP of everything else in the HUD (Energy bar,
-        // NEXT preview, etc.). Without this, the Energy Node — which
-        // was built programmatically and appended late — was covering
-        // the enlarged center-display timer. Sibling index is restored
-        // implicitly on the next level start (the container's parent
-        // rebuilds sibling order via its own layout / authoring).
-        if (container.parent) {
-            container.setSiblingIndex(container.parent.children.length - 1);
+        // 1) Hide the HUD timer container immediately. refreshHud
+        //    checks _levelTimerForceHidden and skips reactivating.
+        if (this.authoredLevelTimerLabel) {
+            const container = this.authoredLevelTimerContainer
+                ?? this.authoredLevelTimerLabel.node;
+            this._levelTimerForceHidden = true;
+            container.active = false;
         }
-        Tween.stopAllByTarget(container);
-        tween(container)
-            .to(HudController.LEVEL_CLEAR_MOVE_MS / 1000,
-                { position: new Vec3(0, 0, 0), scale: new Vec3(targetScale, targetScale, targetScale) },
-                { easing: 'quadOut' })
-            .start();
-        console.log(`[LevelTimer] moving to center — from (${container.position.x.toFixed(1)},${container.position.y.toFixed(1)}) scale=${container.scale.x.toFixed(2)}`);
-        // At (move + center-hold) — the "2s at center" is over. HIDE
-        // the container so the timer visibly leaves the screen, THEN
-        // wait POST_HIDE_MS so the disappearance reads as its own beat
-        // (fate modal doesn't crash-cut over the timer). onComplete
-        // fires at the end of that gap so the caller opens the modal
-        // AFTER the timer is fully gone.
+
+        // 2) Fill in the celebration panel's title + "MM:SS" labels.
+        //    Title is localized via t('level.congrats'). Leave the
+        //    label alone if the slot is null — the artist may have
+        //    baked the title into a bitmap graphic instead.
+        if (this.authoredLevelClearTitleLabel && this.authoredLevelClearTitleLabel.isValid) {
+            this.authoredLevelClearTitleLabel.string = t('level.congrats');
+        }
+        if (this.authoredLevelClearTimeLabel && this.authoredLevelClearTimeLabel.isValid) {
+            this.authoredLevelClearTimeLabel.string = t('level.clearTime', { time: `${mm}:${ss}` });
+        }
+
+        // 3) Pop the whole panel in — scale 0.15 → 1 over 300ms with
+        //    backOut for a tiny overshoot. Any spin / particles /
+        //    tween on children run under the panel node — HudController
+        //    doesn't touch them.
+        if (this.authoredLevelClearPanel && this.authoredLevelClearPanel.isValid) {
+            const sb = this.authoredLevelClearPanel;
+            Tween.stopAllByTarget(sb);
+            sb.active = true;
+            sb.setScale(0.15, 0.15, 1);
+            tween(sb)
+                .to(HudController.LEVEL_CLEAR_MOVE_MS / 1000,
+                    { scale: new Vec3(1, 1, 1) },
+                    { easing: 'backOut' })
+                .start();
+        }
+
+        console.log(`[LevelTimer] show panel — elapsedSec=${elapsedSec}`);
+
+        // 4) At (move + center-hold) the "2s at center" is over —
+        //    fade the panel out with scale 1 → 0.5 over 200ms then
+        //    hide. onComplete fires POST_HIDE_MS after this so the
+        //    fate modal (caller-scheduled) opens on a clean screen.
         const hideAtMs = HudController.LEVEL_CLEAR_MOVE_MS + HudController.LEVEL_CLEAR_CENTER_HOLD_MS;
         const hideHandle = setTimeout(() => {
-            if (this.authoredLevelTimerLabel && this.authoredLevelTimerLabel.isValid) {
-                const c = this.authoredLevelTimerContainer
-                    ?? this.authoredLevelTimerLabel.node;
-                // Set the force-hidden flag BEFORE toggling — refreshHud
-                // reads this flag and skips its own active toggle so we
-                // don't get flipped back on the very next frame.
-                this._levelTimerForceHidden = true;
-                c.active = false;
+            if (this.authoredLevelClearPanel && this.authoredLevelClearPanel.isValid) {
+                const sb = this.authoredLevelClearPanel;
+                Tween.stopAllByTarget(sb);
+                tween(sb)
+                    .to(HudController.LEVEL_CLEAR_POST_HIDE_MS / 1000,
+                        { scale: new Vec3(0.5, 0.5, 1) },
+                        { easing: 'quadIn' })
+                    .call(() => { if (sb && sb.isValid) sb.active = false; })
+                    .start();
             }
         }, hideAtMs);
         this._levelClearTimeouts.push(hideHandle);
@@ -3568,6 +3592,15 @@ export class HudController extends Component {
         // Clear the force-hidden latch — a fresh level should let the
         // per-frame refreshHud take back over toggling visibility.
         this._levelTimerForceHidden = false;
+        // Belt-and-suspenders sunburst cleanup: if the player somehow
+        // triggers a new level while the celebration is still on
+        // screen (e.g. rapid restart before hideAtMs fires), snap it
+        // off immediately — no tween, no fade, just gone. resetting is
+        // supposed to look instant.
+        if (this.authoredLevelClearPanel && this.authoredLevelClearPanel.isValid) {
+            Tween.stopAllByTarget(this.authoredLevelClearPanel);
+            this.authoredLevelClearPanel.active = false;
+        }
         if (!this.authoredLevelTimerLabel) return;
         const container = this.authoredLevelTimerContainer
             ?? this.authoredLevelTimerLabel.node;
