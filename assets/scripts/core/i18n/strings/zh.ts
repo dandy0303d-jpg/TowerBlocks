@@ -114,6 +114,7 @@ export const ZH: Record<string, string> = {
     'level.name':        '关卡 {n}',
     'level.floorName':   '关卡 {n} 层',
     'level.clearTime':   '通关时间：{time}',
+    'level.congrats':    '恭喜通关',
     'level.enter':       '进入关卡',
 
     // ---------- 闭眼模式 ----------

@@ -111,6 +111,7 @@ export const ZH_HANT: Record<string, string> = {
     'level.name':        '關卡 {n}',
     'level.floorName':   '關卡 {n} 層',
     'level.clearTime':   '通關時間：{time}',
+    'level.congrats':    '恭喜通關',
     'level.enter':       '進入關卡',
 
     // ---------- 閉眼模式 ----------

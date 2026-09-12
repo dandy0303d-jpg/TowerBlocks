@@ -104,6 +104,7 @@ export const PT_BR: Record<string, string> = {
     'level.name':        'Fase {n}',
     'level.floorName':   'Andar {n}',
     'level.clearTime':   'Tempo: {time}',
+    'level.congrats':    'Nível concluído!',
     'level.enter':       'Entrar na fase',
 
     'blind.fail.prompt': 'Desafio falhou. Toque para continuar.',
