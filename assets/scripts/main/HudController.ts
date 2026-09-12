@@ -2701,6 +2701,17 @@ export class HudController extends Component {
 
     private onSlotClicked(idx: number): void {
         console.log(`[Picker] slot ${idx} clicked, key=${this.pickerSlotKeys[idx]}`);
+        // Guard against click-through from the InsufficientGems modal.
+        // Repro: paid-refresh → server 402 → insufficient-gems panel
+        // pops up on top of the picker → user taps the panel's
+        // "recharge" or "cancel" button → the same tap sometimes leaks
+        // to a slot behind (rendering order / sibling-parent quirks in
+        // the authored scene). Defense in depth on top of the modal's
+        // own Dim + BlockInputEvents.
+        if (this.menuController?.authoredInsufficientGemsPanel?.active) {
+            console.log('[Picker] slot click swallowed — insufficient-gems modal active');
+            return;
+        }
         const g = this.gameController?.gameState;
         if (!g) {
             console.log('[Picker] no gameState, abort');
