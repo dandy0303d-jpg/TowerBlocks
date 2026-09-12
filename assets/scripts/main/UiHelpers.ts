@@ -30,12 +30,23 @@ export function ensureDimBackdrop(
     name: string = 'Dim',
 ): void {
     if (!overlay) return;
-    // Respect any pre-existing dim-like child.
+    // Respect any pre-existing dim-like child — the artist may have
+    // authored a custom-coloured / textured dim we don't want to
+    // overwrite. BUT: guarantee it eats input by ensuring
+    // BlockInputEvents is on it. Without this a scene-authored dim
+    // (rendered but not input-blocking) lets taps leak through to
+    // whatever was under the modal — the classic "modal is showing
+    // but the button behind still fires" bug.
     const existing = overlay.getChildByName('Dim')
         ?? overlay.getChildByName('FateDim')
         ?? overlay.getChildByName('Backdrop')
         ?? overlay.getChildByName(name);
-    if (existing) return;
+    if (existing) {
+        if (!existing.getComponent(BlockInputEvents)) {
+            existing.addComponent(BlockInputEvents);
+        }
+        return;
+    }
 
     // Walk up to the Canvas (or top-most ancestor) so we know the real
     // full-screen rect. If the overlay was authored as a small card-
