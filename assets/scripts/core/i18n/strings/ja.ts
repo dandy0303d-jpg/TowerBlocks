@@ -113,6 +113,7 @@ export const JA: Record<string, string> = {
     'level.name':        'ステージ {n}',
     'level.floorName':   'ステージ {n}階',
     'level.clearTime':   'クリア時間：{time}',
+    'level.congrats':    'ステージクリア！',
     'level.enter':       'ステージ開始',
 
     // ---------- ブラインドモード ----------

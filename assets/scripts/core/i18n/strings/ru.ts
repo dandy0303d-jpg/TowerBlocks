@@ -99,6 +99,7 @@ export const RU: Record<string, string> = {
     'level.name':        'Уровень {n}',
     'level.floorName':   'Этаж {n}',
     'level.clearTime':   'Время: {time}',
+    'level.congrats':    'Уровень пройден!',
     'level.enter':       'Войти в уровень',
 
     'blind.fail.prompt': 'Испытание провалено. Нажми для продолжения.',

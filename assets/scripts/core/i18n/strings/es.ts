@@ -109,6 +109,7 @@ export const ES: Record<string, string> = {
     'level.name':        'Nivel {n}',
     'level.floorName':   'Piso {n}',
     'level.clearTime':   'Tiempo: {time}',
+    'level.congrats':    '¡Nivel superado!',
     'level.enter':       'Entrar al nivel',
 
     // ---------- Blind mode ----------
