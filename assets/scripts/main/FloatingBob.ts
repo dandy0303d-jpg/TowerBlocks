@@ -29,6 +29,9 @@ export class FloatingBob extends Component {
     @property({ tooltip: '起始相位（秒）。多个 FloatingBob 用不同的相位可以避免整齐划一' })
     phase: number = 0;
 
+    @property({ tooltip: '起始方向反转：默认先向上再向下；勾上以后就先向下再向上。多个装饰一半勾一半不勾，一眼看去就不同步了。' })
+    startDownward: boolean = false;
+
     /** Captured Y at enable — the tween oscillates around this. */
     private baseY: number = 0;
 
@@ -54,12 +57,18 @@ export class FloatingBob extends Component {
         // Optional phase offset — delay before the first cycle so a
         // group of bobs can be scattered instead of moving as one.
         const phaseSec = Math.max(0, this.phase);
+        // Pick which endpoint we head to on the first half-period.
+        // Flip halves when startDownward is true so a cluster of bobs
+        // can visibly split into two "waves" instantly (up-first and
+        // down-first), regardless of phase delay.
+        const first  = this.startDownward ? down : up;
+        const second = this.startDownward ? up   : down;
         tween(this.node)
             .delay(phaseSec)
             // Ease sinusoidally so the top / bottom pause naturally —
             // constant-velocity linear feels mechanical.
-            .to(halfPeriod, { position: up   }, { easing: 'sineInOut' })
-            .to(halfPeriod, { position: down }, { easing: 'sineInOut' })
+            .to(halfPeriod, { position: first  }, { easing: 'sineInOut' })
+            .to(halfPeriod, { position: second }, { easing: 'sineInOut' })
             .union()
             .repeatForever()
             .start();
