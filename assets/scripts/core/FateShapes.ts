@@ -226,8 +226,32 @@ export function pickFateIndex4Connected(avoid: number, rng: () => number = Math.
     return pickWeightedFromPool(FATE_SHAPES_4CONNECTED_INDICES, avoid, rng);
 }
 
-/** Match a 4×4 shape against the canonical FATE_SHAPES list. Returns -1
- *  if no exact match — eg. a hand-authored custom piece in a level. */
+/** 90° clockwise rotation of a shape. */
+function rotate90(shape: number[][]): number[][] {
+    const H = shape.length, W = shape[0].length;
+    const out: number[][] = [];
+    for (let c = 0; c < W; c++) {
+        const row: number[] = [];
+        for (let r = H - 1; r >= 0; r--) row.push(shape[r][c] || 0);
+        out.push(row);
+    }
+    return out;
+}
+
+/** Horizontal mirror (left ↔ right) of a shape. */
+function mirrorH(shape: number[][]): number[][] {
+    return shape.map(row => row.slice().reverse());
+}
+
+/** Match a shape against the canonical FATE_SHAPES list. Returns -1 if
+ *  no orientation of the input matches — but only after trying all
+ *  eight D4 symmetries (4 rotations × 2 mirrors), because FATE_SHAPES
+ *  stores one canonical rep per equivalence class and hand-authored
+ *  custom pieces in levels are usually in some other orientation.
+ *  Without this, ~63% of hand-authored levels used to return -1 and
+ *  fall back to a random fate roll, making the level-select tower
+ *  cube (which renders the raw customPiece.shape) mismatch the game's
+ *  fate modal.  */
 export function fateIndexOfShape(shape: number[][] | undefined | null): number {
     if (!Array.isArray(shape)) return -1;
     // Trim shape to its bbox for comparison.
@@ -244,17 +268,51 @@ export function fateIndexOfShape(shape: number[][] | undefined | null): number {
     }
     if (minR > maxR) return -1;
     const h = maxR - minR + 1, w = maxC - minC + 1;
-    for (let i = 0; i < FATE_SHAPES.length; i++) {
-        const s = FATE_SHAPES[i];
-        if (s.length !== h || s[0].length !== w) continue;
-        let ok = true;
-        for (let r = 0; r < h && ok; r++) {
-            for (let c = 0; c < w && ok; c++) {
-                const a = flatRows[minR + r] && flatRows[minR + r][minC + c] ? 1 : 0;
-                if (a !== s[r][c]) ok = false;
-            }
+    // Build the trimmed shape once — normalisation input for the
+    // rotation / mirror sweep below.
+    const trimmed: number[][] = [];
+    for (let r = 0; r < h; r++) {
+        const row: number[] = [];
+        for (let c = 0; c < w; c++) {
+            row.push(flatRows[minR + r] && flatRows[minR + r][minC + c] ? 1 : 0);
         }
-        if (ok) return i;
+        trimmed.push(row);
+    }
+    // Generate all 8 D4 variants: 4 rotations of the shape, then 4
+    // rotations of its mirror. Some variants may be duplicates for
+    // symmetric shapes — that's fine, first match wins.
+    const variants: number[][][] = [];
+    let cur = trimmed;
+    for (let k = 0; k < 4; k++) { variants.push(cur); cur = rotate90(cur); }
+    cur = mirrorH(trimmed);
+    for (let k = 0; k < 4; k++) { variants.push(cur); cur = rotate90(cur); }
+    // Compare each variant against every entry in FATE_SHAPES. Some
+    // FATE_SHAPES entries are jagged (rows of different lengths — e.g.
+    // `[[1,1,1],[0,0,0,1]]`) because they were transcribed from
+    // Python without column padding. Treat out-of-range cells as 0
+    // and use the WIDER of the two shapes' widths for the sweep, so
+    // a jagged canonical shape still matches its padded variant.
+    for (const v of variants) {
+        const vh = v.length;
+        const vw = v[0].length;
+        for (let i = 0; i < FATE_SHAPES.length; i++) {
+            const s = FATE_SHAPES[i];
+            if (s.length !== vh) continue;
+            let sMaxW = 0;
+            for (let r = 0; r < s.length; r++) {
+                if (s[r].length > sMaxW) sMaxW = s[r].length;
+            }
+            const wCheck = Math.max(vw, sMaxW);
+            let ok = true;
+            for (let r = 0; r < vh && ok; r++) {
+                for (let c = 0; c < wCheck && ok; c++) {
+                    const av = (v[r] && v[r][c]) ? 1 : 0;
+                    const sv = (s[r] && s[r][c]) ? 1 : 0;
+                    if (av !== sv) ok = false;
+                }
+            }
+            if (ok) return i;
+        }
     }
     return -1;
 }

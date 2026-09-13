@@ -616,6 +616,13 @@ export class HudController extends Component {
     private fateCancel:  (() => void) | null = null;
     private fateCurrentIdx = 0;
     private fateCurrentBase: PieceType = 'I';
+    /** Overrides FATE_SHAPES[fateCurrentIdx] for both the modal preview
+     *  and the confirmed piece. Set when the entering level provides
+     *  a custom shape that isn't in the FATE_SHAPES pool (e.g. 6-cell
+     *  levels, or hand-authored shapes whose D4 canonicalisation
+     *  fateIndexOfShape didn't recognise). Cleared on reroll — after
+     *  which we're back on the pool and fateCurrentIdx is authoritative. */
+    private fateCurrentShape: number[][] | null = null;
     private fateLevelOrder = 0;
     /** Set by showFateModal when the entry is endless (no level-assigned
      *  fate piece). Restricts the reroll button to the 4-connected
@@ -3364,7 +3371,10 @@ export class HudController extends Component {
             if (child.name.startsWith('FateCell_')) child.destroy();
         }
 
-        const shape = FATE_SHAPES[this.fateCurrentIdx];
+        // Prefer the level's authored shape (fateCurrentShape) over the
+        // pool entry — see field docstring. Falls back to the pool for
+        // reroll / endless-entry paths that don't set the override.
+        const shape = this.fateCurrentShape ?? FATE_SHAPES[this.fateCurrentIdx];
         if (!shape || !shape.length) return;
         const h = shape.length;
         // Use MAX row length — several FATE_SHAPES entries are ragged
@@ -3702,18 +3712,35 @@ export class HudController extends Component {
         const cp = level.customPiece;
         let idx = -1;
         if (cp && Array.isArray(cp.shape)) idx = fateIndexOfShape(cp.shape);
-        // No pre-assigned shape (endless mode passes `customPiece: null`)
-        // → roll a random fate piece from the 4-connected subset only.
-        // 8-connected shapes (diagonals like ▞) leave tiny isolated
-        // holes when they land on an uneven stack — almost guaranteed
-        // dead-locks in the long-haul endless mode. The full 8-connected
-        // pool stays available for level mode (where the designer hand-
-        // picks the piece) via the index already resolved above.
-        if (idx < 0) {
+        // Two paths to a preview shape:
+        //   1. Level provided a custom shape → use IT as the source of
+        //      truth. fateCurrentIdx tracks a pool index for the reroll
+        //      button's "avoid" arg; fateCurrentShape holds the actual
+        //      shape used for render + confirm, whether or not idx
+        //      found a match. This is the fix for 6-cell shapes and
+        //      hand-authored shapes fateIndexOfShape doesn't canonicalise
+        //      — previously we discarded cp.shape and rolled random.
+        //   2. Endless entry (cp === null) → roll a random 4-connected
+        //      fate shape and let it flow through the pool path.
+        if (cp && Array.isArray(cp.shape)) {
+            this.fateCurrentShape = cp.shape;
+            // Fallback idx when the shape wasn't in the pool — pick any
+            // valid idx so the reroll button's `avoid` arg has SOMETHING
+            // to steer away from. -1 would make pickFateIndex include
+            // it in the pool and possibly re-pick it.
+            if (idx < 0) idx = 0;
+        } else {
+            // No pre-assigned shape → roll a random fate piece from the
+            // 4-connected subset only. 8-connected shapes (diagonals like
+            // ▞) leave tiny isolated holes when they land on an uneven
+            // stack — almost guaranteed dead-locks in the long-haul
+            // endless mode. The full 8-connected pool stays available
+            // for level mode via the branch above.
             const pool = FATE_SHAPES_4CONNECTED_INDICES;
             idx = pool.length > 0
                 ? pool[Math.floor(Math.random() * pool.length)]
                 : Math.floor(Math.random() * FATE_SHAPES.length);
+            this.fateCurrentShape = null;
         }
         this.fateCurrentIdx  = idx;
         this.fateCurrentBase = (cp && cp.baseType) || (['I','O','T','S','Z','J','L'] as PieceType[])[idx % 7];
@@ -3780,6 +3807,11 @@ export class HudController extends Component {
         let idx = -1;
         if (cp && Array.isArray(cp.shape)) idx = fateIndexOfShape(cp.shape);
         if (idx < 0) idx = ((level.order || 1) - 1) % FATE_SHAPES.length;
+        // Same "custom shape wins over pool" rule as showFateModal —
+        // preview MUST render the level's actual assigned piece, not
+        // the FATE_SHAPES fallback that fateIndexOfShape lands on when
+        // canonicalisation fails.
+        this.fateCurrentShape = (cp && Array.isArray(cp.shape)) ? cp.shape : null;
         this.fateCurrentIdx  = idx;
         this.fateCurrentBase = (cp && cp.baseType) || (['I','O','T','S','Z','J','L'] as PieceType[])[idx % 7];
         this.fateLevelOrder  = level.order || 0;
@@ -3812,7 +3844,11 @@ export class HudController extends Component {
     private refreshFateSubtitle(): void {
         if (!this.fateSubLab) return;
         let cellCount = 0;
-        const s = FATE_SHAPES[this.fateCurrentIdx];
+        // Same source-of-truth rule as drawFateShape: level-authored
+        // shape wins over the FATE_SHAPES pool entry. Without this the
+        // subtitle's "X 格" cell count reads the pool shape (5 max) even
+        // when the actual piece is a 6-cell level shape.
+        const s = this.fateCurrentShape ?? FATE_SHAPES[this.fateCurrentIdx];
         for (let r = 0; r < s.length; r++) {
             for (let c = 0; c < s[r].length; c++) {
                 if (s[r][c]) cellCount++;
@@ -3997,13 +4033,23 @@ export class HudController extends Component {
             : pickFateIndex(this.fateCurrentIdx);
         this.fateCurrentIdx  = newIdx;
         this.fateCurrentBase = (['I','O','T','S','Z','J','L'] as PieceType[])[newIdx % 7];
+        // A reroll switches to the FATE_SHAPES pool — clear the level
+        // shape override so the pool entry becomes authoritative for
+        // both preview and confirm.
+        this.fateCurrentShape = null;
         this.refreshFateSubtitle();
         this.drawFateShape();
     }
 
     private onFateConfirm(): void {
         const resolve = this.fateResolve;
-        const picked  = fateShapeAsCustomPiece(this.fateCurrentIdx, this.fateCurrentBase);
+        // Prefer the level-authored shape (fateCurrentShape) so 6-cell
+        // and other non-pool shapes are returned as-authored. Falls
+        // back to fateShapeAsCustomPiece(idx, base) when the player
+        // rerolled or entered from endless.
+        const picked = this.fateCurrentShape
+            ? { baseType: this.fateCurrentBase, shape: this.fateCurrentShape.map(row => row.slice()) }
+            : fateShapeAsCustomPiece(this.fateCurrentIdx, this.fateCurrentBase);
         this.hideFateModal();
         resolve?.(picked);
     }
