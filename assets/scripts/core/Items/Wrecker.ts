@@ -103,15 +103,20 @@ export function pickWreckerPlan(
     pickCount: number = WRECKER_TARGETS,
 ): WreckerPlan | null {
     if (pickCount <= 0) return null;
-    const candidates: Array<{ r: number; c: number }> = [];
+    // Split into two pools so the wrecker PREFERS colored (target) cells
+    // and only starts eating into the gray tower cells when the colored
+    // supply runs short. Rationale: gray cells are level-scaffold blocks
+    // the player wants to KEEP; colored cells are the goals. A pure
+    // uniform random pick was routinely wasting picks on gray, which
+    // felt bad ("拆迁队要优选选择彩色方块儿").
+    const coloredCandidates: Array<{ r: number; c: number }> = [];
+    const grayCandidates:    Array<{ r: number; c: number }> = [];
     for (let r = 0; r < state.board.length; r++) {
         for (let c = 0; c < COLS; c++) {
-            // Gray 'X' cells are eligible targets now — the
-            // gray-is-bomb-proof rule was lifted, and wrecker uses the
-            // same broad "any solid cell" definition as the other
-            // magic + embedded props.
             const v = state.board[r][c];
-            if (!isColoredCell(v) && v !== 'X') continue;
+            const isColored = isColoredCell(v);
+            const isGray    = v === 'X';
+            if (!isColored && !isGray) continue;
             if (state.boardBombs     && state.boardBombs[r]     && state.boardBombs[r][c])     continue;
             if (state.boardBooms     && state.boardBooms[r]     && state.boardBooms[r][c])     continue;
             if (state.boardChests    && state.boardChests[r]    && state.boardChests[r][c])    continue;
@@ -121,16 +126,30 @@ export function pickWreckerPlan(
             if (state.boardHails     && state.boardHails[r]     && state.boardHails[r][c])     continue;
             if (state.boardRockets   && state.boardRockets[r]   && state.boardRockets[r][c])   continue;
             if (state.boardGatlings  && state.boardGatlings[r]  && state.boardGatlings[r][c])  continue;
-            candidates.push({ r, c });
+            (isColored ? coloredCandidates : grayCandidates).push({ r, c });
         }
     }
-    if (!candidates.length) return null;
-    // Fisher–Yates shuffle, take the first N.
-    for (let i = candidates.length - 1; i > 0; i--) {
-        const j = Math.floor(rng() * (i + 1));
-        [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+    if (!coloredCandidates.length && !grayCandidates.length) return null;
+    // Fisher–Yates on each pool independently — we don't want the sort
+    // order (row-major) leaking into which cells get picked when the
+    // pool is bigger than pickCount.
+    const shuffle = (arr: Array<{ r: number; c: number }>) => {
+        for (let i = arr.length - 1; i > 0; i--) {
+            const j = Math.floor(rng() * (i + 1));
+            [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+    };
+    shuffle(coloredCandidates);
+    shuffle(grayCandidates);
+    // Take from the colored pool first; if it can't cover pickCount,
+    // top up with grays. Matches the Excavator's two-pass semantics
+    // (colored rows before gray rows) so both demolition items feel
+    // consistent to the player.
+    const chosen = coloredCandidates.slice(0, pickCount);
+    if (chosen.length < pickCount) {
+        chosen.push(...grayCandidates.slice(0, pickCount - chosen.length));
     }
-    const picks = candidates.slice(0, pickCount).map(({ r, c }) => ({
+    const picks = chosen.map(({ r, c }) => ({
         r, c, color: state.board[r][c] as CellValue,
     }));
     // Combo gates. Both prefer the caller's pre-fire snapshot since the
