@@ -238,8 +238,11 @@ export class HudController extends Component {
     @property({ type: Label, tooltip: '通关庆祝面板里的"恭喜通关"标题 Label。showLevelClearTime 时会把它的 string 填成 t("level.congrats")（各语言已翻译）。可空——不拖则不设置标题（面板里静态字符串也行）。' })
     authoredLevelClearTitleLabel: Label | null = null;
 
-    @property({ type: Label, tooltip: '通关庆祝面板里显示"MM:SS"的 Label。showLevelClearTime 时会把它的 string 填成 t("level.clearTime", { time })（一般是 "通关时间：MM:SS"）。可空——不拖则不显示时间。' })
+    @property({ type: Label, tooltip: '通关庆祝面板里显示"通关时间：MM:SS"的 Label（一体式）。showLevelClearTime 时填 t("level.clearTime", { time })。如果同时拖了 authoredLevelClearTimeValueLabel，这里只填前缀（"通关时间："），时间部分单独交给 value label——两个 Label 可以各自设不同的颜色。可空。' })
     authoredLevelClearTimeLabel: Label | null = null;
+
+    @property({ type: Label, tooltip: '通关庆祝面板里"MM:SS"的独立 Label（数字部分）。拖了这个之后，authoredLevelClearTimeLabel 只显示前缀"通关时间："，这里显示"01:23"——两个 Label 可以在场景里各自授权不同颜色/字号。不拖则回退到一体式（authoredLevelClearTimeLabel 显示完整"通关时间：01:23"）。' })
+    authoredLevelClearTimeValueLabel: Label | null = null;
 
     @property({ type: Sprite, tooltip: '层高 Label 背景 Sprite（可选，纯装饰底图；不拖也没关系）— 通常放在 Label 的同级 sibling，UITransform 铺满 Label 的容器' })
     authoredScoreBgSprite: Sprite | null = null;
@@ -3564,8 +3567,27 @@ export class HudController extends Component {
         if (this.authoredLevelClearTitleLabel && this.authoredLevelClearTitleLabel.isValid) {
             this.authoredLevelClearTitleLabel.string = t('level.congrats');
         }
-        if (this.authoredLevelClearTimeLabel && this.authoredLevelClearTimeLabel.isValid) {
-            this.authoredLevelClearTimeLabel.string = t('level.clearTime', { time: `${mm}:${ss}` });
+        // Split-label mode: when the artist wires a separate value
+        // Label, the prefix Label gets ONLY the "通关时间：" prefix
+        // (so it can carry its own color / font in the scene) and the
+        // value Label gets just the "MM:SS" number (different color).
+        // When the value slot is null we fall back to the legacy
+        // single-label full "通关时间：MM:SS" render.
+        const mmss = `${mm}:${ss}`;
+        if (this.authoredLevelClearTimeValueLabel && this.authoredLevelClearTimeValueLabel.isValid) {
+            this.authoredLevelClearTimeValueLabel.string = mmss;
+            if (this.authoredLevelClearTimeLabel && this.authoredLevelClearTimeLabel.isValid) {
+                // Substituting an empty {time} strips the placeholder
+                // from every language's template ('通关时间：{time}' →
+                // '通关时间：', 'Clear time: {time}' → 'Clear time: '),
+                // leaving the prefix + separator the artist expects.
+                // trim() cleans any trailing space some templates use
+                // before the placeholder.
+                this.authoredLevelClearTimeLabel.string
+                    = t('level.clearTime', { time: '' }).trim();
+            }
+        } else if (this.authoredLevelClearTimeLabel && this.authoredLevelClearTimeLabel.isValid) {
+            this.authoredLevelClearTimeLabel.string = t('level.clearTime', { time: mmss });
         }
 
         // 3) Pop the whole panel in — scale 0.15 → 1 over 300ms with

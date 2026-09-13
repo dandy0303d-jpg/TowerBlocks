@@ -3185,8 +3185,10 @@ export class GameController extends Component {
         // Projectile path — launch one small colored cube from
         // (srcR, srcC) to each target, stagger arrivals so the pulses
         // read as a sweep instead of an all-at-once bloom.
-        const FLIGHT_MS  = 250;
-        const STAGGER_MS = 30;   // per-pick launch offset
+        const FLIGHT_MS  = 400;   // slower fly-time so the arc reads clearly
+        const STAGGER_MS = 60;    // per-pick launch offset — bigger = the
+                                  // markers land one-by-one at a slower
+                                  // sweep rhythm instead of a burst
         let maxArrivalMs = 0;
         picks.forEach(({ r, c }, i) => {
             const launchDelay = i * STAGGER_MS;
