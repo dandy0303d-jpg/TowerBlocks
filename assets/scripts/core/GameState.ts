@@ -1627,24 +1627,20 @@ export class GameState {
         // DOT of the shower, or any normal piece), inject using
         // `this lock's clears + accumulator`. This way DOT clears
         // earlier in the shower aren't wasted just because the host
-        // piece happens to be a DOT.
-        // ANY-clear detector for the embed reward. The player's mental
-        // model is "if something got cleared this lock, next piece has
-        // a prop." Sources that all count as a clear:
-        //   - Natural piece-placement rows filled
-        //   - Any bomb seed fired (row/col blast)
-        //   - Any adjacent boom fired (diamond blast)
-        //   - Any wrecker fired (10-cell sweep)
-        //   - clearLines removed any row (cascade from any of the above)
-        const anyPropFired = (seeds.length > 0)
-                          || (adjBooms.length > 0)
-                          || (adjWreckers.length > 0);
+        // Embed reward only fires on a FULL 24-column row clear.
+        // Explicit design call (2026-09-13):
+        //   - Row/col directional-bomb firings alone do NOT count —
+        //     the bomb wipes cells but the row isn't a "true" clear.
+        //   - Boom / wrecker firings alone also do NOT count.
+        //   - Only a naturally-full row (piece-placement filled every
+        //     column) triggers the next-piece embed drop.
+        // Rationale: bombs would otherwise chain-grant props every
+        // time they fire and the piece pool would drown in props.
         const clearsForTier = Math.max(
             naturalClearsThisLock,
             this.mode === 'level' || this.mode === 'collect'
                 ? (this._lastClearLinesFullyCleared ?? 0)
                 : 0,
-            anyPropFired ? 1 : 0,
         );
 
         if (isEndlessLike(this.mode) || this.tutorialActive) {
