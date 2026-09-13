@@ -117,10 +117,31 @@ export interface GameRenderHooks {
      *  renderer plays an animated fall between fromR and toR instead
      *  of teleporting the cube to its new row. */
     onCellsFell?(moves: ReadonlyArray<import('./ColumnGravity').CellFallMove>): void;
-    /** Wrecker fired — these cells are about to be demolished. The
-     *  renderer plays a pre-pulse flash on them; once finished it calls
-     *  `commitPendingWreckerPlans` on the GameState to apply the clear. */
-    onWreckerPrePulse?(picks: ReadonlyArray<{ r: number; c: number; color: CellValue }>): void;
+    /** Wrecker fired from a board-embedded prop at (srcR, srcC). The
+     *  renderer:
+     *    1. Spawns projectiles from the source cell out to each pick.
+     *    2. On projectile arrival, stamps a temp prop on the target
+     *       matching the combo kind so the player reads the impending
+     *       effect at a glance (wrecker cube for a plain sweep, row/col
+     *       blast cube for a directional-bomb combo, boom cube for a
+     *       range-blast combo).
+     *    3. Once every marker's pulse finishes, calls
+     *       `commitPendingWreckerPlans` on the GameState to apply the
+     *       clear.
+     *  `srcR/srcC = -1` means "no known source" (magic-item activation,
+     *  or a legacy call site) — renderer should fall back to firing the
+     *  pulse immediately with no projectile stage.
+     *  `comboBoomLevel` (0-3) is the boom tier a neighbour boom
+     *  contributes; `comboBombAxis` is 'row'/'col' for directional-bomb
+     *  neighbours. Both are always level-1 blasts per pick regardless
+     *  of the neighbour's authored tier (see Wrecker.ts docstring). */
+    onWreckerPrePulse?(
+        srcR: number,
+        srcC: number,
+        picks: ReadonlyArray<{ r: number; c: number; color: CellValue }>,
+        comboBoomLevel?: 0 | 1 | 2 | 3,
+        comboBombAxis?: 'row' | 'col' | null,
+    ): void;
     /** Wrecker plain sweep — fired in place of `onPartialShatter` so the
      *  renderer plays a PER-CELL shatter at each pick instead of a
      *  row-wide flash. */
@@ -1940,7 +1961,10 @@ export class GameState {
                 this.hooks.onBoomTriggered?.(r, c, level, cleared),
             onPartialShatter:    (r, content) => this.hooks.onPartialShatter?.(r, content),
             onCellsFell:         moves => this.hooks.onCellsFell?.(moves),
-            onWreckerPrePulse:   picks => this.hooks.onWreckerPrePulse?.(picks),
+            // Forwarded — ClearLines/Detonate paths don't know the
+            // wrecker's source cell, so pass -1 sentinels to signal
+            // "no projectile phase, just run the immediate pulse".
+            onWreckerPrePulse:   picks => this.hooks.onWreckerPrePulse?.(-1, -1, picks),
             onWreckerPicksShatter: picks => this.hooks.onWreckerPicksShatter?.(picks),
             onClearSound:        intensity => this.hooks.onClearSound?.(intensity),
         };
@@ -2310,7 +2334,18 @@ export class GameState {
             return;
         }
         this.pendingWreckerPlans.push(plan);
-        this.hooks.onWreckerPrePulse?.([...plan.picks]);
+        // Pass the source cell (triggerR, triggerC) so the renderer can
+        // launch projectiles from there to each pick. Renderer walks
+        // arrival → pulse → shatter; the commit happens when the
+        // renderer calls commitPendingWreckerPlans after the last pulse.
+        // Include combo info so the renderer can stamp the correct
+        // prop icon on each target (row-blast / col-blast / boom /
+        // plain wrecker).
+        this.hooks.onWreckerPrePulse?.(
+            triggerR, triggerC, [...plan.picks],
+            plan.comboBoomLevel,
+            plan.comboBombAxis,
+        );
         this.hooks.onWreckerActivated?.();
     }
 

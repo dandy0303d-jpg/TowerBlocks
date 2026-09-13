@@ -25,6 +25,7 @@ import {
     Texture2D,
     tween,
     Button,
+    Mesh,
 } from 'cc';
 import { COLS, COLORS, CellValue, ENDLESS_HEIGHT_LIMIT, ENDLESS_GRAY_CAP } from '../core/Constants';
 import { isColoredCell } from '../core/Board';
@@ -48,6 +49,9 @@ import { createCurvedBrickMesh } from './BrickMesh';
 // (No import of MenuController — avoids circular import. MenuController
 //  registers itself via setMenuController() below using a structural type.)
 import { CubeManager } from './CubeManager';
+import { WreckerCubeFX } from './WreckerCubeFX';
+import { RowBlastCubeFX } from './RowBlastCubeFX';
+import { BoomCubeFX } from './BoomCubeFX';
 // CubeFX imports (RowBlast/Wrecker/Rocket/Hail/Meteor/Gatling/Boom) moved
 // with the cube pools into CubeManager.
 import { RowBlastDetonateEffect } from './RowBlastDetonateEffect';
@@ -163,6 +167,14 @@ export class GameController extends Component {
      *  much more visible than the 75 ms row-blast pulse. */
     @property
     wreckerPulseDuration: number = 0.9;
+
+    /** Scale multiplier applied to the wrecker's pre-pulse halo cube
+     *  (relative to a single tower cell). Row-blast pulses use 1.15
+     *  (a visible outward glow ring around the brick); wrecker
+     *  defaults to 1.05 — same-size-ish so the halo hugs the brick
+     *  without spilling into neighbouring cells. Tunable in Inspector. */
+    @property({ range: [0.5, 2.0, 0.01] })
+    wreckerPulseScale: number = 1.05;
 
     /** Colour the row cells flash to during the pre-pulse. Default white
      *  reads as "ready to detonate" against any underlying cell colour. */
@@ -372,6 +384,19 @@ export class GameController extends Component {
          *  wrecker flash MUCH longer than the row-blast pulse without
          *  affecting either system. */
         durationMs?: number;
+        /** Optional per-cell scale override — when set, the pulse cube
+         *  renders at this scale instead of the row-blast default
+         *  (1.15). Wrecker uses `wreckerPulseScale` so its halo hugs
+         *  the brick tighter and doesn't visually leak into the
+         *  neighbouring cells. */
+        scale?: number;
+        /** Brightness-pulse mode. When true, the pulse cube renders at
+         *  scale 1.0 wrapping the brick exactly, tinted with the
+         *  brick's OWN colour (looked up from state.board[r][c] →
+         *  COLORS[cellValue]). Reads as "the brick brightens" instead
+         *  of "a white halo appears around the brick". Used by the
+         *  wrecker's per-target confirmation flash. */
+        brightnessMode?: boolean;
     }> = [];
 
     /** Scheduled ribbon-detonation triggers that fire on a delay (after
@@ -736,11 +761,30 @@ export class GameController extends Component {
                     this.onShatter(r, content);
                 },
                 onCellsFell: moves => this.registerFallAnimations(moves),
-                onWreckerPrePulse: picks => {
+                onWreckerPrePulse: (srcR, srcC, picks, comboBoomLevel, comboBombAxis) => {
                     HapticsManager.impact('heavy');
-                    this.queueWreckerPrePulse(picks);
+                    // Fire the "wrecker triggered" cue at the moment
+                    // the projectiles LAUNCH from the source cell —
+                    // the flight + pulse + shatter tail play out with
+                    // their own audio (`line_clear` at commit time).
+                    SoundManager.instance?.play('wrecker_fire');
+                    this.queueWreckerPrePulse(
+                        srcR, srcC, picks,
+                        comboBoomLevel ?? 0,
+                        comboBombAxis ?? null,
+                    );
                 },
-                onWreckerPicksShatter: picks => this.queueWreckerPicksShatter(picks),
+                onWreckerPicksShatter: picks => {
+                    this.queueWreckerPicksShatter(picks);
+                    // Play the row-clear cue ONCE per wrecker sweep, not
+                    // once per pick — 10 simultaneous `line_clear`s
+                    // sound like a mud smash. One firm hit + heavy
+                    // haptic covers the whole 10-cell demolition.
+                    if (picks.length > 0) {
+                        SoundManager.instance?.play('line_clear');
+                        HapticsManager.impact('heavy');
+                    }
+                },
                 // Rocket/gatling bullets 1:1-cancel a colored cell — reuse
                 // the wrecker per-cell shatter path so each hit pops with
                 // a flash + 3D chunk burst (matches 拆迁队 visual style).
@@ -2706,11 +2750,13 @@ export class GameController extends Component {
             // X=90 + Y+180 for its prefab's authored orientation, but
             // our flash box is symmetric — plain Y rotation is enough.
             cube.setRotationFromEuler(0, math.toDegree(cellTheta), 0);
-            // Slightly larger than the tower cell (1.15×) so the pulse
-            // visually WRAPS the brick — its glow reads as "aimed at
-            // this cube" instead of a same-size overlay that could be
-            // mistaken for the brick itself.
-            cube.setScale(1.15, 1.15, 1.15);
+            // Scale — brightnessMode overrides pc.scale to 1.0 so the
+            // pulse cube overlays the brick EXACTLY (reads as the
+            // brick brightening rather than a halo appearing around
+            // it). Row-blast keeps 1.15 (halo ring), other wrecker
+            // callers can still supply pc.scale explicitly.
+            const s = pc.brightnessMode ? 1.0 : (pc.scale ?? 1.15);
+            cube.setScale(s, s, s);
 
             // Two-pulse alpha curve: two sin half-waves, each lasting
             // 25 % of the duration, with 25 % rest gaps in between.
@@ -2721,16 +2767,43 @@ export class GameController extends Component {
             } else if (t >= 0.50 && t < 0.75) {
                 pulseK = Math.sin((t - 0.50) * 4 * Math.PI); // 2nd pulse
             }
-            const alpha = Math.max(0, Math.min(255,
-                Math.floor(this.prePulseAlpha * pulseK),
-            ));
             if (mat && this.canTintFlash) {
-                mat.setProperty('mainColor', new Color(
-                    this.prePulseColor.r,
-                    this.prePulseColor.g,
-                    this.prePulseColor.b,
-                    alpha,
-                ));
+                if (pc.brightnessMode) {
+                    // Brightness mode: pulse the target BRICK'S OWN
+                    // colour, brightened toward white by pulseK. The
+                    // opaque overlay covers the brick exactly at
+                    // scale 1.0, so the visible fragment is the pulse
+                    // material — animating its rgb from base → white
+                    // and back reads as "the brick pulses brighter".
+                    // Falls back to white if the cell no longer has a
+                    // known colour (e.g. the wrecker plan detonated
+                    // into a bomb chain that cleared it early).
+                    const cell = this.gameState.state.board[pc.r]?.[pc.c];
+                    const hex = COLORS[cell as keyof typeof COLORS] ?? '#ffffff';
+                    const base = this.hexToCcColor(hex);
+                    // Lerp base → white by pulseK — peak (pulseK=1)
+                    // is fully white, trough (pulseK=0) is the brick's
+                    // authored colour. Fully opaque throughout so the
+                    // underlying brick's own render doesn't bleed
+                    // through (which would just cancel the tint).
+                    const k = Math.max(0, Math.min(1, pulseK));
+                    mat.setProperty('mainColor', new Color(
+                        Math.floor(base.r + (255 - base.r) * k),
+                        Math.floor(base.g + (255 - base.g) * k),
+                        Math.floor(base.b + (255 - base.b) * k),
+                        255,
+                    ));
+                } else {
+                    const alpha = Math.max(0, Math.min(255,
+                        Math.floor(this.prePulseAlpha * pulseK),
+                    ));
+                    mat.setProperty('mainColor', new Color(
+                        this.prePulseColor.r,
+                        this.prePulseColor.g,
+                        this.prePulseColor.b,
+                        alpha,
+                    ));
+                }
             }
         }
 
@@ -3048,26 +3121,459 @@ export class GameController extends Component {
         return false;
     }
 
-    /** Wrecker just fired in core — flash its picks for `prePulseDuration`,
-     *  then commit the actual clear via `gameState.commitPendingWreckerPlans`.
-     *  Reuses the row-blast pre-pulse animation (sin-wave alpha × 2 flashes). */
-    private queueWreckerPrePulse(picks: ReadonlyArray<{ r: number; c: number; color: import('../core/Constants').CellValue }>): void {
+    /** Wrecker just fired in core.
+     *
+     *  Two flavours:
+     *  - **Board-embedded prop** (srcR/srcC ≥ 0) — the wrecker cell on the
+     *    tower launches a swarm of tiny colored-cube projectiles at each
+     *    pick. Projectiles arrive over ~250ms with a small per-pick
+     *    stagger; each arrival kicks off THAT cell's pulse (halo flash)
+     *    and then the shatter runs after `wreckerPulseDuration`. Total
+     *    latency = flight + pulse.
+     *  - **Magic item** (srcR/srcC = -1) — legacy path: no source cell
+     *    to launch from, just start every pulse immediately.
+     *
+     *  `wreckerCommitAt` is bumped to the LAST pulse's end so
+     *  `drainWreckerPulse` doesn't commit the clear before every visual
+     *  step has landed. */
+    private queueWreckerPrePulse(
+        srcR: number,
+        srcC: number,
+        picks: ReadonlyArray<{ r: number; c: number; color: import('../core/Constants').CellValue }>,
+        comboBoomLevel: 0 | 1 | 2 | 3 = 0,
+        comboBombAxis: 'row' | 'col' | null = null,
+    ): void {
         if (!this.gameState || !picks.length) return;
         const now = Date.now();
-        const durationMs = this.wreckerPulseDuration * 1000;
-        // Store (r, c) only — the render loop reads current
-        // boardYOffset/centerCol/scale via boardRoot3D each frame so
-        // the pulse stays locked to the tower cell even when the
-        // camera is lerping or the tower's tall.
-        for (const { r, c } of picks) {
-            this.prePulseCells.push({
-                r, c,
-                startTime: now,
-                durationMs,
-            });
+        const pulseMs = this.wreckerPulseDuration * 1000;
+
+        // Legacy path — no known source, spawn the marker prop right
+        // away on every pick and commit at now + pulseMs.
+        if (srcR < 0 || srcC < 0) {
+            for (const { r, c } of picks) {
+                this._spawnWreckerMarkerAt(r, c, pulseMs, comboBoomLevel, comboBombAxis);
+            }
+            const commitAt = now + pulseMs;
+            if (commitAt > this.wreckerCommitAt) this.wreckerCommitAt = commitAt;
+            return;
         }
-        const commitAt = now + durationMs;
+
+        // Projectile path — launch one small colored cube from
+        // (srcR, srcC) to each target, stagger arrivals so the pulses
+        // read as a sweep instead of an all-at-once bloom.
+        const FLIGHT_MS  = 250;
+        const STAGGER_MS = 30;   // per-pick launch offset
+        let maxArrivalMs = 0;
+        picks.forEach(({ r, c }, i) => {
+            const launchDelay = i * STAGGER_MS;
+            const arrivalMs   = launchDelay + FLIGHT_MS;
+            if (arrivalMs > maxArrivalMs) maxArrivalMs = arrivalMs;
+            // Spawn a projectile after `launchDelay`. `setTimeout` is
+            // fine here — these are one-shot side-effects, not a hot
+            // per-frame loop. drainWreckerPulse already gates commit
+            // on wreckerCommitAt so the shatter waits for us.
+            const projectileTimeout = setTimeout(() => {
+                this.spawnWreckerProjectile(srcR, srcC, r, c, FLIGHT_MS, () => {
+                    // Arrival: stamp a temp prop on the target cell —
+                    // wrecker cube for plain sweep, row/col-blast cube
+                    // for directional combos, boom cube for range
+                    // combos. Player reads the impending effect at a
+                    // glance from the icon.
+                    this._spawnWreckerMarkerAt(r, c, pulseMs, comboBoomLevel, comboBombAxis);
+                });
+            }, launchDelay);
+            // Track so a level reset can cancel in-flight projectiles.
+            this._wreckerProjectileTimeouts.push(projectileTimeout);
+        });
+        // Commit after the LAST projectile lands + its full pulse plays.
+        const commitAt = now + maxArrivalMs + pulseMs;
         if (commitAt > this.wreckerCommitAt) this.wreckerCommitAt = commitAt;
+    }
+
+    /** In-flight wrecker "marker" prop nodes — the fake wrecker cubes
+     *  stamped on target cells during the pre-pulse phase. Tracked so
+     *  a level reset can nuke them before their auto-destroy timer
+     *  fires. */
+    private _wreckerMarkerNodes: Node[] = [];
+
+    /** Instantiate a temp prop as a child of boardRoot3D at the target
+     *  cell's local position, oriented like a normal tower brick.
+     *  Prefab choice depends on the combo the wrecker is running in:
+     *    - `comboBoomLevel > 0` → boom cube (level-matched prefab)
+     *    - `comboBombAxis === 'row'` → row1-blast cube
+     *    - `comboBombAxis === 'col'` → col1-blast cube
+     *    - otherwise → plain wrecker cube
+     *  Wrecker forces level-1 blasts per-pick regardless of the
+     *  neighbour's authored tier (see Wrecker.ts docstring), so we
+     *  ALWAYS use the tier-1 prefabs for directional combos.
+     *  Falls back to the plain wrecker prefab when the combo-matched
+     *  prefab isn't wired on CubeManager, and no-ops entirely when
+     *  the wrecker prefab is also missing. */
+    private _spawnWreckerMarkerAt(
+        r: number, c: number, pulseMs: number,
+        comboBoomLevel: 0 | 1 | 2 | 3 = 0,
+        comboBombAxis: 'row' | 'col' | null = null,
+    ): void {
+        const cm = this.cubeManager;
+        if (!cm || !this.boardRoot3D || !this.gameState) return;
+        // Pick the prefab that matches the impending effect.
+        let prefab: import('cc').Prefab | null = cm.wreckerPrefab;
+        if (comboBoomLevel > 0) {
+            prefab = (cm.boomCubePrefabs && cm.boomCubePrefabs[comboBoomLevel - 1])
+                  || cm.wreckerPrefab;
+        } else if (comboBombAxis === 'row') {
+            prefab = cm.rowBlastPrefab || cm.wreckerPrefab;
+        } else if (comboBombAxis === 'col') {
+            prefab = cm.rowBlastPrefabCol1 || cm.wreckerPrefab;
+        }
+        if (!prefab) return;
+        console.log(`[Wrecker marker] spawning at (r=${r}, c=${c}) — combo boom=${comboBoomLevel} bomb=${comboBombAxis} prefab=${prefab.name}`);
+        const totalRows = this.gameState.state.board.length;
+        const theta = c * ANGLE_PER_COL;
+        const node = instantiate(prefab);
+        // Also stash the target color on both the FX (in case
+        // buildBody hasn't yet run) AND schedule a post-onLoad
+        // override (in case buildBody already read the old color).
+        // Belt-and-braces because Cocos 3.8 lifecycle timing for
+        // instantiate → parent → onLoad varies across build modes.
+        //
+        // Colour matches the WreckerCubeFX default authored bodyColor
+        // (#F86316 = 248,99,22) — the same orange the falling
+        // refresh-piece's embedded prop shows, so a marker on the
+        // tower reads as the same "wrecker" identity the player just
+        // saw on their piece. Previous value (255,178,60) read as
+        // yellow because the R–G ratio was too close to 1.
+        const orange = new Color(248, 99, 22, 255);
+        const wFxPre = node.getComponent(WreckerCubeFX);
+        if (wFxPre) wFxPre.bodyColor = orange;
+        const rFxPre = node.getComponent(RowBlastCubeFX);
+        if (rFxPre) rFxPre.bodyColor = orange;
+        const bFxPre = node.getComponent(BoomCubeFX);
+        if (bFxPre) bFxPre.bodyColor = orange;
+        node.parent = this.boardRoot3D;
+        node.layer  = this.boardRoot3D.layer;
+        // Scale slightly LARGER than a regular tower brick (1.06×) so
+        // the marker's outer shell sits marginally in front of the
+        // underlying colored cube at every pixel — that guarantees
+        // the depth test picks the marker's orange body instead of
+        // the original cell's color. Without this the two shells
+        // co-exist at the same radius and z-fight, so the marker's
+        // color-setting has no visible effect (the tower cube's
+        // authored blue/green/etc. wins about half the pixels).
+        const s = node.scale;
+        const OVERLAY_BOOST = 1.06;
+        node.setScale(
+            s.x * GameController.TOWER_VIEW_SCALE_MATCH * OVERLAY_BOOST,
+            s.y * GameController.TOWER_VIEW_SCALE_MATCH * OVERLAY_BOOST,
+            s.z * GameController.TOWER_VIEW_SCALE_MATCH * OVERLAY_BOOST,
+        );
+        node.setPosition(
+            RADIUS * Math.sin(theta),
+            Y_BOTTOM + ((totalRows - 1) - r) * CELL_SIZE,
+            RADIUS * Math.cos(theta),
+        );
+        // Rotation math must match CubeManager.setColumnTransform:
+        // yaw × baseRot, where baseRot is the prefab's OWN authored
+        // rotation (WreckerCubeFX authors -90° X so the hammer icon
+        // sits upright on the brick face). Using the flat
+        // setRotationFromEuler(90, θ+180, 0) that stones use would
+        // wipe out the hammer's authored X rotation and the prop
+        // ended up face-down. Multiplying yaw × node.rotation
+        // preserves whatever the prefab set at instantiate time.
+        const baseRot = new Quat(
+            node.rotation.x, node.rotation.y, node.rotation.z, node.rotation.w,
+        );
+        const yawQ = new Quat();
+        Quat.fromEuler(yawQ, 0, math.toDegree(theta), 0);
+        const finalQ = new Quat();
+        Quat.multiply(finalQ, yawQ, baseRot);
+        node.setRotation(finalQ);
+        // Force full-brightness tint on the marker so the body reads
+        // as the orange body-color we set above (matches the embedded
+        // prop that shows on the falling refresh piece — same
+        // full-orange). Skipping the back-of-cylinder dimming makes
+        // the markers pop out from the surrounding dimmed tower
+        // bricks, which reinforces the "these cells are about to
+        // explode" read.
+        const wFx = node.getComponent(WreckerCubeFX);
+        if (wFx) wFx.setTint(1.0);
+        const rFx = node.getComponent(RowBlastCubeFX);
+        if (rFx) rFx.setTint(1.0);
+        const bFx = node.getComponent(BoomCubeFX);
+        if (bFx) bFx.setTint(1.0);
+        // Belt-and-braces override: some builds instantiate onLoad
+        // BEFORE our bodyColor override lands, so setTint(1.0) above
+        // ends up multiplying the OLD authored color by 1.0 (no
+        // change). One-tick-later we reach into the FX component's
+        // bodyMR (the ONE MeshRenderer that renders the body shell)
+        // and force-write the orange mainColor directly to its
+        // material. Only touching bodyMR means the icons (hammer,
+        // row/col bands, boom lozenges) keep their authored contrast
+        // colours and stay visible against the orange body — the
+        // previous "paint every MeshRenderer that isn't a sparkle"
+        // approach was recolouring the icon marks too and made the
+        // row/col/boom markers look flat orange with no icon.
+        this.scheduleOnce(() => {
+            if (!node || !node.isValid) return;
+            const paintBodyOf = (fx: any) => {
+                if (!fx || !fx.bodyMR) return;
+                const mat = fx.bodyMR.material;
+                if (mat) mat.setProperty('mainColor', orange);
+            };
+            paintBodyOf(node.getComponent(WreckerCubeFX));
+            paintBodyOf(node.getComponent(RowBlastCubeFX));
+            paintBodyOf(node.getComponent(BoomCubeFX));
+        }, 0);
+        this._wreckerMarkerNodes.push(node);
+        // NOTE: markers are NOT destroyed here via a per-marker
+        // setTimeout. When two wreckers fire adjacent (or two combo
+        // paths overlap), the SHARED wreckerCommitAt shifts later
+        // than any single marker's pulseMs — so a fixed timeout
+        // would reveal the underlying color-cube before the shatter
+        // actually runs. Instead, `drainWreckerPulse` tears down
+        // EVERY marker in `_wreckerMarkerNodes` at the exact moment
+        // it hands control to `commitPendingWreckerPlans`, which is
+        // the true "shatter starts now" beat.
+    }
+
+    /** Cube scale multiplier CubeManager applies to every pool prefab
+     *  (see `populateCubePool`). Kept in sync manually because
+     *  CubeManager doesn't expose CUBE_VISUAL publicly and this VFX
+     *  path can't import it directly without pulling in half the
+     *  module. If CubeManager.CUBE_VISUAL changes, mirror it here.  */
+    private static readonly TOWER_VIEW_SCALE_MATCH = 1.0;
+
+    /** In-flight setTimeout handles for wrecker projectiles. Tracked so
+     *  a level reset (or a tear-down before landing) can cancel them
+     *  before they push stale pulses / spawn zombie nodes. */
+    private _wreckerProjectileTimeouts: ReturnType<typeof setTimeout>[] = [];
+
+    /** Spawn a small colored cube at source (srcR, srcC), tween it to
+     *  target (dstR, dstC) over `flightMs` ms, fire `onArrive` when it
+     *  lands, and destroy the projectile node. Cube is parented to
+     *  boardRoot3D so it rotates with the tower — a mid-flight yaw
+     *  won't peel the projectile off its target arc. */
+    private spawnWreckerProjectile(
+        srcR: number, srcC: number,
+        dstR: number, dstC: number,
+        flightMs: number,
+        onArrive: () => void,
+    ): void {
+        if (!this.boardRoot3D || !this.gameState) { onArrive(); return; }
+        const totalRows = this.gameState.state.board.length;
+        // Fly along the CYLINDER SURFACE (not through the interior) —
+        // the projectile arcs around the tower's outer skin, staying
+        // a fixed radius from the axis. OUTER_R is slightly larger
+        // than the brick radius so the cube reads as "riding on the
+        // outside" instead of clipping into the wall.
+        const OUTER_R = RADIUS + CELL_SIZE * 0.15;
+        // Shortest-arc column delta. Straight (dstC - srcC) would send
+        // the projectile the long way around whenever the target is on
+        // the far side; wrap to (-COLS/2, COLS/2] so we always take
+        // the closer arc.
+        let dC = dstC - srcC;
+        if (dC >  COLS / 2) dC -= COLS;
+        if (dC < -COLS / 2) dC += COLS;
+        // Local starting position on the outer surface — used as the
+        // initial node position before the arc tween takes over.
+        const srcTheta = srcC * ANGLE_PER_COL;
+        const srcPos = new Vec3(
+            OUTER_R * Math.sin(srcTheta),
+            Y_BOTTOM + ((totalRows - 1) - srcR) * CELL_SIZE,
+            OUTER_R * Math.cos(srcTheta),
+        );
+
+        // Head sphere — higher segment count than the trail spheres
+        // so the silhouette is smooth at close range (the black
+        // outline traces this silhouette and low-poly geometry would
+        // read as "jagged edges").
+        const headMesh = utils.MeshUtils.createMesh(primitives.sphere(
+            0.5, { segments: 16 },
+        ));
+        // Trail sphere — coarser (8 segments) since dozens overlap
+        // and no individual one is looked at directly. Cuts vertex
+        // count / draw cost roughly 4× vs. matching the head.
+        const trailMesh = utils.MeshUtils.createMesh(primitives.sphere(
+            0.5, { segments: 8 },
+        ));
+        // Palette rotates through the game's colors so the swarm reads
+        // as "colored blocks flying out" (user's wording: "彩色方块儿").
+        const palette: Color[] = [
+            new Color(255, 210,  60, 255),  // gold
+            new Color(255, 120,  50, 255),  // orange
+            new Color(255,  95, 105, 255),  // salmon
+            new Color(120, 210, 255, 255),  // sky
+            new Color(140, 235, 130, 255),  // green
+        ];
+        const col = palette[(dstR * 7 + dstC) % palette.length];
+        const mat = new Material();
+        mat.initialize({ effectName: 'builtin-unlit' });
+        mat.setProperty('mainColor', col);
+
+        const node = new Node('WreckerProjectile');
+        node.parent = this.boardRoot3D;
+        node.layer  = this.boardRoot3D.layer;
+        node.setPosition(srcPos);
+        // ~35% of a cell — big enough to read at a glance, small enough
+        // that 10 in flight don't cover the target cells.
+        const size = CELL_SIZE * 0.35;
+        node.setScale(size, size, size);
+        const mr = node.addComponent(MeshRenderer);
+        mr.mesh = headMesh;
+        mr.material = mat;
+
+        // ─── Ribbon trail ─────────────────────────────────────
+        // A continuous strip mesh sampled from a rolling buffer of
+        // the projectile's recent positions. Each pair of adjacent
+        // samples becomes a quad, oriented so its width sits in the
+        // horizontal plane perpendicular to the segment direction.
+        // Width tapers linearly from ~full head-diameter at the
+        // freshest sample down to zero at the oldest — the tail
+        // trails off to a point instead of a hard cut.
+        //
+        // Rebuilds the mesh every ~20ms (about 50Hz). At 24-point
+        // capacity the strip covers roughly ~500ms of flight; older
+        // samples fall off the back as new ones push in.
+        const RIBBON_MAX_POINTS   = 24;
+        const RIBBON_UPDATE_MS    = 20;
+        const RIBBON_MAX_WIDTH    = size * 1.4;
+        const ribbonPositions: Vec3[] = [];
+
+        const ribbonNode = new Node('WreckerProjRibbon');
+        ribbonNode.parent = this.boardRoot3D;
+        ribbonNode.layer  = this.boardRoot3D.layer;
+        const ribbonMat = new Material();
+        ribbonMat.initialize({ effectName: 'builtin-unlit', technique: 1 });
+        ribbonMat.setProperty('mainColor', new Color(
+            col.r, col.g, col.b, 220,
+        ));
+        const ribbonMR = ribbonNode.addComponent(MeshRenderer);
+        ribbonMR.material = ribbonMat;
+        let ribbonMesh: Mesh | null = null;
+
+        // Reusable scratch vectors — allocated once per projectile,
+        // not per rebuild, to keep the GC quiet.
+        const WORLD_UP = new Vec3(0, 1, 0);
+        const tmpT = new Vec3();
+        const tmpB = new Vec3();
+
+        let ribbonHandle: ReturnType<typeof setInterval> | null = setInterval(() => {
+            if (!node || !node.isValid || !this.boardRoot3D) {
+                if (ribbonHandle) { clearInterval(ribbonHandle); ribbonHandle = null; }
+                if (ribbonMesh) { ribbonMesh.destroy(); ribbonMesh = null; }
+                if (ribbonNode && ribbonNode.isValid) ribbonNode.destroy();
+                return;
+            }
+            ribbonPositions.push(node.position.clone());
+            if (ribbonPositions.length > RIBBON_MAX_POINTS) ribbonPositions.shift();
+            if (ribbonPositions.length < 2) return;
+
+            const N = ribbonPositions.length;
+            const positions: number[] = [];
+            const indices: number[] = [];
+            for (let i = 0; i < N; i++) {
+                const p = ribbonPositions[i];
+                // Tangent = direction to the NEXT point (or from the
+                // previous point on the last vertex, so we don't run
+                // off the array end).
+                if (i < N - 1) {
+                    Vec3.subtract(tmpT, ribbonPositions[i + 1], p);
+                } else {
+                    Vec3.subtract(tmpT, p, ribbonPositions[i - 1]);
+                }
+                tmpT.normalize();
+                // Binormal = tangent × world-up. Falls back to +X
+                // when the tangent is (nearly) parallel to up, which
+                // would otherwise yield a zero cross-product.
+                Vec3.cross(tmpB, tmpT, WORLD_UP);
+                if (tmpB.lengthSqr() < 1e-5) tmpB.set(1, 0, 0);
+                else tmpB.normalize();
+                // taper 0..1: freshest sample (i = N-1) → 1, oldest
+                // (i = 0) → 0. Widths + colors could easily key off
+                // this same value if we later add vertex colours.
+                const taper = N > 1 ? (i / (N - 1)) : 0;
+                const halfWidth = RIBBON_MAX_WIDTH * 0.5 * taper;
+                positions.push(
+                    p.x + tmpB.x * halfWidth,
+                    p.y + tmpB.y * halfWidth,
+                    p.z + tmpB.z * halfWidth,
+                    p.x - tmpB.x * halfWidth,
+                    p.y - tmpB.y * halfWidth,
+                    p.z - tmpB.z * halfWidth,
+                );
+            }
+            // Two triangles per segment. Vertex order:
+            //   L_i (2i)   R_i (2i+1)   L_i+1 (2i+2)   R_i+1 (2i+3)
+            for (let i = 0; i < N - 1; i++) {
+                const a = i * 2;
+                indices.push(a, a + 2, a + 1);
+                indices.push(a + 1, a + 2, a + 3);
+            }
+            // Rebuild — allocate fresh mesh, then destroy the last one
+            // AFTER the assignment so we don't dangle the renderer with
+            // a null mesh between frames.
+            const nextMesh = utils.MeshUtils.createMesh({
+                positions,
+                indices,
+            });
+            ribbonMR.mesh = nextMesh;
+            if (ribbonMesh) ribbonMesh.destroy();
+            ribbonMesh = nextMesh;
+        }, RIBBON_UPDATE_MS);
+
+        // ─── Arc tween along the cylinder surface ────────────
+        // `tween` doesn't natively interpolate along a curve, so we
+        // drive a scalar {t: 0 → 1} and paint the node's position each
+        // frame from t via onUpdate. At t=0 we're at (srcR, srcC), at
+        // t=1 we're at (dstR, dstC), and in between we ride OUTER_R,
+        // walking the column along the shorter arc.
+        // Arc bow-out: at mid-flight the projectile pushes further
+        // OUT from the cylinder axis AND UP above the target's Y —
+        // reads as a lobbed throw, not a flat surface-hugger. Uses
+        // sin(π t) so the lift is 0 at both ends and peaks at t=0.5.
+        //
+        // Amounts scale with the flight's arc distance in columns so
+        // a 1-col hop stays subtle while a half-cylinder shot really
+        // arcs. |dC| is at most COLS/2 = 12 by the shortest-arc rule
+        // above, so the scale caps naturally.
+        const ARC_RAD_LIFT = CELL_SIZE * 0.35 * Math.abs(dC);
+        const ARC_Y_LIFT   = CELL_SIZE * 0.20 * Math.abs(dC);
+        const tweenTarget = { t: 0 };
+        const tmpArc = new Vec3();
+        tween(tweenTarget)
+            .to(flightMs / 1000, { t: 1 }, {
+                easing: 'quadIn',
+                onUpdate: (_target?: any, ratio?: number) => {
+                    if (!node || !node.isValid) return;
+                    const t = ratio ?? tweenTarget.t;
+                    const c = srcC + dC * t;
+                    const r = srcR + (dstR - srcR) * t;
+                    const theta = c * ANGLE_PER_COL;
+                    // Bow the arc: radius pushes out at mid-flight,
+                    // Y lifts up. Both fall to 0 at t=0 and t=1 so the
+                    // endpoints still land exactly at the source and
+                    // target cell centres on the outer surface.
+                    const bowK  = Math.sin(Math.PI * t);
+                    const rad   = OUTER_R + ARC_RAD_LIFT * bowK;
+                    const yBase = Y_BOTTOM + ((totalRows - 1) - r) * CELL_SIZE;
+                    tmpArc.set(
+                        rad * Math.sin(theta),
+                        yBase + ARC_Y_LIFT * bowK,
+                        rad * Math.cos(theta),
+                    );
+                    node.setPosition(tmpArc);
+                    // Full 720° tumble end-to-end, evenly distributed.
+                    node.setRotationFromEuler(720 * t, 720 * t, 0);
+                },
+            })
+            .call(() => {
+                if (ribbonHandle) { clearInterval(ribbonHandle); ribbonHandle = null; }
+                if (ribbonMesh) { ribbonMesh.destroy(); ribbonMesh = null; }
+                if (ribbonNode && ribbonNode.isValid) ribbonNode.destroy();
+                onArrive();
+                if (node && node.isValid) node.destroy();
+            })
+            .start();
     }
 
     /** Per-cell shatter for a wrecker plain sweep — one flash + star
@@ -3116,6 +3622,17 @@ export class GameController extends Component {
         if (!this.gameState) return;
         if (Date.now() < this.wreckerCommitAt) return;
         this.wreckerCommitAt = 0;
+        // Tear down every temp orange marker RIGHT before the shatter
+        // fires. Doing it here (rather than per-marker setTimeout in
+        // _spawnWreckerMarkerAt) keeps the markers alive through
+        // adjacent-wrecker firings, where the shared commit slips
+        // past any single pulseMs deadline — previously the earlier-
+        // spawned markers vanished (reverting to the underlying
+        // colored cube) while the later ones were still pulsing.
+        for (const n of this._wreckerMarkerNodes) {
+            if (n && n.isValid) n.destroy();
+        }
+        this._wreckerMarkerNodes.length = 0;
         this.gameState.commitPendingWreckerPlans();
     }
 
@@ -4373,6 +4890,19 @@ export class GameController extends Component {
         this.pendingLevelWin = false;
         this.pendingGameOverReason = undefined;
         this.prePulseCells.length = 0;
+        // Cancel any in-flight wrecker projectile spawns — otherwise a
+        // level restart mid-projectile phase would push stale pulses
+        // onto the fresh board.
+        for (const h of this._wreckerProjectileTimeouts) clearTimeout(h);
+        this._wreckerProjectileTimeouts.length = 0;
+        // Nuke any temp wrecker marker props still hanging on target
+        // cells — their per-marker auto-destroy timers will still fire
+        // and no-op on already-destroyed nodes, so we're safe to drop
+        // the tracking array without touching the timers.
+        for (const n of this._wreckerMarkerNodes) {
+            if (n && n.isValid) n.destroy();
+        }
+        this._wreckerMarkerNodes.length = 0;
         this.pendingRibbonTriggers.length = 0;
         this.ribbonDetonateEndsAt = 0;
         // Also tear down the post-fail reveal overlay if it was up —
