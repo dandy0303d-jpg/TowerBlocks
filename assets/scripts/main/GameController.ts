@@ -52,6 +52,7 @@ import { CubeManager } from './CubeManager';
 import { WreckerCubeFX } from './WreckerCubeFX';
 import { RowBlastCubeFX } from './RowBlastCubeFX';
 import { BoomCubeFX } from './BoomCubeFX';
+import { RocketTrailFX } from './RocketTrailFX';
 // CubeFX imports (RowBlast/Wrecker/Rocket/Hail/Meteor/Gatling/Boom) moved
 // with the cube pools into CubeManager.
 import { RowBlastDetonateEffect } from './RowBlastDetonateEffect';
@@ -298,6 +299,9 @@ export class GameController extends Component {
      *  and hides the rest. */
     private rocketPool: Node[] = [];
     private rocketCursor: number = 0;
+    // Rocket exhaust ribbons are handled by the RocketTrailFX
+    // component attached to each cube in buildRocketPool. No pool
+    // state needed here.
 
     /** Pool of in-flight hail spheres. Each frame `syncCubes` positions
      *  one node per entry in `gameState.hail.getFalling()`. Placed hail
@@ -1302,8 +1306,15 @@ export class GameController extends Component {
                 return;
             }
             this.rocketPool.push(n);
+            // Attach the self-contained RocketTrailFX component. It
+            // manages its own ribbon nodes as SIBLINGS of this cube,
+            // tracks the cube's per-frame position, and rebuilds a
+            // 3-layer flame strip. Pool re-use across rockets is
+            // handled inside the component via a teleport-detection
+            // heuristic — no pool-side wiring needed.
+            n.addComponent(RocketTrailFX);
         }
-        log(`[TowerBlocks] rocket pool built: ${POOL_SIZE} red-brick bullets.`);
+        log(`[TowerBlocks] rocket pool built: ${POOL_SIZE} red-brick bullets with per-cube trail component.`);
     }
 
     /** Build a pool of gatling "bullets" — same deep-red `Cube.prefab`
@@ -1386,19 +1397,16 @@ export class GameController extends Component {
             const node = this.rocketPool[this.rocketCursor];
             this.rocketCursor++;
             if (!node.active) node.active = true;
-
             const theta = rk.col * ANGLE_PER_COL;
             const x = RADIUS * Math.sin(theta);
             const z = RADIUS * Math.cos(theta);
-            // rk.y is a float row coord. Same Y formula as a brick
-            // cell, just with continuous y instead of an int row.
             const y = Y_BOTTOM + ((totalRows - 1) - rk.y) * CELL_SIZE;
             node.setPosition(x, y, z);
-            // Cube.prefab brick — same X=90 orientation as board bricks
-            // so the curved face points outward along the cylinder.
             node.setRotationFromEuler(90, math.toDegree(theta) + 180, 0);
+            // Ribbon: RocketTrailFX component on this cube handles
+            // the trail rebuild in its own update() — reads the
+            // position we just set. No further code here.
         }
-        // Hide any rocket slots not used this frame.
         for (let i = this.rocketCursor; i < this.rocketPool.length; i++) {
             if (this.rocketPool[i].active) this.rocketPool[i].active = false;
         }
@@ -1570,16 +1578,10 @@ export class GameController extends Component {
             // beside/below the actual projectile.
             const trailRadius = RADIUS - CELL_SIZE * 0.5;
             const trailYBump  = CELL_SIZE;
-            for (const rk of rocketFall) {
-                const cellTheta = rk.col * ANGLE_PER_COL;
-                const localX    = trailRadius * Math.sin(cellTheta);
-                const localZ    = trailRadius * Math.cos(cellTheta);
-                const worldX    = cosY * localX + sinY * localZ;
-                const worldZ    = -sinY * localX + cosY * localZ;
-                const rocketY   = Y_BOTTOM + ((rows - 1) - rk.y) * CELL_SIZE;
-                const worldY    = rocketY + yOffset + trailYBump;
-                this.spawnStarsAt(worldX, worldY, worldZ, cellTheta, boardYawDeg, TRAIL_SIZE);
-            }
+            // Rocket trail sparks removed per user request 2026-09-19 —
+            // the falling rockets now use the 3-layer ribbon exhaust
+            // built in renderFallingRockets instead. Gatling bullets
+            // still emit sparks (they don't have ribbons yet).
             for (const gk of gatlingFall) {
                 const cellTheta = centerCol * ANGLE_PER_COL;
                 // Gatling bullets are pinned to the camera-facing

@@ -180,6 +180,12 @@ export interface FallingDrop {
 export interface RocketProjectile {
     col: number;
     y:   number;         // float row coord
+    /** Monotonically increasing per-rocket id, assigned at spawn. Used
+     *  by the renderer to key ribbon-trail history so a pool slot that
+     *  gets reused across rockets (rocket A lands → slot goes to
+     *  rocket B) doesn't accidentally reuse A's trail points on B.
+     *  Optional so older test fixtures don't need to backfill. */
+    id?: number;
 }
 
 /** Mortar drop — like a hail drop but carries a colour value so the
