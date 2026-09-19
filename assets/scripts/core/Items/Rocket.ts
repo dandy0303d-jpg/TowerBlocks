@@ -129,6 +129,7 @@ export class RocketState {
     private pendingCount = 0;
     private falling: RocketProjectile[] = [];
     private spawnAccum = 0;
+    private _nextRocketId = 1;
 
     constructor(private rng: RandomFn = Math.random) {}
 
@@ -156,6 +157,7 @@ export class RocketState {
             this.falling.push({
                 col,
                 y:   -3 - this.rng() * 18,
+                id:  this._nextRocketId++,
             });
             hooks.onFire?.(col);
         }
