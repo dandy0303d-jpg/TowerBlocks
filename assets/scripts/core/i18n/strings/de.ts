@@ -81,6 +81,20 @@ export const DE: Record<string, string> = {
     'desc.mortar10':      'Bei Nutzung: 10 Blöcke fallen von oben und füllen die Lücken',
     'desc.mortar15':      'Bei Nutzung: 15 Blöcke fallen von oben und füllen die Lücken',
 
+    // ---------- Rucksack-Items (3) ----------
+    'item.mini_block':    'Mini-Block',
+    'item.bomb_block':    'Bomben-Block',
+    'item.rename_card':   'Umbenennungskarte',
+    'desc.mini_block':    'Bei Nutzung: Der nächste Stein wird zu einem einzelnen 1×1-Würfel',
+    'desc.bomb_block':    'Bei Nutzung: Der nächste Stein wird zu einer Bombe; beim Aufsetzen wird das 3×3-Gebiet um die Bombe geräumt',
+    'desc.rename_card':   'Verbrauche 1 Karte, um deinen Spitznamen einmal zu ändern. Ohne Karte ist Umbenennen deaktiviert.',
+
+    // ---------- Rucksack-UI ----------
+    'backpack.use':          'Verwenden',
+    'backpack.using':        'Wird verwendet...',
+    'backpack.useDisabled':  'Nicht verfügbar',
+    'backpack.useIngameOnly':'Nur im Spiel',
+
     'shapeshifter.title':    '🎲 Formwandler',
     'shapeshifter.subtitle': 'Wähle eine Form für den aktuellen Block',
     'shapeshifter.cancel':   'Abbrechen',
@@ -217,6 +231,7 @@ export const DE: Record<string, string> = {
     'settings.nickname.tooShort':    'Nickname zu kurz',
     'settings.nickname.tooLongServer':'Nickname zu lang',
     'settings.nickname.rejected':    'Ungültiger Nickname',
+    'settings.nickname.noCard':      'Du brauchst 1 Umbenennungskarte, um deinen Nickname zu ändern — hol dir eine im Rucksack',
     'settings.nickname.cooldown':    'Noch {n} Tag(e) bis zur nächsten Änderung',
     'settings.nickname.cooldownReady':'Jetzt änderbar (danach 7 Tage Sperre)',
     'settings.nickname.title':       'Nickname ändern',

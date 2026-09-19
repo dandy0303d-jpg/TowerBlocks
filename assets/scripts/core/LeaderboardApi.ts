@@ -283,9 +283,17 @@ export async function fetchPlayerProfile(): Promise<PlayerProfileResult> {
 
 /** Patch the local player's profile. `name` and `avatarIdx` are
  *  independently optional — pass whichever you're changing. Server
- *  trims + caps name to its own MAX_NAME_LEN (20 today). */
+ *  trims + caps name to its own MAX_NAME_LEN (20 today).
+ *
+ *  `useRenameCard` (nickname rename only): when true, the server
+ *  attempts to consume 1 `rename_card` from the caller's backpack
+ *  atomically as part of the rename. On no-card the server responds
+ *  409 `nickname: no-card`. On success the card is debited and the
+ *  rename applies. The old 7-day cooldown is retired — the card is
+ *  the only gate. Server ignores this flag when the patch has no
+ *  `name` (e.g. avatar-only edits skip the card check). */
 export async function updatePlayerProfile(
-    patch: { name?: string; avatarIdx?: number },
+    patch: { name?: string; avatarIdx?: number; useRenameCard?: boolean },
 ): Promise<PlayerProfileUpdateResult> {
     const uuid = encodeURIComponent(PlayerProfile.uuid);
     const url  = `${BACKEND_BASE_URL}/player/${uuid}/profile`;

@@ -247,6 +247,20 @@ export class RocketState {
             onBoomActivated: (r, c, level, cleared) =>
                 hooks.onBoomTriggered?.(r, c, level, cleared),
         });
+        // Gravity settle — 1:1 rocket cancels null a single cell each
+        // without touching the cells above, so anything sitting on top
+        // of a hit was left floating in mid-air until the next piece
+        // lock (which is the earliest normal gravity pass). Bomb path
+        // (detonateBombs) already does this at its tail — mirror it
+        // here for the rocket storm end. Cheap when nothing floats
+        // (returns [] immediately).
+        //
+        // Pass `state.board.length` (not the true reservedTop) so
+        // falling cells drop THROUGH any holes the storm carved
+        // into the gray foundation and land at the real bottom —
+        // matches the ClearLines / bomb boom-diamond convention.
+        const fellMoves = applyDiagonalGravity(state, state.board.length);
+        if (fellMoves.length && hooks.onCellsFell) hooks.onCellsFell(fellMoves);
         hooks.onFinish?.();
     }
 }

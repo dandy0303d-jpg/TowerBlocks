@@ -90,6 +90,20 @@ export const ZH: Record<string, string> = {
     'desc.mortar10':      '使用后，10 个方块从上方落下，填补空格',
     'desc.mortar15':      '使用后，15 个方块从上方落下，填补空格',
 
+    // ---------- 背包道具（3 种） ----------
+    'item.mini_block':    '迷你方块',
+    'item.bomb_block':    '炸弹方块',
+    'item.rename_card':   '更名卡',
+    'desc.mini_block':    '使用后，下一个方块变成 1×1 的小方块',
+    'desc.bomb_block':    '使用后，下一个方块变成炸弹；触底锁定时以炸弹为中心 3×3 范围内的方块全部消除',
+    'desc.rename_card':   '消耗 1 张即可修改一次昵称。不使用则无法改名。',
+
+    // ---------- 背包界面 ----------
+    'backpack.use':          '使用',
+    'backpack.using':        '使用中...',
+    'backpack.useDisabled':  '不可使用',
+    'backpack.useIngameOnly':'只能在游戏中使用',
+
     // ---------- 变形弹窗 ----------
     'shapeshifter.title':    '🎲 变形',
     'shapeshifter.subtitle': '选一种形状让当前方块变身',
@@ -251,6 +265,7 @@ export const ZH: Record<string, string> = {
     'settings.nickname.tooShort':    '昵称太短',
     'settings.nickname.tooLongServer':'昵称太长',
     'settings.nickname.rejected':    '昵称不合法，请换一个',
+    'settings.nickname.noCard':      '需要 1 张更名卡才能修改昵称，请到背包获取',
 
     // ---------- Common modal buttons ----------
     'common.confirm':    '确认',

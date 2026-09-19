@@ -86,6 +86,20 @@ export const ES: Record<string, string> = {
     'desc.mortar10':      'Al usar: 10 bloques caen desde arriba y rellenan los huecos',
     'desc.mortar15':      'Al usar: 15 bloques caen desde arriba y rellenan los huecos',
 
+    // ---------- Objetos de la mochila (3) ----------
+    'item.mini_block':    'Mini bloque',
+    'item.bomb_block':    'Bloque bomba',
+    'item.rename_card':   'Tarjeta de cambio de nombre',
+    'desc.mini_block':    'Al usar: la siguiente pieza se convierte en un cubo 1×1',
+    'desc.bomb_block':    'Al usar: la siguiente pieza se convierte en bomba; al aterrizar, limpia el área 3×3 centrada en la bomba',
+    'desc.rename_card':   'Consume 1 tarjeta para cambiar tu apodo una vez. Sin tarjeta, no se puede cambiar el nombre.',
+
+    // ---------- UI de la mochila ----------
+    'backpack.use':          'Usar',
+    'backpack.using':        'Usando...',
+    'backpack.useDisabled':  'No disponible',
+    'backpack.useIngameOnly':'Solo en partida',
+
     // ---------- Cambia-forma ----------
     'shapeshifter.title':    '🎲 Cambia-forma',
     'shapeshifter.subtitle': 'Elige una forma para la pieza actual',
@@ -237,6 +251,7 @@ export const ES: Record<string, string> = {
     'settings.nickname.tooShort':    'Apodo demasiado corto',
     'settings.nickname.tooLongServer':'Apodo demasiado largo',
     'settings.nickname.rejected':    'Apodo no válido, prueba otro',
+    'settings.nickname.noCard':      'Necesitas 1 Tarjeta de cambio de nombre para cambiar tu apodo — consíguela en la mochila',
     'settings.nickname.cooldown':    'Faltan {n} día(s) para el próximo cambio',
     'settings.nickname.cooldownReady':'Puedes cambiar ahora (luego 7 días de espera)',
     'settings.nickname.title':       'Cambiar nombre',

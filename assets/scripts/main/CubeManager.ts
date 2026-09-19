@@ -375,6 +375,14 @@ export class CubeManager extends Component {
          *  GameController when `mode === 'blind'` and the debug
          *  "show tower" switch is off. */
         hideBoardCells: boolean = false,
+        /** Backpack `bomb_block` armed-detonation lookup: given a
+         *  board cell (r, c), returns `t01` in [0,1] if that cell is
+         *  a locked box3 bomb currently ramping up toward detonate,
+         *  or `null` for normal cells. Cells matched here get rendered
+         *  via placeBox3LockedCube (shake + expand + red→dark red)
+         *  instead of the normal cube dispatch. GameController builds
+         *  the lookup from gameState.getPendingBox3Detonations(). */
+        box3ArmingLookup?: (r: number, c: number) => number | null,
     ): void {
         // ---- reset cursors ----
         this.poolCursor = 0;
@@ -411,6 +419,15 @@ export class CubeManager extends Component {
                 // helpers) just multiplies row by CELL_SIZE to get Y, so the
                 // fractional value gives smooth motion at no extra cost.
                 const dispR = displayRowFor ? displayRowFor(r, c) : r;
+                // Backpack `bomb_block` armed cell — replaces normal
+                // dispatch with the danger ramp-up animation. Falls
+                // through to standard dispatch when the arm expires
+                // (GameState clears boardBombs before detonate).
+                const box3t = box3ArmingLookup ? box3ArmingLookup(r, c) : null;
+                if (box3t !== null && v) {
+                    this.placeBox3LockedCube(c, dispR, totalRows, centerCol, box3t);
+                    continue;
+                }
                 if (bomb && this.rowBlastPools.has(bomb)) {
                     this.placeRowBlast(c, dispR, totalRows, bomb, centerCol);
                 } else if (v) {
@@ -470,7 +487,18 @@ export class CubeManager extends Component {
                     const bomb    = pieceBombs && pieceBombs[pr] ? pieceBombs[pr][pc] : null;
                     const boomLvl = pieceBooms && pieceBooms[pr] ? pieceBooms[pr][pc] : null;
                     const wrecker = pieceWreckers && pieceWreckers[pr] ? pieceWreckers[pr][pc] : null;
-                    if (bomb && this.rowBlastPools.has(bomb)) {
+                    if (bomb === 'box3') {
+                        // Backpack `bomb_block` piece: dark-gray cube
+                        // that pulses red. All animation in one call.
+                        this.placeBox3PieceCube(col, row, totalRows, centerCol);
+                        // Hybrid: same cell may ALSO carry an embed
+                        // prop earned from row-clear reward.
+                        if (boomLvl && this.boomCubePools[boomLvl - 1].nodes.length > 0) {
+                            this.placeBoomCube(col, row, totalRows, boomLvl as BoomLevel, centerCol);
+                        } else if (wrecker && this.wreckerPool.nodes.length > 0) {
+                            this.placeWrecker(col, row, totalRows, centerCol);
+                        }
+                    } else if (bomb && this.rowBlastPools.has(bomb)) {
                         this.placeRowBlast(col, row, totalRows, bomb, centerCol);
                     } else if (boomLvl && this.boomCubePools[boomLvl - 1].nodes.length > 0) {
                         this.placeBoomCube(col, row, totalRows, boomLvl as BoomLevel, centerCol);
@@ -876,6 +904,119 @@ export class CubeManager extends Component {
                     Math.floor(base.r * k),
                     Math.floor(base.g * k),
                     Math.floor(base.b * k),
+                    255,
+                ));
+            }
+        }
+    }
+
+    /** Backpack `bomb_block` (kind 'box3') FALLING piece cube — dark-
+     *  gray base with a slow sinusoidal red pulse (~1 Hz). No shake,
+     *  no scale wobble — kept calm so the falling silhouette stays
+     *  legible against the tower.
+     *  Post-lock the danger animation (shake, expand, red→dark-red)
+     *  runs via placeBox3LockedCube instead.
+     */
+    private placeBox3PieceCube(col: number, row: number, totalRows: number, centerCol: number): void {
+        if (this.poolCursor >= this.pool.length) return;
+        const cube = this.pool[this.poolCursor];
+        const mr   = this.poolMeshes[this.poolCursor];
+        const baseScale = this.poolBaseScale[this.poolCursor];
+        this.poolCursor++;
+
+        if (!cube.active) cube.active = true;
+        cube.setScale(baseScale.x, baseScale.y, baseScale.z);
+
+        const theta = col * ANGLE_PER_COL;
+        const x = RADIUS * Math.sin(theta);
+        const z = RADIUS * Math.cos(theta);
+        const y = Y_BOTTOM + ((totalRows - 1) - row) * CELL_SIZE;
+        cube.setPosition(x, y, z);
+        cube.setRotationFromEuler(90, math.toDegree(theta) + 180, 0);
+
+        // Colour pulse only (no shake / scale). Dark-gray ↔ bright red
+        // at ~1 Hz, then front/back fog-dim like normal bricks.
+        if (mr && this.canTintBricks) {
+            const mat = mr.material;
+            if (mat) {
+                const t = performance.now() * 0.001;
+                const pulse = (Math.sin(t * Math.PI * 2) + 1) / 2;   // 1 Hz, 0..1
+                const cr = Math.floor(60  + (220 - 60 ) * pulse);
+                const cg = Math.floor(60  + (40  - 60 ) * pulse);
+                const cb = Math.floor(60  + (40  - 60 ) * pulse);
+                const relAngle = (col - centerCol) * ANGLE_PER_COL;
+                const frontness = (Math.cos(relAngle) + 1) / 2;
+                const k = BRICK_BACK_DIM + (1 - BRICK_BACK_DIM) * frontness;
+                mat.setProperty('mainColor', new Color(
+                    Math.floor(cr * k),
+                    Math.floor(cg * k),
+                    Math.floor(cb * k),
+                    255,
+                ));
+            }
+        }
+    }
+
+    /** Backpack `bomb_block` LOCKED cube — the "danger ramp-up"
+     *  animation that plays for `BOX3_ARM_DURATION_MS` (see GameState)
+     *  after the piece grounds but BEFORE the 3×3 explosion.
+     *
+     *  `t01` is progress in [0, 1]:
+     *    • 0.0 = just locked
+     *    • 1.0 = detonation about to fire
+     *
+     *  Effects:
+     *    • Shake: XY jitter grows from ±0.02 → ±0.12 world units.
+     *    • Scale: uniform breathe grows from 1.0 → 1.4× baseScale.
+     *    • Colour: stays bright red throughout (no fade to dark).
+     *      Fog-dim still applied so front/back readability matches
+     *      the rest of the tower.
+     */
+    public placeBox3LockedCube(col: number, row: number, totalRows: number,
+                               centerCol: number, t01: number): void {
+        if (this.poolCursor >= this.pool.length) return;
+        const cube = this.pool[this.poolCursor];
+        const mr   = this.poolMeshes[this.poolCursor];
+        const baseScale = this.poolBaseScale[this.poolCursor];
+        this.poolCursor++;
+
+        if (!cube.active) cube.active = true;
+        const p = Math.min(1, Math.max(0, t01));
+
+        // Base transform.
+        const theta = col * ANGLE_PER_COL;
+        const x = RADIUS * Math.sin(theta);
+        const z = RADIUS * Math.cos(theta);
+        const y = Y_BOTTOM + ((totalRows - 1) - row) * CELL_SIZE;
+
+        // Scale: 1.0 → 1.4.
+        const scaleMul = 1 + p * 0.4;
+        cube.setScale(baseScale.x * scaleMul, baseScale.y * scaleMul, baseScale.z * scaleMul);
+
+        // Shake: ±0.02 → ±0.12.
+        const amp = 0.02 + p * 0.10;
+        const jx = (Math.random() * 2 - 1) * amp;
+        const jy = (Math.random() * 2 - 1) * amp;
+        cube.setPosition(x + jx, y + jy, z);
+        cube.setRotationFromEuler(90, math.toDegree(theta) + 180, 0);
+
+        // Colour: bright red at t=0 → deep wine red at t=1. Front/
+        // back fog-dim on top so the cube blends with the rest of the
+        // tower on the cylinder's back-side.
+        if (mr && this.canTintBricks) {
+            const mat = mr.material;
+            if (mat) {
+                // Bright red RGB(220,40,40) → deep wine RGB(75,12,22).
+                const cr = Math.floor(220 + (75 - 220) * p);
+                const cg = Math.floor(40  + (12 - 40 ) * p);
+                const cb = Math.floor(40  + (22 - 40 ) * p);
+                const relAngle = (col - centerCol) * ANGLE_PER_COL;
+                const frontness = (Math.cos(relAngle) + 1) / 2;
+                const k = BRICK_BACK_DIM + (1 - BRICK_BACK_DIM) * frontness;
+                mat.setProperty('mainColor', new Color(
+                    Math.floor(cr * k),
+                    Math.floor(cg * k),
+                    Math.floor(cb * k),
                     255,
                 ));
             }
