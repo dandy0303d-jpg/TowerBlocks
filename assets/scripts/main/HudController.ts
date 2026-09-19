@@ -21,6 +21,7 @@ import {
     Game,
     tween,
     Tween,
+    instantiate,
     log,
 } from 'cc';
 import { ensureDimBackdrop } from './UiHelpers';
@@ -43,6 +44,7 @@ import { t, subscribe as subscribeI18n } from '../core/i18n/I18n';
 import { purchaseRefresh, RefreshType, REFRESH_COST_TIERS, MAX_PAID_REFRESHES_PER_MODAL } from '../core/RefreshApi';
 import { consumeDailyFree } from '../core/DailyFreeApi';
 import { PlayerProfile } from '../core/PlayerProfile';
+import { fetchBackpack, consumeBackpackItem, getCachedBackpack } from '../core/BackpackApi';
 import { IS_DEV_BUILD } from '../core/BuildConfig';
 
 /** 5-row × 3-col pixel-font bitmap patterns for digits 0-9. Each row is
@@ -188,6 +190,25 @@ export class HudController extends Component {
 
     @property({ type: Button, tooltip: '速度累加按钮（DEV，仅无尽/盲选；1.0→1.1→...→2.0→回1.0）' })
     authoredDebugSpeedButton: Button | null = null;
+
+    // ============================================================
+    //  Backpack in-game quick-use buttons (bomb_block / mini_block)
+    //  Tap in-game → server consume 1 → arm GameState.pendingNextPieceModifier.
+    //  Hidden when count <= 0 (via the Label showing "0" and the
+    //  wrapper node deactivating). Wired independently — either can
+    //  be left empty in Inspector; only wired ones become interactive.
+    // ============================================================
+    @property({ type: Button, tooltip: '游戏内快捷使用『炸弹方块』的按钮。点击后服务器扣 1 张，下一块变 1×1 炸弹，触底 3×3 消除。数量=0 时按钮所在节点自动隐藏。' })
+    authoredBombBlockButton: Button | null = null;
+
+    @property({ type: Label, tooltip: '『炸弹方块』数量 Label（"×N"）。跟 authoredBombBlockButton 配对；留空则不显示数量。' })
+    authoredBombBlockCountLabel: Label | null = null;
+
+    @property({ type: Button, tooltip: '游戏内快捷使用『迷你方块』的按钮。点击后服务器扣 1 张，下一块强制变 1×1 小方块。数量=0 时按钮所在节点自动隐藏。' })
+    authoredMiniBlockButton: Button | null = null;
+
+    @property({ type: Label, tooltip: '『迷你方块』数量 Label（"×N"）。跟 authoredMiniBlockButton 配对；留空则不显示数量。' })
+    authoredMiniBlockCountLabel: Label | null = null;
 
     @property({ type: SpriteFrame, tooltip: '小方块贴图（assets/image/smallBlock.png）— NEXT 预览 + 本命方块两处会用这张图 tint 出每种颜色的方块；留空 fallback 到旧的矢量矩形。' })
     authoredSmallBlockSprite: SpriteFrame | null = null;
@@ -703,6 +724,13 @@ export class HudController extends Component {
         }
         this.buildUi();
         this.wireGameStateHooks();
+        // Backpack quick-use buttons — wire click handlers. The
+        // server fetch happens lazily the first time a game becomes
+        // running (see _pollBackpackButtonState), so we don't waste a
+        // round-trip on the main-menu view where the buttons are
+        // hidden anyway.
+        this._wireBackpackQuickButtonsOnce();
+        this._paintBackpackQuickButtons();   // start hidden
         // Subscribe to language changes so static labels re-translate
         // and open modals repaint their dynamic content (item names,
         // rarity badges, etc.).
@@ -913,6 +941,10 @@ export class HudController extends Component {
         if (!this.gameController || !this.gameController.gameState) return;
         // Subscribe lazily — GameController may build gameState after our start().
         if (!this.hooksWired) this.wireGameStateHooks();
+        // Cheap poll: detect running-state transition and repaint
+        // the backpack quick-use buttons so they hide on menu / game
+        // over and re-appear when a match starts.
+        this._pollBackpackButtonState();
         const g = this.gameController.gameState;
 
         // Keep the pause button glyph + overlay in sync with the actual
@@ -4876,6 +4908,315 @@ export class HudController extends Component {
         }
 
         this.collectPanel = panel;
+    }
+
+    // ================================================================
+    //  Backpack quick-use buttons (in-game bomb_block / mini_block)
+    // ================================================================
+
+    /** Snapshot of the current per-item count from the last server
+     *  fetch. Drives label + button visibility. Zeros mean the button
+     *  is disabled + node hidden. */
+    private _backpackCounts: { bomb_block: number; mini_block: number } =
+        { bomb_block: 0, mini_block: 0 };
+    /** Prevents double-tap racing while a consume is in flight. */
+    private _backpackConsuming: boolean = false;
+    /** One-shot flag — the buttons stay wired for the component's
+     *  lifetime, so we only bind click listeners once. */
+    private _backpackButtonsWired: boolean = false;
+    /** Last-seen game-running state — used by the update() poll to
+     *  detect running-flag transitions and repaint the backpack quick-
+     *  use buttons (they hide on main-menu / game-over, show in-game). */
+    private _backpackLastInGame: boolean = false;
+    /** Barrier used by the fly-to-NEXT animation flow: the server
+     *  consume callback stores a pending applyBackpackNextPieceOverride
+     *  closure here; the fly animation's onArrive fires it once the
+     *  icon lands in the NEXT-preview box. This gates the visual swap
+     *  on arrival so the preview doesn't pre-change mid-flight. */
+    private _pendingApply: (() => void) | null = null;
+    private _pendingApplyOnArrive: boolean = false;
+
+    /** Called from update() every frame — cheap boolean compare. When
+     *  the game's running state flips (menu → play, or play → game-over),
+     *  repaint the quick-use buttons so their visibility follows. Also
+     *  re-fetches counts on menu → play so a card bought / granted
+     *  since the last game surfaces on this run. */
+    private _pollBackpackButtonState(): void {
+        const gs = this.gameController?.gameState;
+        const inGame = !!(gs && gs.running && !gs.gameOver);
+        if (inGame === this._backpackLastInGame) return;   // no change
+        this._backpackLastInGame = inGame;
+        // Off → on: refetch so a fresh grant / chestdrop from the
+        // previous session shows up. On → off: just repaint (buttons
+        // hide immediately, no network needed).
+        if (inGame) this._refreshBackpackQuickCounts();
+        else        this._paintBackpackQuickButtons();
+    }
+
+    /** Bind click handlers on the bomb_block / mini_block buttons.
+     *  Safe to call multiple times — guarded by _backpackButtonsWired.
+     *  Also suppresses the global `ui_click` SFX on these buttons —
+     *  we play `item_pick` in the handler instead (matches how the
+     *  in-game magic-item pick UI sounds). */
+    private _wireBackpackQuickButtonsOnce(): void {
+        if (this._backpackButtonsWired) return;
+        this._backpackButtonsWired = true;
+        if (this.authoredBombBlockButton) {
+            SoundManager.suppressClickSound(this.authoredBombBlockButton);
+            this.authoredBombBlockButton.node.off('click');
+            this.authoredBombBlockButton.node.on('click',
+                () => this._onBackpackQuickUse('bomb_block'), this);
+        }
+        if (this.authoredMiniBlockButton) {
+            SoundManager.suppressClickSound(this.authoredMiniBlockButton);
+            this.authoredMiniBlockButton.node.off('click');
+            this.authoredMiniBlockButton.node.on('click',
+                () => this._onBackpackQuickUse('mini_block'), this);
+        }
+    }
+
+    /** Public — refetches backpack from server and repaints the two
+     *  quick-use buttons. Call whenever backpack contents may have
+     *  changed (e.g. player just closed the backpack panel). Also
+     *  called once from start(). */
+    public refreshBackpackQuickCounts(): void {
+        this._refreshBackpackQuickCounts();
+    }
+
+    /** Extract bomb_block / mini_block counts from a backpack result
+     *  and paint. Shared between the cache-hit and network paths. */
+    private _applyBackpackSnapshot(items: ReadonlyArray<{ id: string; count: number }>): void {
+        const next = { bomb_block: 0, mini_block: 0 };
+        for (const it of items) {
+            if (it.id === 'bomb_block') next.bomb_block = it.count;
+            else if (it.id === 'mini_block') next.mini_block = it.count;
+        }
+        this._backpackCounts = next;
+        this._paintBackpackQuickButtons();
+    }
+
+    private _refreshBackpackQuickCounts(): void {
+        // Cache-first: LoadingController prefetches the backpack during
+        // boot, so on the first game-start the cache is usually warm
+        // and we can paint synchronously without waiting on the
+        // network. Only skip cache if it's stale (> 60 s) — matches
+        // the default in getCachedBackpack.
+        const cached = getCachedBackpack();
+        if (cached) {
+            this._applyBackpackSnapshot(cached.items);
+            return;
+        }
+        fetchBackpack()
+            .then((r) => this._applyBackpackSnapshot(r.items))
+            .catch((err) => {
+                // Silent — same treatment as BackpackController.refresh.
+                console.warn('[HUD] backpack fetch failed:', err?.message || err);
+            });
+    }
+
+    /** Paint button visibility + count label based on the current
+     *  snapshot. Hides the whole button node when count == 0 so the
+     *  HUD doesn't clutter with unusable icons. */
+    private _paintBackpackQuickButtons(): void {
+        this._paintOneBackpackBtn(
+            this.authoredBombBlockButton,
+            this.authoredBombBlockCountLabel,
+            this._backpackCounts.bomb_block,
+        );
+        this._paintOneBackpackBtn(
+            this.authoredMiniBlockButton,
+            this.authoredMiniBlockCountLabel,
+            this._backpackCounts.mini_block,
+        );
+    }
+
+    private _paintOneBackpackBtn(
+        btn: Button | null,
+        countLab: Label | null,
+        count: number,
+    ): void {
+        // Gate the whole quick-use button on the game actually being
+        // running: main menu / pause menu / game-over screens hide
+        // the button entirely. In-game the button is always visible
+        // (greyed when count == 0 — see color tint below) so the
+        // player learns that the slot exists even when empty.
+        const gs = this.gameController?.gameState;
+        const inGame = !!(gs && gs.running && !gs.gameOver);
+        if (btn) {
+            btn.node.active = inGame;
+            btn.interactable = inGame && count > 0 && !this._backpackConsuming;
+            // 无卡态：中灰 tint 视觉近似脱色（Sprite.color 是乘法混
+            // 色，RGB 通道压到相同值就会显得饱和度低）。有卡时恢复
+            // 白色 = 原纹理色。
+            const tint = count > 0
+                ? new Color(255, 255, 255, 255)
+                : new Color(120, 120, 120, 255);
+            const sprites = btn.node.getComponentsInChildren(Sprite);
+            for (const spr of sprites) spr.color = tint;
+        }
+        if (countLab) {
+            countLab.string = String(count);
+            countLab.node.active = inGame;
+            countLab.color = count > 0
+                ? new Color(255, 255, 255, 255)
+                : new Color(150, 150, 150, 255);
+        }
+    }
+
+    /** Fly-to-NEXT animation for a backpack quick-use tap. Clones
+     *  the tapped button node into a temp visual, pops it up at
+     *  canvas centre, then shrinks + slides into the NEXT-piece
+     *  preview box. Fully self-cleaning: destroys the temp node
+     *  when the tween chain resolves.
+     *
+     *  Fails gracefully as a no-op if the source button, canvas, or
+     *  next-preview box isn't wired — the consume flow still runs.
+     */
+    private _playItemUseAnimation(sourceBtn: Button | null, onArrive?: () => void): void {
+        if (!sourceBtn || !sourceBtn.node) {
+            // No source → skip animation but still fire the effect so
+            // the item isn't stuck in armed-but-not-visible limbo.
+            if (onArrive) onArrive();
+            return;
+        }
+        if (!this.authoredNextPreviewBox) {
+            if (onArrive) onArrive();
+            return;
+        }
+        // Walk up until we find the Canvas — the temp node parents
+        // there so it draws above everything else in the HUD.
+        let canvas: Node | null = sourceBtn.node.parent;
+        while (canvas && !canvas.getComponent(Canvas)) canvas = canvas.parent;
+        if (!canvas) return;
+        const canvasTx = canvas.getComponent(UITransform);
+        if (!canvasTx) return;
+
+        // Clone the whole button node — preserves its background +
+        // icon + count label + fog so the flying visual matches
+        // exactly what the player just tapped.
+        const fx = instantiate(sourceBtn.node);
+        // Strip anything that could re-fire the click or auto-reposition.
+        const btnComp = fx.getComponent(Button);
+        if (btnComp) btnComp.destroy();
+        const widget = fx.getComponent(Widget);
+        if (widget) widget.destroy();
+        // Sanitize name so scene diffs are easier to eyeball.
+        fx.name = 'BackpackUseFX';
+        fx.parent = canvas;
+        fx.layer = canvas.layer;
+        // Top of z-order.
+        fx.setSiblingIndex(canvas.children.length - 1);
+
+        // Convert the NEXT-preview box's world position to canvas-
+        // local so the tween's target position lives in the same
+        // frame as fx's own transform.
+        const nextBoxWorld = this.authoredNextPreviewBox.worldPosition;
+        const nextBoxLocal = new Vec3();
+        canvasTx.convertToNodeSpaceAR(nextBoxWorld, nextBoxLocal);
+
+        // Start: canvas centre, hidden (scale 0). backOut easing on
+        // the pop gives a nice snappy overshoot.
+        fx.setPosition(0, 0, 0);
+        fx.setScale(0, 0, 1);
+
+        tween(fx)
+            // Pop: 0 → 1.4 in ~150 ms, overshoot.
+            .to(0.15, { scale: new Vec3(1.4, 1.4, 1) }, { easing: 'backOut' })
+            // Fly: shrink to 0.25 while sliding to NEXT-preview box.
+            .to(0.4, {
+                scale: new Vec3(0.25, 0.25, 1),
+                position: nextBoxLocal,
+            }, { easing: 'quadIn' })
+            .call(() => {
+                // Fire the arrival hook FIRST — this is what actually
+                // swaps the NEXT-preview visual to the item's effect
+                // (1×1 bomb/mini). Keeping the visual swap gated on
+                // arrival makes the icon "become" the next piece in
+                // a single readable beat instead of the preview
+                // pre-changing while the icon is still mid-flight.
+                if (onArrive) onArrive();
+                if (fx && fx.isValid) fx.destroy();
+            })
+            .start();
+    }
+
+    /** Handler for either quick-use button. Server-authoritative:
+     *  consume 1 → on success arm GameState.pendingNextPieceModifier
+     *  via applyBackpackNextPieceOverride so the HUD next-preview
+     *  reflects the transformation. */
+    private _onBackpackQuickUse(id: 'bomb_block' | 'mini_block'): void {
+        if (this._backpackConsuming) return;
+        const gs = this.gameController?.gameState;
+        if (!gs || !gs.running || gs.gameOver) {
+            // Buttons should be inactive in this case anyway, but
+            // guard against a stale click.
+            console.warn('[HUD] backpack quick-use: game not running');
+            return;
+        }
+        // Play the item-pick SFX (same one the in-game magic-item
+        // picker uses) instead of the default ui_click — matches
+        // player expectation that "using an item" is an item action,
+        // not a plain UI tap. Fires optimistically before the network
+        // round-trip so the sound feels tied to the click, not the
+        // response.
+        SoundManager.instance?.play('item_pick');
+        // Fly-to-NEXT animation runs in parallel with the server
+        // consume. The applyBackpackNextPieceOverride call inside
+        // the consume .then() below waits on _pendingApplyOnArrive,
+        // which the animation flips once the icon lands in the
+        // NEXT-preview box — this way the preview visual doesn't
+        // pre-change while the icon is still mid-flight.
+        this._pendingApplyOnArrive = false;
+        this._playItemUseAnimation(
+            id === 'bomb_block' ? this.authoredBombBlockButton : this.authoredMiniBlockButton,
+            () => {
+                this._pendingApplyOnArrive = true;
+                if (this._pendingApply) {
+                    this._pendingApply();
+                    this._pendingApply = null;
+                }
+            },
+        );
+        // Optimistic UI: grey out immediately.
+        this._backpackConsuming = true;
+        this._paintBackpackQuickButtons();
+        consumeBackpackItem(id)
+            .then((r) => {
+                this._backpackConsuming = false;
+                // Trust the server's new count.
+                this._backpackCounts[id] = r.count;
+                const mod = (id === 'mini_block' ? 'mini' : 'bomb') as 'mini' | 'bomb';
+                // Arm the modifier field now (game logic can react to
+                // the arm — currently just cleared by
+                // applyBackpackNextPieceOverride, harmless to set early).
+                gs.pendingNextPieceModifier = mod;
+                // Gate the VISUAL swap of the NEXT-preview on the
+                // fly-to-NEXT animation reaching the preview box.
+                // If the animation already arrived (short server
+                // round-trip → consume returns AFTER onArrive),
+                // apply immediately. Otherwise stash the closure and
+                // let onArrive fire it.
+                const applyOverride = () => {
+                    gs.applyBackpackNextPieceOverride?.(mod);
+                };
+                if (this._pendingApplyOnArrive) {
+                    applyOverride();
+                    this._pendingApply = null;
+                } else {
+                    this._pendingApply = applyOverride;
+                }
+                this._paintBackpackQuickButtons();
+            })
+            .catch((err) => {
+                this._backpackConsuming = false;
+                console.warn('[HUD] consume', id, 'failed:', err?.message || err);
+                // Clear the arrival barrier so a stale pending closure
+                // from a prior tap doesn't fire later.
+                this._pendingApply = null;
+                // Refresh to sync the client with server's real counts —
+                // maybe the item was consumed elsewhere.
+                this._refreshBackpackQuickCounts();
+            });
     }
 }
 

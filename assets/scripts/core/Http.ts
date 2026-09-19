@@ -319,8 +319,8 @@ function xhrJson<T>(
 
 /** GET a URL and parse JSON. Rejects on non-2xx / network error /
  *  timeout. */
-export function httpGetJson<T>(url: string, timeoutMs = 8000): Promise<T> {
-    return xhrJson<T>('GET', url, null, timeoutMs);
+export function httpGetJson<T>(url: string, timeoutMs = 8000, sign: boolean = false): Promise<T> {
+    return xhrJson<T>('GET', url, null, timeoutMs, sign);
 }
 
 /** POST a JSON body and parse the response. `body` is object-in

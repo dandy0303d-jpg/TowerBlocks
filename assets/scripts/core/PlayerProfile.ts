@@ -237,7 +237,12 @@ class Profile {
         sys.localStorage.setItem(NAME_KEY, trimmed);
         console.log(`[PlayerProfile] setName → "${trimmed}" — syncing to server…`);
         try {
-            const r = await updatePlayerProfile({ name: trimmed });
+            // Rename now gates on the `rename_card` backpack item —
+            // the server consumes 1 card atomically as part of the
+            // rename. The old 7-day cooldown is retired. See
+            // updatePlayerProfile's `useRenameCard` docstring +
+            // BackpackController.ts _applyEffect('rename_card').
+            const r = await updatePlayerProfile({ name: trimmed, useRenameCard: true });
             // Server may have truncated — re-persist whatever the server
             // ended up storing so getters + storage agree with server.
             this._name = r.name;

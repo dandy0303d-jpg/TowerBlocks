@@ -85,6 +85,20 @@ export const KO: Record<string, string> = {
     'desc.mortar10':      '사용 시 10개 블록이 위에서 떨어져 빈 공간을 채움',
     'desc.mortar15':      '사용 시 15개 블록이 위에서 떨어져 빈 공간을 채움',
 
+    // ---------- 배낭 아이템 (3종) ----------
+    'item.mini_block':    '미니 블록',
+    'item.bomb_block':    '폭탄 블록',
+    'item.rename_card':   '개명 카드',
+    'desc.mini_block':    '사용 후, 다음 블록이 1×1 소형 블록으로 변합니다',
+    'desc.bomb_block':    '사용 후, 다음 블록이 폭탄으로 변합니다. 착지 시 폭탄을 중심으로 3×3 범위의 블록이 제거됩니다',
+    'desc.rename_card':   '카드 1장을 소비하여 닉네임을 1회 변경할 수 있습니다. 카드가 없으면 개명 불가.',
+
+    // ---------- 배낭 UI ----------
+    'backpack.use':          '사용',
+    'backpack.using':        '사용 중...',
+    'backpack.useDisabled':  '사용 불가',
+    'backpack.useIngameOnly':'게임 중에만 사용 가능',
+
     // ---------- Shapeshifter modal ----------
     'shapeshifter.title':    '🎲 변형',
     'shapeshifter.subtitle': '현재 블록을 바꿀 모양을 선택',
@@ -238,6 +252,7 @@ export const KO: Record<string, string> = {
     'settings.nickname.tooShort':    '닉네임이 너무 짧습니다',
     'settings.nickname.tooLongServer':'닉네임이 너무 깁니다',
     'settings.nickname.rejected':    '유효하지 않은 닉네임입니다',
+    'settings.nickname.noCard':      '닉네임 변경에는 개명 카드 1장이 필요합니다 — 배낭에서 획득하세요',
     'settings.nickname.cooldown':    '다음 변경까지 {n}일 남음',
     'settings.nickname.cooldownReady':'지금 변경 가능 (다음엔 7일 대기)',
     'settings.nickname.title':       '닉네임 변경',

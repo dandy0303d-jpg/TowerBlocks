@@ -87,6 +87,20 @@ export const EN: Record<string, string> = {
     'desc.mortar10':      'On use: 10 blocks fall from above and fill empty gaps',
     'desc.mortar15':      'On use: 15 blocks fall from above and fill empty gaps',
 
+    // ---------- Backpack items (3) ----------
+    'item.mini_block':    'Mini Block',
+    'item.bomb_block':    'Bomb Block',
+    'item.rename_card':   'Rename Card',
+    'desc.mini_block':    'On use: next piece becomes a single 1×1 cube',
+    'desc.bomb_block':    'On use: next piece becomes a bomb; on lock, clears the 3×3 area centred on the bomb',
+    'desc.rename_card':   'Consume 1 card to change your nickname once. Without a card, renaming is disabled.',
+
+    // ---------- Backpack UI ----------
+    'backpack.use':          'Use',
+    'backpack.using':        'Using...',
+    'backpack.useDisabled':  'Unavailable',
+    'backpack.useIngameOnly':'In-game only',
+
     // ---------- Shapeshifter modal ----------
     'shapeshifter.title':    '🎲 Shapeshift',
     'shapeshifter.subtitle': 'Pick a shape for the current piece',
@@ -244,6 +258,7 @@ export const EN: Record<string, string> = {
     'settings.nickname.tooShort':    'Nickname too short',
     'settings.nickname.tooLongServer':'Nickname too long',
     'settings.nickname.rejected':    'Invalid nickname, try another',
+    'settings.nickname.noCard':      'You need 1 Rename Card to change your nickname — get one from the backpack',
 
     // ---------- Common modal buttons ----------
     'common.confirm':    'Confirm',

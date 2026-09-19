@@ -85,6 +85,20 @@ export const PT_BR: Record<string, string> = {
     'desc.mortar10':      'Ao usar: 10 blocos caem de cima e preenchem os vazios',
     'desc.mortar15':      'Ao usar: 15 blocos caem de cima e preenchem os vazios',
 
+    // ---------- Itens da mochila (3) ----------
+    'item.mini_block':    'Mini Bloco',
+    'item.bomb_block':    'Bloco Bomba',
+    'item.rename_card':   'Cartão de Renomear',
+    'desc.mini_block':    'Ao usar: a próxima peça vira um cubo único 1×1',
+    'desc.bomb_block':    'Ao usar: a próxima peça vira uma bomba; ao aterrissar, limpa a área 3×3 centrada na bomba',
+    'desc.rename_card':   'Consuma 1 cartão para trocar seu apelido uma vez. Sem cartão, não é possível renomear.',
+
+    // ---------- UI da mochila ----------
+    'backpack.use':          'Usar',
+    'backpack.using':        'Usando...',
+    'backpack.useDisabled':  'Indisponível',
+    'backpack.useIngameOnly':'Apenas no jogo',
+
     'shapeshifter.title':    '🎲 Metamorfose',
     'shapeshifter.subtitle': 'Escolha uma forma para a peça atual',
     'shapeshifter.cancel':   'Cancelar',
@@ -221,6 +235,7 @@ export const PT_BR: Record<string, string> = {
     'settings.nickname.tooShort':    'Apelido muito curto',
     'settings.nickname.tooLongServer':'Apelido muito longo',
     'settings.nickname.rejected':    'Apelido inválido, tente outro',
+    'settings.nickname.noCard':      'Você precisa de 1 Cartão de Renomear para mudar o apelido — pegue um na mochila',
     'settings.nickname.cooldown':    'Faltam {n} dia(s) para o próximo troca',
     'settings.nickname.cooldownReady':'Pode trocar agora (depois 7 dias de espera)',
     'settings.nickname.title':       'Editar nome',

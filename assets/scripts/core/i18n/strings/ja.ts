@@ -90,6 +90,20 @@ export const JA: Record<string, string> = {
     'desc.mortar10':      '使用時、10 個のブロックが上から落下し、空隙を埋める',
     'desc.mortar15':      '使用時、15 個のブロックが上から落下し、空隙を埋める',
 
+    // ---------- バックパックアイテム（3種） ----------
+    'item.mini_block':    'ミニブロック',
+    'item.bomb_block':    '爆弾ブロック',
+    'item.rename_card':   '改名カード',
+    'desc.mini_block':    '使用後、次のブロックが 1×1 の小さなブロックになる',
+    'desc.bomb_block':    '使用後、次のブロックが爆弾になる。着地時に爆弾を中心とした 3×3 の範囲を消去',
+    'desc.rename_card':   'カード 1 枚を消費してニックネームを 1 回変更できる。カードなしでは改名できない。',
+
+    // ---------- バックパックUI ----------
+    'backpack.use':          '使用',
+    'backpack.using':        '使用中...',
+    'backpack.useDisabled':  '使用不可',
+    'backpack.useIngameOnly':'ゲーム中のみ使用可',
+
     // ---------- 形状変化ダイアログ ----------
     'shapeshifter.title':    '🎲 形状変化',
     'shapeshifter.subtitle': '現在のブロックの形状を選択',
@@ -241,6 +255,7 @@ export const JA: Record<string, string> = {
     'settings.nickname.tooShort':    'ニックネームが短すぎます',
     'settings.nickname.tooLongServer':'ニックネームが長すぎます',
     'settings.nickname.rejected':    '無効なニックネームです',
+    'settings.nickname.noCard':      'ニックネームの変更には改名カードが 1 枚必要です — バックパックで入手してください',
     'settings.nickname.cooldown':    '次回変更まであと {n} 日',
     'settings.nickname.cooldownReady':'今すぐ変更可能（次回は 7 日待機）',
     'settings.nickname.title':       'ニックネーム変更',

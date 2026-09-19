@@ -195,8 +195,17 @@ export class LeaderboardController extends Component {
 
     /** Level tab — currently-selected stage index (0-based) whose PB
      *  is shown in the bottom my-rank row. Defaults to 0 (Stage 1) on
-     *  first open; changes when the player taps a row. */
+     *  first open; auto-jumps to the LAST cleared stage the moment
+     *  `myLevelTimes` finishes loading (unless the player has already
+     *  manually tapped a row this session — see `_userPickedLevel`).
+     *  Changes when the player taps a row. */
     private selectedLevelIdx: number = 0;
+
+    /** True once the player has manually tapped a level row in the
+     *  current panel session. Locks the auto-jump so a late-arriving
+     *  network fetch doesn't yank the selection out from under them.
+     *  Reset in show() every time the panel reopens. */
+    private _userPickedLevel: boolean = false;
 
     /** Set when show()/onTabClick opens the LEVEL tab. Consumed once
      *  the next async paintRows completes so the auto-scroll lands
@@ -262,6 +271,10 @@ export class LeaderboardController extends Component {
         // symptom.
         this.panel.active = true;
         this.panel.setSiblingIndex(999);
+        // Fresh open → clear the "user picked a row" latch so the
+        // next fetchMyLevelTimes resolve can auto-jump to the last
+        // cleared level (see fetchMyLevelTimes handler below).
+        this._userPickedLevel = false;
         // Ensure the logo matches the current language every open —
         // covers the case where MenuController's SF slots weren't
         // populated at first-boot onLoad ordering.
@@ -474,6 +487,24 @@ export class LeaderboardController extends Component {
                     if (this.currentMode !== mode) return;
                     this.myLevelTimes.clear();
                     for (const e of entries) this.myLevelTimes.set(e.levelIdx, e.elapsedSec);
+                    // Auto-jump the selection to the LAST cleared stage
+                    // (highest levelIdx with a PB) — that's usually the
+                    // most useful default for a returning player. Skip
+                    // if they've already manually tapped a row this
+                    // session (respect their pick) or if they have no
+                    // PB yet (stay on Stage 1 / index 0).
+                    if (!this._userPickedLevel && this.myLevelTimes.size > 0) {
+                        let maxIdx = 0;
+                        for (const k of this.myLevelTimes.keys()) {
+                            if (k > maxIdx) maxIdx = k;
+                        }
+                        this.selectedLevelIdx = maxIdx;
+                        // Repaint scroll rows so the youHighlight moves
+                        // to the auto-selected row (paintLevelMyRankRow
+                        // alone only updates the bottom pinned row).
+                        const cached = this.cachedEntries['level'];
+                        if (cached) this.paintRows(cached);
+                    }
                     this.paintLevelMyRankRow();
                 })
                 .catch((err) => {
@@ -576,6 +607,9 @@ export class LeaderboardController extends Component {
         if (this.currentMode !== 'level') return;
         // entry.rank is 1-based floor number; convert to 0-based index.
         this.selectedLevelIdx = Math.max(0, entry.rank - 1);
+        // Lock in the pick — a later fetchMyLevelTimes resolve should
+        // NOT auto-jump the selection out from under the player.
+        this._userPickedLevel = true;
         this.paintLevelMyRankRow();
         // Repaint scroll rows so youHighlight moves to the tapped row.
         // Use the cached entries (they're already loaded — the tap only

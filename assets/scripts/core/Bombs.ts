@@ -36,6 +36,7 @@ export function normalizeBombKind(kind: string | null | undefined): BombKind | n
     if (kind === 'row') return 'row1';
     if (kind === 'col') return 'col1';
     if (/^(row|col)[1-4]$/.test(kind)) return kind as BombKind;
+    if (kind === 'box3') return 'box3';
     return null;
 }
 
@@ -68,6 +69,34 @@ export function bombColRange(c: number, count: 1 | 2 | 3 | 4): number[] {
     if (count === 2) return [wrap(c), wrap(c + 1)];
     if (count === 3) return [wrap(c - 1), wrap(c), wrap(c + 1)];
     return [wrap(c - 1), wrap(c), wrap(c + 1), wrap(c + 2)];
+}
+
+/**
+ * Cells affected by a `box3` area bomb anchored at (row `r`, col `c`).
+ * Returns the 9 (r, c) coordinates in the 3×3 area centred on the anchor —
+ * cols wrap around the cylinder, rows kept as-is (caller clips against the
+ * live board height like the row/col helpers do).
+ *
+ *   r ∈ [r − 1, r, r + 1]
+ *   c ∈ [wrap(c − 1), wrap(c), wrap(c + 1)]
+ *
+ * Order: top-to-bottom, then left-to-right within each row. The order
+ * doesn't affect the clear result (all 9 cells clear as one batch) but
+ * matters for VFX iteration order if the FX layer plays a per-cell
+ * animation.
+ *
+ * Used by the `bomb_block` backpack card — the whole spawned piece is
+ * a single 1×1 cell tagged `'box3'`, and PieceOps' clear routine
+ * iterates these 9 cells at lock.
+ */
+export function bombBox3Cells(r: number, c: number): Array<{ r: number; c: number }> {
+    const cells: Array<{ r: number; c: number }> = [];
+    for (let dr = -1; dr <= 1; dr++) {
+        for (let dc = -1; dc <= 1; dc++) {
+            cells.push({ r: r + dr, c: wrap(c + dc) });
+        }
+    }
+    return cells;
 }
 
 /** Build an empty bombs grid matching the shape of a tetromino. */

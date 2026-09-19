@@ -168,13 +168,24 @@ export interface GameRenderHooks {
      *  count of newly-gray rows. Renderer plays the same line-clear
      *  audio cue as level mode gets for its shatter clears. */
     onEndlessRowsFilled?(count: number): void;
-    /** Fires once per ROW cleared by a row bomb (`row1`/`row2`/`row3`).
-     *  Used by the renderer to spawn the rainbow-ribbon sweep FX. */
-    onRowBombDetonate?(r: number): void;
-    /** Fires once per COLUMN cleared by a column bomb (`col1`..`col3`).
-     *  `r` is the anchor row of the bomb that triggered the column —
-     *  use it as a Y reference for column-blast visuals. */
-    onColBombDetonate?(r: number, c: number): void;
+    /** Fires once per ROW cleared by a row bomb (`row1`..`row4`).
+     *  `tier` is the max tier that touched this row — GameController
+     *  uses it to gate the screen-shake on ≥ level 3 blasts. */
+    onRowBombDetonate?(r: number, tier: 1 | 2 | 3 | 4): void;
+    /** Fires once per COLUMN cleared by a column bomb (`col1`..`col4`).
+     *  `r` is the anchor row of the bomb that triggered the column,
+     *  `tier` is the max tier touching this column. */
+    onColBombDetonate?(r: number, c: number, tier: 1 | 2 | 3 | 4): void;
+    /** Fires once per lock when the player naturally clears `count`
+     *  rows (before detonate-triggered splices). GameController uses
+     *  this to gate the screen-shake on ≥ 3-row clears (Tetris /
+     *  Tetris-4). Only fires when `count >= 1`. */
+    onNaturalRowClears?(count: number): void;
+    /** Fires once per CELL cleared by a `box3` area bomb (backpack
+     *  `bomb_block` card) — up to 9 calls per bomb. `isAnchor` marks
+     *  the bomb's origin cell so the renderer can play a slightly
+     *  bigger burst there. */
+    onBoxBombDetonate?(r: number, c: number, isAnchor: boolean): void;
     /** Fires when a BOOM (diamond range-blast) item activates. `r`/`c`
      *  is the centre of the blast, `level` is the radius (1/2/3), and
      *  `cleared` is the list of cells the engine just wiped — handy for
@@ -235,6 +246,12 @@ export interface GameStateOpts {
     clock?:  Clock;
     rng?:    () => number;
 }
+
+/** How long a `box3` bomb "arms" before detonating after lock. During
+ *  this window the locked cube plays a danger ramp-up animation
+ *  (shake, expand, red → dark red) via CubeManager.placeBox3LockedCube.
+ *  Kept short (~0.5 s) so the player doesn't lose game-flow tempo. */
+export const BOX3_ARM_DURATION_MS = 500;
 
 export class GameState {
     // ---------- Subsystems ----------
@@ -315,6 +332,47 @@ export class GameState {
      *  just like `paused` / `energyPicker.active`, but WITHOUT triggering
      *  the pause-UI overlay path. */
     modalPaused: boolean = false;
+
+    // ---------- Backpack-armed "next piece" modifier ----------
+    /** ARMED but not yet applied — set by BackpackController when the
+     *  player uses a mini_block / bomb_block card. GameController's
+     *  next-piece spawner MUST check this on every spawn call:
+     *
+     *    • 'mini' → force the next spawned piece to a single 1×1 cell
+     *      (regardless of what Bag.next() rolled). Preserves the piece
+     *      colour (visual continuity).
+     *    • 'bomb' → same 1×1 forcing PLUS flag the cell with
+     *      Bombs.ts kind 'box3'. On lock, PieceOps' clear routine sees
+     *      the flag and clears the same-layer 3×3 area (Bombs.ts →
+     *      bombBoxRange3x3 helper).
+     *    • null   → no override, spawn normally.
+     *
+     *  MUST be cleared to null the moment it's consumed (before the
+     *  piece actually spawns, not after) so a spawn failure / reset
+     *  doesn't burn the arm for free.
+     *
+     *  Cleared to null at start of every reset() so a card armed in one
+     *  run doesn't carry into the next.
+     *
+     *  Wire point (GameController): search for the site that calls
+     *  Bag.next() to build the incoming piece; right before returning
+     *  the piece, snapshot this field, null it, then transform the
+     *  piece per the snapshot value. */
+    pendingNextPieceModifier: 'mini' | 'bomb' | null = null;
+
+    /** Backpack `bomb_block` (kind 'box3') — after a piece with a
+     *  box3 tag locks, we DELAY the actual detonate for
+     *  BOX3_ARM_DURATION_MS so the client can play a "danger ramp-up"
+     *  animation on the locked cube (shake grows, scale grows, red →
+     *  dark red). Populated in lockAndNext + drained in tick(). Empty
+     *  the 99.9% of the time; only ever contains 1 entry in practice
+     *  (bomb_block card forces a 1×1 piece).
+     *
+     *  Cells stay in `state.board` + `state.boardBombs` during the
+     *  delay so CubeManager can render them via placeBox3LockedCube.
+     *  On expiry we clear those grids and fire detonateBombs with the
+     *  seed. */
+    pendingBox3Detonations: Array<{ r: number; c: number; kind: BombKind; startTimeMs: number }> = [];
 
     /** True while the new-player operations tutorial is running. Gates
      *  a bunch of level-mode side effects (level win check, embed-prop
@@ -608,6 +666,151 @@ export class GameState {
         this.paused = !this.paused;
     }
 
+    /** Scan the just-locked `piece` for any `box3` bomb tags and
+     *  return them as BombSeeds at their board-space (r, c). Called
+     *  right after `lock()` so we can add box-bomb seeds to the
+     *  standard row/adjacent seeds fed into `detonateBombs`. Empty
+     *  array when no box3 tag is present (the 99.9% case — box3 only
+     *  comes from the `bomb_block` backpack card).
+     *
+     *  Kept private + tiny so the two lock paths (`lockAndNext` +
+     *  `mortarLockAndNext`) don't duplicate the piece-cell walk. The
+     *  mortar path doesn't actually need this today (mortar drops
+     *  don't carry piece bombs), but keeping the API consistent
+     *  future-proofs it if mortar ever spawns a bomb-tagged cell.
+     */
+    private _gatherJustLockedBox3s(piece: Piece): Array<{ r: number; c: number; kind: BombKind }> {
+        const out: Array<{ r: number; c: number; kind: BombKind }> = [];
+        if (!piece) return out;
+        const COLS_LOCAL = this.state.board[0].length;
+        for (let pr = 0; pr < piece.shape.length; pr++) {
+            for (let pc = 0; pc < piece.shape[pr].length; pc++) {
+                if (!piece.shape[pr][pc]) continue;
+                const kind = piece.bombs[pr]?.[pc];
+                if (kind !== 'box3') continue;
+                const wx = ((piece.x + pc) % COLS_LOCAL + COLS_LOCAL) % COLS_LOCAL;
+                const wy = piece.y + pr;
+                if (wy < 0 || wy >= this.state.board.length) continue;
+                out.push({ r: wy, c: wx, kind: 'box3' });
+            }
+        }
+        return out;
+    }
+
+    /** Fire any pendingBox3Detonations whose armed-time has elapsed.
+     *  Called from tick() every frame. Once a pending entry's age
+     *  exceeds BOX3_ARM_DURATION_MS, we clear its cell from the
+     *  boardBombs grid, fire detonateBombs with just that seed, and
+     *  remove it from the pending list. The cube animation is
+     *  driven from CubeManager reading the pending list; when we
+     *  remove the entry the animation naturally stops and detonate
+     *  proceeds to null the cell + run the 3×3 clear + FX. */
+    private _drainPendingBox3Detonations(): void {
+        if (this.pendingBox3Detonations.length === 0) return;
+        const now = this.clock ? this.clock.now() : Date.now();
+        const stillPending: typeof this.pendingBox3Detonations = [];
+        const ready: typeof this.pendingBox3Detonations = [];
+        for (const p of this.pendingBox3Detonations) {
+            if (now - p.startTimeMs >= BOX3_ARM_DURATION_MS) ready.push(p);
+            else                                             stillPending.push(p);
+        }
+        this.pendingBox3Detonations = stillPending;
+        if (ready.length === 0) return;
+        // Drop expired entries whose cell no longer holds the box3
+        // tag — this catches the case where the bomb's row got
+        // naturally cleared (full row) between lock and expiry, so
+        // the bomb was consumed WITH the row-clear. Firing detonate
+        // at the stored (r, c) after that would either explode empty
+        // space or worse: whatever cells were shifted INTO those
+        // coords by the splice. Silent drop matches player intuition
+        // ("I completed a row with the bomb — cool, that's the effect").
+        const alive = ready.filter(p =>
+            this.state.boardBombs?.[p.r]?.[p.c] === 'box3'
+        );
+        if (alive.length === 0) return;
+        // Fire all live entries together — Detonate.detonateBombs
+        // dedupes chains, so passing multiple box3 seeds in one call
+        // is fine and slightly cheaper than one call per bomb.
+        const seeds = alive.map(p => ({ r: p.r, c: p.c, kind: p.kind }));
+        // Clear the bomb tag from boardBombs BEFORE detonating — the
+        // detonate loop guards against re-triggering an already-nulled
+        // bomb, but leaving the tag around would confuse
+        // CubeManager into keeping the danger animation for one more
+        // frame.
+        for (const s of seeds) {
+            if (this.state.boardBombs && this.state.boardBombs[s.r]) {
+                this.state.boardBombs[s.r][s.c] = null;
+            }
+        }
+        detonateBombs(this.state, seeds, this.computeReservedTop(), this.makeDetonateHooks());
+    }
+
+    /** Public read-only view of pending box3 detonations — used by
+     *  the renderer (CubeManager) to identify cells that should be
+     *  drawn with the danger ramp-up animation instead of the
+     *  normal cube. Returns the same array reference; caller must
+     *  NOT mutate. */
+    public getPendingBox3Detonations(): ReadonlyArray<{ r: number; c: number; kind: BombKind; startTimeMs: number }> {
+        return this.pendingBox3Detonations;
+    }
+
+    /** Immediately transform the CURRENTLY-QUEUED "next" piece to the
+     *  backpack-armed override AND clear the pending flag. Called by
+     *  BackpackController the moment a mini_block / bomb_block card
+     *  is consumed on the server, so the HUD next-preview visually
+     *  confirms the arm without waiting for the next spawn cycle.
+     *
+     *  Effects:
+     *    • 'mini' → next piece is a single 1×1 cell (colour preserved
+     *      from the bag pick so the preview still shows a coloured
+     *      block, just one cell)
+     *    • 'bomb' → same 1×1 forcing PLUS the cell is tagged as
+     *      Bombs.ts kind 'box3'. PieceOps' clear routine sees the
+     *      tag on lock and clears the same-layer 3×3 area centred on
+     *      the locked cell.
+     *
+     *  A no-op if there's no queued next yet (very early boot before
+     *  bag.refill()). In that case pendingNextPieceModifier stays
+     *  set and the transformation happens when the next preview is
+     *  first populated — but every startXxx() path picks a next
+     *  before the player can open the backpack, so this is defense
+     *  in depth.
+     *
+     *  Idempotent-ish — calling it twice with the same modifier is
+     *  fine; calling with a different modifier overwrites (last write
+     *  wins).
+     */
+    applyBackpackNextPieceOverride(mod: 'mini' | 'bomb'): void {
+        // No queued next yet — leave the arm on so a later pick applies.
+        if (this.nextShape === null && !this.nextType) return;
+        // Force the shape to a single 1×1 cell.
+        this.nextShape = [[1]];
+        // Force the piece TYPE so its colour is deterministic — matches
+        // the backpack card's visual identity so the player learns
+        // "red small = bomb, yellow small = mini" at a glance instead
+        // of a random tetromino colour.
+        //   • bomb → 'Z' (COLORS.Z = balanced red `#c35555`). The
+        //     falling piece renders via placeBox3PieceCube's dark-red
+        //     pulse anyway, but pinning type=Z keeps the HUD next-
+        //     preview swatch red too.
+        //   • mini → 'O' (COLORS.O = balanced gold `#c4a04d`). This
+        //     one drives both the HUD preview AND the falling cube's
+        //     placeCube colour.
+        this.nextType = (mod === 'bomb' ? 'Z' : 'O');
+        // Fresh bombs / booms / wreckers grids sized to the new shape.
+        this.nextBombsShape    = makeEmptyBombs(this.nextShape);
+        this.nextBoomsShape    = makeEmptyBooms(this.nextShape);
+        this.nextWreckersShape = makeEmptyWreckers(this.nextShape);
+        if (mod === 'bomb') {
+            // Tag the sole cell as a 3×3 box bomb.
+            this.nextBombsShape[0][0] = 'box3' as BombKind;
+        }
+        // Clear the arm — we've applied it.
+        this.pendingNextPieceModifier = null;
+        // Repaint the HUD next-preview.
+        this.hooks.onNextChanged?.(this.nextType);
+    }
+
     reset(): void {
         this.running = false;
         this.paused = false;
@@ -647,6 +850,14 @@ export class GameState {
         this.gatling.reset();
         this.mortar.reset();
         this.pendingWreckerPlans = [];
+        // Backpack-armed next-piece modifier does NOT survive a reset —
+        // the arm is meant for the current match; a match restart
+        // means the player has to reuse another card if they still
+        // want the effect.
+        this.pendingNextPieceModifier = null;
+        // Any half-armed box3 gets dropped on match restart — the
+        // player doesn't get a delayed detonation on their next run.
+        this.pendingBox3Detonations = [];
         this.history.reset();
         this.levelProgress.reset();
         this.endlessProgress.reset();
@@ -716,6 +927,12 @@ export class GameState {
         // Shapeshifter picker (and any other blocking modal that flips
         // modalPaused) — same treatment.
         if (this.modalPaused) return;
+
+        // Backpack `bomb_block` armed but not-yet-fired detonations.
+        // Fire the actual detonateBombs after BOX3_ARM_DURATION_MS —
+        // during the delay the client renders the locked cube via
+        // CubeManager.placeBox3LockedCube (shake, expand, red→dark red).
+        this._drainPendingBox3Detonations();
 
         // Level timer — accrue only for level / collect modes, and only
         // when the game is actively running (all pause / picker / modal
@@ -1324,6 +1541,13 @@ export class GameState {
             }
             naturalClearsThisLock = Math.max(0, naturalClearsThisLock - alreadyGray);
         }
+        // Notify renderer of the pre-detonate natural clear count so
+        // it can play mode-agnostic "big clear" FX (screen shake for
+        // ≥ 3-row clears is wired in GameController). Fired before
+        // any bomb-triggered splice so cascade rows don't double-count.
+        if (naturalClearsThisLock >= 1) {
+            this.hooks.onNaturalRowClears?.(naturalClearsThisLock);
+        }
 
         // Gather BOTH bomb seeds AND boom seeds against the same pre-trigger
         // snapshot — otherwise a boom's diamond may erase the host cell of
@@ -1332,16 +1556,88 @@ export class GameState {
         //   - bomb seed:  host row full, OR 4-neighbour carries a prop
         //     (bomb OR boom)
         //   - boom seed:  4-neighbour carries a prop (bomb OR boom)
-        const fullRowSeeds  = gatherLevelBombs(this.state);
-        const adjacentSeeds = gatherAdjacentBombs(this.state);
+        // gatherLevelBombs scans full rows and returns EVERY bomb on
+        // them — including box3 if the bomb_block piece happens to
+        // complete a row on lock. That would fire the box3 detonate
+        // TWICE: once here (immediate) and once via
+        // pendingBox3Detonations 500 ms later. Filter box3 out so
+        // the pending path stays the single source of truth for
+        // box3 timing.
+        const fullRowSeeds  = gatherLevelBombs(this.state).filter(s => s.kind !== 'box3');
+        // Same filter for adjacent bombs — a box3 next to another
+        // prop shouldn't skip its ramp-up window either.
+        const adjacentSeeds = gatherAdjacentBombs(this.state).filter(s => s.kind !== 'box3');
         const adjBooms      = gatherAdjacentBooms(this.state);
+        // Backpack `bomb_block` card: box3 area bomb has two paths:
+        //   • Normal lock       → push to pendingBox3Detonations, wait
+        //                         BOX3_ARM_DURATION_MS while the cube
+        //                         plays a red-pulse ramp-up animation,
+        //                         THEN detonate via tick().
+        //   • Filled full row   → fire IMMEDIATELY as part of this
+        //                         lock's detonate. Otherwise the
+        //                         natural row-clear (via clearLines
+        //                         below) splices the bomb cell away
+        //                         before the pending timer expires,
+        //                         and the alive-check in
+        //                         _drainPendingBox3Detonations
+        //                         silently drops it → player sees
+        //                         row clear but no bomb explosion.
+        //                         Immediate path skips the ramp-up
+        //                         (the row-clear visual already
+        //                         signals "big thing happening").
+        const box3Seeds = this._gatherJustLockedBox3s(piece);
+        const immediateBox3Seeds: typeof box3Seeds = [];
+        // Helper: has any 4-neighbour got a bomb / boom / wrecker
+        // prop on it? Same predicate gatherAdjacentBombs uses to
+        // decide "chain me now". We roll our own here to avoid
+        // touching PieceOps signatures.
+        const has4NbrProp = (r: number, c: number): boolean => {
+            const H = this.state.board.length;
+            const W = this.state.board[0].length;
+            const wrap = (x: number) => ((x % W) + W) % W;
+            const nbs: Array<[number, number]> = [
+                [r - 1, c], [r + 1, c], [r, wrap(c - 1)], [r, wrap(c + 1)],
+            ];
+            for (const [nr, nc] of nbs) {
+                if (nr < 0 || nr >= H) continue;
+                if (this.state.boardBombs?.[nr]?.[nc]) return true;
+                if (this.state.boardBooms?.[nr]?.[nc]) return true;
+                if (this.state.boardWreckers?.[nr]?.[nc]) return true;
+            }
+            return false;
+        };
+        for (const s of box3Seeds) {
+            // Fire immediately if EITHER:
+            //   (a) the host row is currently full — natural clearLines
+            //       would splice the bomb away before the 500ms timer,
+            //       leaving pending's alive-check to silently drop it.
+            //   (b) a 4-neighbour has a prop that gatherAdjacentBombs
+            //       will chain-fire this same tick — if that neighbour's
+            //       blast punches OUR row or column, ditto.
+            // In both cases the ramp-up would be swallowed / lost, so
+            // fire alongside the other detonations on this same lock.
+            let rowFull = true;
+            for (let cc = 0; cc < COLS; cc++) {
+                const v = this.state.board[s.r][cc];
+                if (v === null || v === 'H') { rowFull = false; break; }
+            }
+            if (rowFull || has4NbrProp(s.r, s.c)) {
+                immediateBox3Seeds.push(s);
+            } else {
+                this.pendingBox3Detonations.push({
+                    r: s.r, c: s.c, kind: s.kind,
+                    startTimeMs: (this.clock ? this.clock.now() : Date.now()),
+                });
+            }
+        }
         // Snapshot adjacent wreckers BEFORE the boom firing loop. The
         // boom side's diamond will wipe `boardBooms` and may clear the
         // wrecker's neighbour cells, so by the time the wrecker tried
         // to find an adjacent prop on its own, the live board would
         // already be empty and the combo wouldn't fire.
         const adjWreckers   = gatherAdjacentWreckers(this.state);
-        const seeds = fullRowSeeds.concat(adjacentSeeds);
+        // Delayed box3 is NOT in `seeds`; immediate box3 IS.
+        const seeds = fullRowSeeds.concat(adjacentSeeds).concat(immediateBox3Seeds);
 
         // Snapshot every wrecker's adjacent boom level + bomb axis BEFORE
         // the booms detonate (the next block wipes them from `boardBooms`).
@@ -1655,6 +1951,31 @@ export class GameState {
             const effectiveRowsCleared = clearsForTier + this.meteorAccumulatedClears;
             if (effectiveRowsCleared >= 1) {
                 const shape = this.nextShape ?? SHAPES[this.nextType];
+                // Preserve any box3 tags on the queued next piece BEFORE
+                // injectRandomMagicProp runs — it writes to
+                // nextBombsShape and would overwrite our 'box3' with a
+                // random 'row1' / 'col2' / etc, destroying the bomb-
+                // card effect. After the inject, we walk the cells:
+                //   • cell was box3 AND inject wrote a directional
+                //     bomb   → migrate that bomb to a boom of matching
+                //             tier (nextBoomsShape[r][c] = tier), then
+                //             restore box3 in bombsShape. Result: cell
+                //             now carries BOTH box3 (dark-red pulse
+                //             piece) AND a boom icon overlay.
+                //   • cell was box3 AND inject wrote to boomsShape or
+                //     wreckersShape → those grids don't overlap with
+                //     bombsShape, so nothing to restore. Coexistence
+                //     is automatic.
+                //   • cell was box3 AND inject did nothing here → no
+                //     change.
+                const box3Cells: Array<{ r: number; c: number }> = [];
+                for (let r = 0; r < this.nextBombsShape.length; r++) {
+                    const row = this.nextBombsShape[r];
+                    if (!row) continue;
+                    for (let c = 0; c < row.length; c++) {
+                        if (row[c] === 'box3') box3Cells.push({ r, c });
+                    }
+                }
                 injectRandomMagicProp(
                     this.nextBombsShape,
                     this.nextBoomsShape,
@@ -1663,6 +1984,26 @@ export class GameState {
                     this.rng,
                     this.nextWreckersShape,
                 );
+                for (const { r, c } of box3Cells) {
+                    const injected = this.nextBombsShape[r]?.[c];
+                    if (injected !== 'box3') {
+                        // inject wrote a directional bomb over the box3.
+                        // Migrate to a boom of matching tier so both effects
+                        // land on this cell.
+                        if (injected && /^(row|col)([1-3])$/.test(injected as string)) {
+                            const tier = parseInt((injected as string).slice(-1), 10) as 1 | 2 | 3;
+                            if (this.nextBoomsShape[r]) {
+                                this.nextBoomsShape[r][c] = tier as BoomLevel;
+                            }
+                        }
+                        // Restore box3 either way — inject that wasn't a
+                        // directional bomb (e.g. nothing) still needs the
+                        // box3 tag back.
+                        if (this.nextBombsShape[r]) {
+                            this.nextBombsShape[r][c] = 'box3' as BombKind;
+                        }
+                    }
+                }
                 // Hand the renderer the updated "next" preview so the prop glyph shows.
                 this.hooks.onNextChanged?.(this.nextType);
             }
@@ -1971,8 +2312,10 @@ export class GameState {
     private makeDetonateHooks(): DetonateHooks {
         return {
             ...this.makeClearHooks(),
-            onRowBombDetonate: r => this.hooks.onRowBombDetonate?.(r),
-            onColBombDetonate: (r, c) => this.hooks.onColBombDetonate?.(r, c),
+            onRowBombDetonate: (r, tier) => this.hooks.onRowBombDetonate?.(r, tier),
+            onColBombDetonate: (r, c, tier) => this.hooks.onColBombDetonate?.(r, c, tier),
+            onBoxBombDetonate: (r, c, isAnchor) =>
+                this.hooks.onBoxBombDetonate?.(r, c, isAnchor),
         };
     }
 
@@ -2254,6 +2597,12 @@ export class GameState {
         // wrecker / boom). Don't spawn during a storm; the storm's own
         // onFinish will re-queue once it ends.
         if (this.hail.mode || this.rocket.mode || this.gatling.mode || this.mortar.mode) return;
+        // Backpack `bomb_block` is arming — hold the next piece until
+        // the 3×3 blast has fired. Prevents a fresh piece falling on
+        // top of the pulsing red bomb while it's charging up.
+        // _drainPendingBox3Detonations clears this array on expiry;
+        // the very next commitPendingSpawn tick will then spawn.
+        if (this.pendingBox3Detonations.length > 0) return;
         this.pendingSpawn = false;
         // If a magic-item effect (excavator / wrecker / storm) cleared
         // the task zone, win the level NOW instead of spawning the next

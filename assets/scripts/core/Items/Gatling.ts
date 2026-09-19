@@ -31,6 +31,7 @@ import {
     processClearedBooms,
 } from '../ClearLines';
 import { triggerHitProps } from './Rocket';
+import { applyDiagonalGravity } from '../ColumnGravity';
 
 export type RandomFn = () => number;
 
@@ -211,6 +212,13 @@ export class GatlingState {
             onBoomActivated: (r, c, level, cleared) =>
                 hooks.onBoomTriggered?.(r, c, level, cleared),
         });
+        // Same fix as Rocket.finish — 1:1 gatling cancels leave cells
+        // above the hit floating in mid-air. Apply gravity now so the
+        // player doesn't see a suspended stack until the next lock.
+        // Pass state.board.length so cells drop through storm-carved
+        // holes in the gray foundation.
+        const fellMoves = applyDiagonalGravity(state, state.board.length);
+        if (fellMoves.length && hooks.onCellsFell) hooks.onCellsFell(fellMoves);
         hooks.onFinish?.();
     }
 }

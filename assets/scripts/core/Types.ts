@@ -14,7 +14,13 @@ export type GameMode = 'level' | 'endless';
 //   a clear directly.
 export type BombKind =
     | 'row1' | 'row2' | 'row3' | 'row4'
-    | 'col1' | 'col2' | 'col3' | 'col4';
+    | 'col1' | 'col2' | 'col3' | 'col4'
+    // Backpack-only: 3×3 same-layer area bomb centred on the tagged
+    // cell. Comes from the `bomb_block` backpack card — the whole
+    // spawned piece is a single 1×1 cell tagged with this kind. On
+    // lock, clears the 3×3 area at the lock layer (周向 wrap,
+    // 纵深 clamp). See Bombs.ts → bombBox3Cells().
+    | 'box3';
 
 /** Stone HP — colored cell that needs N clears before it disappears. */
 export type StoneHP = 2 | 3 | 4;
