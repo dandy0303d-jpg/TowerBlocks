@@ -79,6 +79,20 @@ export const FR: Record<string, string> = {
     'desc.mortar10':      'À l\'utilisation : 10 blocs tombent d\'en haut et remplissent les vides',
     'desc.mortar15':      'À l\'utilisation : 15 blocs tombent d\'en haut et remplissent les vides',
 
+    // ---------- Objets du sac (3) ----------
+    'item.mini_block':    'Mini-bloc',
+    'item.bomb_block':    'Bloc-bombe',
+    'item.rename_card':   'Carte de renommage',
+    'desc.mini_block':    'À l\'utilisation : la prochaine pièce devient un cube unique 1×1',
+    'desc.bomb_block':    'À l\'utilisation : la prochaine pièce devient une bombe ; à l\'atterrissage, nettoie la zone 3×3 centrée sur la bombe',
+    'desc.rename_card':   'Consommez 1 carte pour changer votre pseudo une fois. Sans carte, le changement de nom est désactivé.',
+
+    // ---------- UI du sac ----------
+    'backpack.use':          'Utiliser',
+    'backpack.using':        'Utilisation...',
+    'backpack.useDisabled':  'Indisponible',
+    'backpack.useIngameOnly':'Uniquement en partie',
+
     'shapeshifter.title':    '🎲 Métamorphose',
     'shapeshifter.subtitle': 'Choisis une forme pour la pièce',
     'shapeshifter.cancel':   'Annuler',
@@ -215,6 +229,7 @@ export const FR: Record<string, string> = {
     'settings.nickname.tooShort':    'Pseudo trop court',
     'settings.nickname.tooLongServer':'Pseudo trop long',
     'settings.nickname.rejected':    'Pseudo invalide, essayez un autre',
+    'settings.nickname.noCard':      'Il vous faut 1 Carte de renommage pour changer de pseudo — récupérez-en une dans le sac',
     'settings.nickname.cooldown':    'Encore {n} jour(s) avant la prochaine modification',
     'settings.nickname.cooldownReady':"Modifiable maintenant (puis 7 jours d'attente)",
     'settings.nickname.title':       'Changer de pseudo',

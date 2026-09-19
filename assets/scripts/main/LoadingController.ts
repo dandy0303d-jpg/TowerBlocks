@@ -32,6 +32,7 @@ import { LeaderboardController } from './LeaderboardController';
 import { TopUpController } from './TopUpController';
 import { LevelProgress } from '../core/LevelProgress';
 import { PlayerProfile } from '../core/PlayerProfile';
+import { fetchBackpack } from '../core/BackpackApi';
 import { fetchMyLevelTimes } from '../core/LeaderboardApi';
 import { t, initFromSystemLang } from '../core/i18n/I18n';
 // Channel boot side-effect — registers StoreKitProvider on iOS.
@@ -236,6 +237,16 @@ export class LoadingController extends Component {
             } catch (e) {
                 console.warn('[Loading] ensureRegistered failed:', (e as Error).message);
             }
+            // Prefetch backpack in parallel with the rest of the boot
+            // work — populates the module-level cache in BackpackApi
+            // so HudController's first paint after game-start (and
+            // BackpackController.refresh() if the player opens the
+            // panel in the menu) doesn't block on a fresh network
+            // round-trip. Fire-and-forget: failures are non-fatal
+            // (the on-demand fetchers still hit the server later).
+            void fetchBackpack().catch((e) =>
+                console.warn('[Loading] backpack prefetch failed (non-fatal):',
+                             (e as Error).message));
             try {
                 const p = await PlayerProfile.fetchProfile();
                 // Server-side level progress lives in TWO places, and we

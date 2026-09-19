@@ -31,6 +31,7 @@ import { BackgroundCubes } from './BackgroundCubes';
 import { TwinkleStars } from './TwinkleStars';
 import { LevelSelectStage3D } from './LevelSelectStage3D';
 import { LeaderboardController } from './LeaderboardController';
+import { BackpackController } from './BackpackController';
 import { fetchMyLevelTimes } from '../core/LeaderboardApi';
 import { TopUpController } from './TopUpController';
 import { EventNewbie14Panel } from './EventNewbie14Panel';
@@ -218,6 +219,12 @@ export class MenuController extends Component {
 
     @property({ type: LeaderboardController, tooltip: '排行榜面板控制器（拖场景里挂了 LeaderboardController 的节点进来）' })
     leaderboardController: LeaderboardController | null = null;
+
+    @property({ type: Button, tooltip: '主页面背包按钮（点击打开背包面板）— 可空' })
+    modeBtnBackpack: Button | null = null;
+
+    @property({ type: BackpackController, tooltip: '背包面板控制器（拖场景里挂了 BackpackController 的节点进来）。点 modeBtnBackpack 时调 show()；rename_card 使用后跳转到改名弹窗也走这里的 onRenameCardUsed 钩子。' })
+    backpackController: BackpackController | null = null;
 
     @property({ type: TopUpController, tooltip: '充值面板控制器（拖场景里挂了 TopUpController 的节点进来）' })
     topUpController: TopUpController | null = null;
@@ -1916,6 +1923,22 @@ export class MenuController extends Component {
         }
     }
 
+    /** Backpack button — opens the BackpackController panel. Also
+     *  wires the panel's onRenameCardUsed callback so the "使用" of
+     *  a rename_card in the backpack closes the panel and hands off
+     *  to the nickname editor. Falls back to a console log if the
+     *  controller isn't wired. */
+    private onBackpackClicked(): void {
+        if (this.backpackController) {
+            // Wire the rename-card handoff on first open; harmless to
+            // re-assign on later opens (same function reference).
+            this.backpackController.onRenameCardUsed = () => this.editNicknameViaPrompt();
+            this.backpackController.show();
+        } else {
+            console.log('[MenuController] Backpack tapped — controller not wired.');
+        }
+    }
+
     /** Top-up button — opens the TopUpController panel. Falls back
      *  to a console log if the controller isn't wired. */
     private onTopupClicked(): void {
@@ -2018,6 +2041,12 @@ export class MenuController extends Component {
         if (this.modeBtnTopup) {
             this.modeBtnTopup.node.off('click');
             this.modeBtnTopup.node.on('click', () => this.onTopupClicked(), this);
+        }
+        // Backpack button: opens the BackpackController panel + wires
+        // its rename-card handoff to the nickname editor.
+        if (this.modeBtnBackpack) {
+            this.modeBtnBackpack.node.off('click');
+            this.modeBtnBackpack.node.on('click', () => this.onBackpackClicked(), this);
         }
         // Reset progress button: DEV-only. Hidden in release builds so
         // players can't nuke their own save by accident (and to keep
@@ -3109,8 +3138,9 @@ export class MenuController extends Component {
         const m = /nickname:\s*([a-z_-]+)/i.exec(msg);
         const code = m ? m[1].toLowerCase() : '';
 
-        // Cooldown is the one case that wants a formatted string with
-        // remaining days — extract retryAt from the JSON body if present.
+        // Cooldown was the old 7-day gate — retained as a defensive
+        // toast in case a legacy server still returns it (post-migration
+        // it should never fire). No-card is the new primary gate.
         if (code === 'cooldown') {
             const days = this.parseCooldownDaysRemaining(msg);
             this.showSettingsToast(t('settings.nickname.cooldown', { n: days }), 'error');
@@ -3123,6 +3153,9 @@ export class MenuController extends Component {
             case 'reserved':   key = 'settings.nickname.reserved'; break;
             case 'too-short':  key = 'settings.nickname.tooShort'; break;
             case 'too-long':   key = 'settings.nickname.tooLongServer'; break;
+            // Server rejected because the player has no rename_card in
+            // their backpack — direct them to the backpack to acquire one.
+            case 'no-card':    key = 'settings.nickname.noCard'; break;
             default:           key = 'settings.nickname.rejected'; break;
         }
         this.showSettingsToast(t(key), 'error');

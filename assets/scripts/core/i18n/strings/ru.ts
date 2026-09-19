@@ -80,6 +80,20 @@ export const RU: Record<string, string> = {
     'desc.mortar10':      'При использовании: 10 блоков падают сверху и заполняют пустоты',
     'desc.mortar15':      'При использовании: 15 блоков падают сверху и заполняют пустоты',
 
+    // ---------- Предметы рюкзака (3) ----------
+    'item.mini_block':    'Мини-блок',
+    'item.bomb_block':    'Блок-бомба',
+    'item.rename_card':   'Карта смены имени',
+    'desc.mini_block':    'При использовании: следующая фигура становится одиночным блоком 1×1',
+    'desc.bomb_block':    'При использовании: следующая фигура становится бомбой; при приземлении очищает область 3×3 вокруг бомбы',
+    'desc.rename_card':   'Потратьте 1 карту, чтобы сменить никнейм. Без карты смена имени недоступна.',
+
+    // ---------- Интерфейс рюкзака ----------
+    'backpack.use':          'Использовать',
+    'backpack.using':        'Использование...',
+    'backpack.useDisabled':  'Недоступно',
+    'backpack.useIngameOnly':'Только в игре',
+
     'shapeshifter.title':    '🎲 Изменение формы',
     'shapeshifter.subtitle': 'Выбери форму для текущей фигуры',
     'shapeshifter.cancel':   'Отмена',
@@ -216,6 +230,7 @@ export const RU: Record<string, string> = {
     'settings.nickname.tooShort':    'Никнейм слишком короткий',
     'settings.nickname.tooLongServer':'Никнейм слишком длинный',
     'settings.nickname.rejected':    'Недопустимый никнейм',
+    'settings.nickname.noCard':      'Нужна 1 Карта смены имени, чтобы изменить никнейм — получите её в рюкзаке',
     'settings.nickname.cooldown':    'До следующей смены осталось {n} дн.',
     'settings.nickname.cooldownReady':'Можно сменить сейчас (потом 7 дней ожидания)',
     'settings.nickname.title':       'Изменить ник',

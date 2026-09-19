@@ -45,7 +45,7 @@ import { buildTutorialLevel } from '../core/TutorialLevelData';
 // to "left-half tap/hold/drag" (no flick branch). Import kept commented for
 // quick restoration if the flick path comes back.
 // import { getGestureMode } from '../core/Settings';
-import { GameState } from '../core/GameState';
+import { GameState, BOX3_ARM_DURATION_MS } from '../core/GameState';
 import { countBottomCompleteRows, findTrappedCells } from '../core/Modes/EndlessMode';
 import { collides } from '../core/Pieces';
 import { loadLevel, validateLevelData } from '../core/LevelData';
@@ -802,6 +802,14 @@ export class GameController extends Component {
                 onCellsFell: moves => this.registerFallAnimations(moves),
                 onWreckerPrePulse: (srcR, srcC, picks, comboBoomLevel, comboBombAxis) => {
                     HapticsManager.impact('heavy');
+                    // Wrecker combo (× boom OR × bomb) → screen-shake.
+                    // Plain sweep (both combo fields empty) skips shake
+                    // — 10 individual cube pops don't need the extra
+                    // camera motion. Same params as the other blast
+                    // shakes for consistency.
+                    if (comboBoomLevel > 0 || comboBombAxis) {
+                        this._shakeBoardRoot(440, 0.075);
+                    }
                     // Fire the "wrecker triggered" cue at the moment
                     // the projectiles LAUNCH from the source cell —
                     // the flight + pulse + shatter tail play out with
@@ -923,11 +931,59 @@ export class GameController extends Component {
                     SoundManager.instance?.play('bomb_boom');
                     HapticsManager.impact('heavy');
                     this.queueBoomFlash(r, c, level, cleared);
+                    // Level 2+ range blasts get the same subtle
+                    // screen-shake as the box3 area bomb — signals
+                    // "big thing happened". Level 1 is a small
+                    // radius-1 pop, no shake (would spam on every
+                    // ordinary boom prop). Same params as box3:
+                    // 440 ms × ±0.075 world units.
+                    if (level >= 2) {
+                        this._shakeBoardRoot(440, 0.075);
+                    }
                 },
-                onColBombDetonate: (r, c) => {
+                onColBombDetonate: (r, c, tier) => {
                     SoundManager.instance?.play('bomb_boom');
                     HapticsManager.impact('heavy');
                     this.queueColFlash(r, c);
+                    // Tier 3+ col bomb → screen-shake (same params
+                    // as box3 / boom-lvl-2+). Multiple invocations
+                    // in one detonate frame just re-arm the shake.
+                    if (tier >= 3) this._shakeBoardRoot(440, 0.075);
+                },
+                // Row bomb tier 3+ screen-shake. Row bombs don't
+                // currently have their own sound/haptic (rely on
+                // row-splice flash), just the shake.
+                onRowBombDetonate: (_r, tier) => {
+                    if (tier >= 3) this._shakeBoardRoot(440, 0.075);
+                },
+                // Natural row-clear ≥ 3 rows also gets the shake
+                // (Tetris-3 / Tetris-4 skill moment). Same params as
+                // box3 / boom / high-tier bomb blasts.
+                onNaturalRowClears: (count) => {
+                    if (count >= 3) this._shakeBoardRoot(440, 0.075);
+                },
+                // Backpack `bomb_block` (kind 'box3') — fires 9 times
+                // per bomb, once per cell in the 3×3 area. Reuse the
+                // boom shockwave flash pool at level 1 with a single-
+                // cell "cleared" list so each cell pops individually.
+                // Anchor cell gets a slightly bigger level=2 flash so
+                // the bomb origin reads distinct from the ring.
+                // Sound + haptics fire only on the anchor call so we
+                // don't spam 9 identical bomb_boom SFX in one frame —
+                // the anchor's single sound reads as ONE big explosion.
+                onBoxBombDetonate: (r, c, isAnchor) => {
+                    if (isAnchor) {
+                        SoundManager.instance?.play('bomb_boom');
+                        HapticsManager.impact('heavy');
+                        // Screen-shake once per bomb (only on the anchor
+                        // call — 9 shakes stacking would feel like a
+                        // spasm). Long + featherweight: 440 ms,
+                        // ~0.15 units of XY jitter — a subtle prolonged
+                        // tremor that continues past the flash burst.
+                        this._shakeBoardRoot(440, 0.075);
+                    }
+                    const lvl = isAnchor ? 2 : 1;
+                    this.queueBoomFlash(r, c, lvl, [{ r, c }]);
                 },
                 // Shapeshifter (变形) magic item: GameState asks us to
                 // open a 7-tetromino picker; the user's choice becomes
@@ -2302,9 +2358,26 @@ export class GameController extends Component {
             const hideBoardCells = this.gameState.mode === 'blind'
                 && !this.blindShowTowerDebug
                 && !this.postFailRevealPending;
+            // Backpack `bomb_block` armed cells — build a per-frame
+            // lookup so CubeManager renders locked-but-not-yet-fired
+            // box3 cubes with the danger ramp-up animation instead of
+            // the normal cube. Cheap: pendingBox3Detonations is empty
+            // 99.9% of the time (only ever non-empty during the ~500ms
+            // window between lock and detonate).
+            const pendingBox3 = this.gameState.getPendingBox3Detonations();
+            let box3ArmingLookup: ((r: number, c: number) => number | null) | undefined;
+            if (pendingBox3.length) {
+                const nowMs = Date.now();
+                const arming = new Map<string, number>();
+                for (const p of pendingBox3) {
+                    const t01 = Math.min(1, (nowMs - p.startTimeMs) / BOX3_ARM_DURATION_MS);
+                    arming.set(`${p.r}-${p.c}`, t01);
+                }
+                box3ArmingLookup = (r, c) => arming.get(`${r}-${c}`) ?? null;
+            }
             this.cubeManager.syncBoardCells(
                 state, piece, centerCol, rows, displayRowFor, pieceYOffset, ghostY,
-                hideBoardCells,
+                hideBoardCells, box3ArmingLookup,
             );
         }
 
@@ -3477,6 +3550,41 @@ export class GameController extends Component {
         ribbonMR.material = ribbonMat;
         let ribbonMesh: Mesh | null = null;
 
+        // ─── Glow halo ribbons ───────────────────────────────
+        // Two extra strip meshes stacked BEHIND the core ribbon,
+        // progressively wider + more transparent, simulating a bloom
+        // aura around the projectile trail. Rebuilt in the same
+        // interval as the core ribbon (shared tangent/binormal math)
+        // so they stay pixel-aligned with the head sphere's path.
+        //   • inner halo: 2.2× core width, alpha 80  — warm glow
+        //   • outer halo: 4.0× core width, alpha 40  — soft bleed
+        // Uses a slightly lighter tint (each channel pulled toward
+        // white by 40) so the halo reads as light spilling off the
+        // ribbon instead of a wider solid streak.
+        const HALO_INNER_WIDTH_MUL = 1.0;
+        const HALO_OUTER_WIDTH_MUL = 2.0;
+        const haloTint = new Color(
+            Math.min(255, col.r + 40),
+            Math.min(255, col.g + 40),
+            Math.min(255, col.b + 40),
+            255,
+        );
+        const makeHaloRibbon = (alpha: number): { node: Node; mr: MeshRenderer } => {
+            const n = new Node('WreckerProjRibbonHalo');
+            n.parent = this.boardRoot3D!;
+            n.layer  = this.boardRoot3D!.layer;
+            const m = new Material();
+            m.initialize({ effectName: 'builtin-unlit', technique: 1 });
+            m.setProperty('mainColor', new Color(haloTint.r, haloTint.g, haloTint.b, alpha));
+            const r = n.addComponent(MeshRenderer);
+            r.material = m;
+            return { node: n, mr: r };
+        };
+        const haloInner = makeHaloRibbon(80);
+        const haloOuter = makeHaloRibbon(40);
+        let haloInnerMesh: Mesh | null = null;
+        let haloOuterMesh: Mesh | null = null;
+
         // Reusable scratch vectors — allocated once per projectile,
         // not per rebuild, to keep the GC quiet.
         const WORLD_UP = new Vec3(0, 1, 0);
@@ -3487,7 +3595,11 @@ export class GameController extends Component {
             if (!node || !node.isValid || !this.boardRoot3D) {
                 if (ribbonHandle) { clearInterval(ribbonHandle); ribbonHandle = null; }
                 if (ribbonMesh) { ribbonMesh.destroy(); ribbonMesh = null; }
+                if (haloInnerMesh) { haloInnerMesh.destroy(); haloInnerMesh = null; }
+                if (haloOuterMesh) { haloOuterMesh.destroy(); haloOuterMesh = null; }
                 if (ribbonNode && ribbonNode.isValid) ribbonNode.destroy();
+                if (haloInner.node && haloInner.node.isValid) haloInner.node.destroy();
+                if (haloOuter.node && haloOuter.node.isValid) haloOuter.node.destroy();
                 return;
             }
             ribbonPositions.push(node.position.clone());
@@ -3495,7 +3607,12 @@ export class GameController extends Component {
             if (ribbonPositions.length < 2) return;
 
             const N = ribbonPositions.length;
-            const positions: number[] = [];
+            // Three parallel vertex arrays: core + two halo widths.
+            // Same tangent/binormal math (computed once per vertex),
+            // just multiplied by different halfWidths.
+            const positions:      number[] = [];
+            const positionsInner: number[] = [];
+            const positionsOuter: number[] = [];
             const indices: number[] = [];
             for (let i = 0; i < N; i++) {
                 const p = ribbonPositions[i];
@@ -3518,7 +3635,9 @@ export class GameController extends Component {
                 // (i = 0) → 0. Widths + colors could easily key off
                 // this same value if we later add vertex colours.
                 const taper = N > 1 ? (i / (N - 1)) : 0;
-                const halfWidth = RIBBON_MAX_WIDTH * 0.5 * taper;
+                const halfWidth      = RIBBON_MAX_WIDTH * 0.5 * taper;
+                const halfWidthInner = halfWidth * HALO_INNER_WIDTH_MUL;
+                const halfWidthOuter = halfWidth * HALO_OUTER_WIDTH_MUL;
                 positions.push(
                     p.x + tmpB.x * halfWidth,
                     p.y + tmpB.y * halfWidth,
@@ -3527,24 +3646,45 @@ export class GameController extends Component {
                     p.y - tmpB.y * halfWidth,
                     p.z - tmpB.z * halfWidth,
                 );
+                positionsInner.push(
+                    p.x + tmpB.x * halfWidthInner,
+                    p.y + tmpB.y * halfWidthInner,
+                    p.z + tmpB.z * halfWidthInner,
+                    p.x - tmpB.x * halfWidthInner,
+                    p.y - tmpB.y * halfWidthInner,
+                    p.z - tmpB.z * halfWidthInner,
+                );
+                positionsOuter.push(
+                    p.x + tmpB.x * halfWidthOuter,
+                    p.y + tmpB.y * halfWidthOuter,
+                    p.z + tmpB.z * halfWidthOuter,
+                    p.x - tmpB.x * halfWidthOuter,
+                    p.y - tmpB.y * halfWidthOuter,
+                    p.z - tmpB.z * halfWidthOuter,
+                );
             }
-            // Two triangles per segment. Vertex order:
-            //   L_i (2i)   R_i (2i+1)   L_i+1 (2i+2)   R_i+1 (2i+3)
+            // Two triangles per segment. Same index buffer for all
+            // three strips since they share vertex ordering.
             for (let i = 0; i < N - 1; i++) {
                 const a = i * 2;
                 indices.push(a, a + 2, a + 1);
                 indices.push(a + 1, a + 2, a + 3);
             }
-            // Rebuild — allocate fresh mesh, then destroy the last one
-            // AFTER the assignment so we don't dangle the renderer with
-            // a null mesh between frames.
-            const nextMesh = utils.MeshUtils.createMesh({
-                positions,
-                indices,
-            });
+            // Rebuild all three — allocate fresh meshes, then destroy
+            // the last ones AFTER the assignment so we don't dangle
+            // the renderers with a null mesh between frames.
+            const nextMesh      = utils.MeshUtils.createMesh({ positions,      indices });
+            const nextInnerMesh = utils.MeshUtils.createMesh({ positions: positionsInner, indices });
+            const nextOuterMesh = utils.MeshUtils.createMesh({ positions: positionsOuter, indices });
             ribbonMR.mesh = nextMesh;
-            if (ribbonMesh) ribbonMesh.destroy();
-            ribbonMesh = nextMesh;
+            haloInner.mr.mesh = nextInnerMesh;
+            haloOuter.mr.mesh = nextOuterMesh;
+            if (ribbonMesh)   ribbonMesh.destroy();
+            if (haloInnerMesh) haloInnerMesh.destroy();
+            if (haloOuterMesh) haloOuterMesh.destroy();
+            ribbonMesh      = nextMesh;
+            haloInnerMesh   = nextInnerMesh;
+            haloOuterMesh   = nextOuterMesh;
         }, RIBBON_UPDATE_MS);
 
         // ─── Arc tween along the cylinder surface ────────────
@@ -3595,7 +3735,11 @@ export class GameController extends Component {
             .call(() => {
                 if (ribbonHandle) { clearInterval(ribbonHandle); ribbonHandle = null; }
                 if (ribbonMesh) { ribbonMesh.destroy(); ribbonMesh = null; }
+                if (haloInnerMesh) { haloInnerMesh.destroy(); haloInnerMesh = null; }
+                if (haloOuterMesh) { haloOuterMesh.destroy(); haloOuterMesh = null; }
                 if (ribbonNode && ribbonNode.isValid) ribbonNode.destroy();
+                if (haloInner.node && haloInner.node.isValid) haloInner.node.destroy();
+                if (haloOuter.node && haloOuter.node.isValid) haloOuter.node.destroy();
                 onArrive();
                 if (node && node.isValid) node.destroy();
             })
@@ -4611,6 +4755,75 @@ export class GameController extends Component {
      *  The `level` parameter is currently unused but kept on the
      *  signature so future tuning (e.g. brighter pulse for L3) can plug
      *  in without changing the hook contract. */
+
+    /** In-flight tween handle for the current shake — killed when a
+     *  new shake starts so we don't stack jitter on top of jitter.
+     *  Typed as `any` because Cocos's Tween<T> generic doesn't cleanly
+     *  cover the scratch object we drive it with, and we only ever
+     *  call `.stop()` on this ref anyway. */
+    private _activeShake: any = null;
+
+    /** Short screen-shake by nudging `boardRoot3D`'s local position on
+     *  X/Y. Uses a decaying random-jitter tween: strong at the start,
+     *  fading to zero by `durationMs`. Restores the ORIGINAL position
+     *  on completion (captured before the tween starts — no drift even
+     *  if the shake is triggered while the tower is mid-move). Safe to
+     *  call multiple times: any in-flight shake is cancelled and the
+     *  new one takes over.
+     *
+     *  Params:
+     *   - durationMs: total shake length; ~250-350 ms reads as "punch"
+     *   - intensity: peak jitter amplitude in world units (Vec3.x/y).
+     *     ~4-8 for handheld / mobile; higher looks over-the-top.
+     */
+    private _shakeBoardRoot(durationMs: number, intensity: number): void {
+        const root = this.boardRoot3D;
+        if (!root) return;
+        // Snapshot the resting position. If a previous shake is still
+        // in flight, snapshot from THAT tween's target restore point
+        // (stored in a data attribute on the node) so consecutive
+        // shakes don't drift the tower.
+        const anyRoot = root as any;
+        const originalX: number = anyRoot._shakeRestX ?? root.position.x;
+        const originalY: number = anyRoot._shakeRestY ?? root.position.y;
+        anyRoot._shakeRestX = originalX;
+        anyRoot._shakeRestY = originalY;
+
+        // Kill any previous shake.
+        if (this._activeShake) { this._activeShake.stop(); this._activeShake = null; }
+
+        const startZ = root.position.z;
+        const startedAt = performance.now();
+        const durSec = durationMs / 1000;
+
+        // Drive via a tween on a scratch object; the update callback
+        // rewrites root.position each frame with fresh random jitter
+        // scaled by (1 - t/dur) for the decay. Cheaper than a per-
+        // frame `update()` poll and pauses correctly when the scene
+        // pauses (tween respects the director's timeScale).
+        const scratch = { t: 0 };
+        this._activeShake = tween(scratch)
+            .to(durSec, { t: 1 }, {
+                onUpdate: () => {
+                    const elapsed = (performance.now() - startedAt) / 1000;
+                    const remaining = Math.max(0, 1 - elapsed / durSec);
+                    const amp = intensity * remaining;
+                    // Fresh random offset each frame — reads as chaotic
+                    // shake instead of periodic wobble.
+                    const dx = (Math.random() * 2 - 1) * amp;
+                    const dy = (Math.random() * 2 - 1) * amp;
+                    root.setPosition(originalX + dx, originalY + dy, startZ);
+                },
+            })
+            .call(() => {
+                root.setPosition(originalX, originalY, startZ);
+                anyRoot._shakeRestX = undefined;
+                anyRoot._shakeRestY = undefined;
+                this._activeShake = null;
+            })
+            .start();
+    }
+
     private queueBoomFlash(
         centerR: number,
         centerC: number,

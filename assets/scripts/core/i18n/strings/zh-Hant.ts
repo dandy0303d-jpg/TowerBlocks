@@ -88,6 +88,20 @@ export const ZH_HANT: Record<string, string> = {
     'desc.mortar10':      '使用後，10 個方塊從上方落下，填補空格',
     'desc.mortar15':      '使用後，15 個方塊從上方落下，填補空格',
 
+    // ---------- 背包道具（3 種） ----------
+    'item.mini_block':    '迷你方塊',
+    'item.bomb_block':    '炸彈方塊',
+    'item.rename_card':   '改名卡',
+    'desc.mini_block':    '使用後，下一個方塊變成 1×1 的小方塊',
+    'desc.bomb_block':    '使用後，下一個方塊變成炸彈；觸底鎖定時以炸彈為中心 3×3 範圍內的方塊全部消除',
+    'desc.rename_card':   '消耗 1 張即可修改一次暱稱。不使用則無法改名。',
+
+    // ---------- 背包介面 ----------
+    'backpack.use':          '使用',
+    'backpack.using':        '使用中...',
+    'backpack.useDisabled':  '不可使用',
+    'backpack.useIngameOnly':'只能在遊戲中使用',
+
     // ---------- 變形彈窗 ----------
     'shapeshifter.title':    '🎲 變形',
     'shapeshifter.subtitle': '選一種形狀讓當前方塊變身',
@@ -239,6 +253,7 @@ export const ZH_HANT: Record<string, string> = {
     'settings.nickname.tooShort':    '暱稱太短',
     'settings.nickname.tooLongServer':'暱稱太長',
     'settings.nickname.rejected':    '暱稱不合法，請換一個',
+    'settings.nickname.noCard':      '需要 1 張改名卡才能修改暱稱，請到背包獲取',
     'settings.nickname.cooldown':    '距下次可修改還有 {n} 天',
     'settings.nickname.cooldownReady':'現在可以修改（下次修改需等 7 天）',
     'settings.nickname.title':       '修改暱稱',
