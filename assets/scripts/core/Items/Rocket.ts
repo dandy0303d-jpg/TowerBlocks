@@ -143,8 +143,14 @@ export class RocketState {
     }
 
     /** Frame tick. `dt` in ms. Returns the number of rockets that resolved
-     *  (either hit a cell or fizzled) this frame. */
-    tick(dt: number, state: BoardState, reservedTop: number, hooks: RocketHooks = {}): number {
+     *  (either hit a cell or fizzled) this frame.
+     *
+     *  `preserveGray` (default false): when true, rockets PASS THROUGH
+     *  gray 'X' cells without stopping or clearing them — used in
+     *  endless / blind modes so the accumulated foundation can't be
+     *  eroded by magic-item storms. Colored cells still stop + clear
+     *  the rocket as normal. */
+    tick(dt: number, state: BoardState, reservedTop: number, hooks: RocketHooks = {}, preserveGray: boolean = false): number {
         if (!this.mode) return 0;
         let resolved = 0;
 
@@ -177,12 +183,12 @@ export class RocketState {
             for (let r = scanFrom; r <= scanTo; r++) {
                 const v = state.board[r][rk.col];
                 if (v === null) continue;
-                // Any non-null cell stops the rocket. Colored AND gray
-                // 'X' cells both get cleared (gray-is-bomb-proof was
-                // lifted so magic + embedded props chew through the
-                // foundation). Hail 'H' still absorbs the rocket
-                // without being cleared — hail is a separate barrier
-                // system, not the reserved zone.
+                // Gray-preserve mode (endless / blind): pass through
+                // 'X' cells like they weren't there — no clear, no
+                // rocket stop. Level modes still let rockets chew
+                // through gray so item combos can breach the reserved
+                // zone as intended.
+                if (v === 'X' && preserveGray) continue;
                 if (isColoredCell(v) || v === 'X') {
                     state.board[r][rk.col] = null;
                     triggerHitProps(state, r, rk.col, hooks, reservedTop);

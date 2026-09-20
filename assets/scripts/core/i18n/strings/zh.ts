@@ -187,6 +187,8 @@ export const ZH: Record<string, string> = {
     'leaderboard.tab.level':   '关卡模式',
     'leaderboard.tab.endless': '无尽模式',
     'leaderboard.tab.blind':   '闭眼模式',
+    'leaderboard.scope.lang':  '语言榜',
+    'leaderboard.scope.global':'全球榜',
     'leaderboard.you':         '你',
     'leaderboard.empty':       '暂无数据',
     'leaderboard.mockName':    '玩家昵称{n}',

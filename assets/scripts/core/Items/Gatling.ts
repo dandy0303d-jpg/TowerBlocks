@@ -96,6 +96,11 @@ export class GatlingState {
         reservedTop: number,
         liveTargetCol: number,
         hooks: GatlingHooks = {},
+        /** When true, gray 'X' cells are TREATED AS EMPTY for
+         *  targeting — bullets aim only at colored cells. Used in
+         *  endless / blind modes so the foundation can't be eroded
+         *  by magic-item storms. */
+        preserveGray: boolean = false,
     ): number {
         if (!this.mode) return 0;
         let resolved = 0;
@@ -110,15 +115,15 @@ export class GatlingState {
         const liveCol = ((Math.round(liveTargetCol) % COLS) + COLS) % COLS;
 
         // Find the topmost "solid" cell (colored OR gray 'X') in liveCol.
-        // Once a bullet's y reaches this row it dies — both colored and
-        // gray cells now vanish 1:1 with the bullet (gray-is-bomb-proof
-        // was lifted). -1 means the column is entirely empty; the bullet
-        // falls all the way to the true bottom and despawns.
+        // preserveGray flips gray to "invisible" so bullets skip past
+        // it. -1 means no valid target; the bullet falls to the
+        // bottom and despawns.
         const H = state.board.length;
         let topRow = -1;
         for (let r = 0; r < H; r++) {
             const v = state.board[r][liveCol];
-            if (isColoredCell(v) || v === 'X') { topRow = r; break; }
+            if (isColoredCell(v)) { topRow = r; break; }
+            if (v === 'X' && !preserveGray) { topRow = r; break; }
         }
 
         this.spawnAccum += dt;
@@ -169,7 +174,8 @@ export class GatlingState {
                 topRow = -1;
                 for (let r = 0; r < H; r++) {
                     const v = state.board[r][liveCol];
-                    if (isColoredCell(v) || v === 'X') { topRow = r; break; }
+                    if (isColoredCell(v)) { topRow = r; break; }
+                    if (v === 'X' && !preserveGray) { topRow = r; break; }
                 }
                 continue;
             }

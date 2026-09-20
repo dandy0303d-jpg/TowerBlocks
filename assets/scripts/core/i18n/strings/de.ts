@@ -165,6 +165,8 @@ export const DE: Record<string, string> = {
     'leaderboard.tab.level':   'Level',
     'leaderboard.tab.endless': 'Endlos',
     'leaderboard.tab.blind':   'Blind',
+    'leaderboard.scope.lang':  'Meine Sprache',
+    'leaderboard.scope.global':'Global',
     'leaderboard.you':         'Du',
     'leaderboard.empty':       'Keine Daten',
     'leaderboard.mockName':    'Spieler {n}',

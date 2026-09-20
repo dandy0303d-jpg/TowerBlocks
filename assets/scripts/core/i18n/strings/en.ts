@@ -184,6 +184,8 @@ export const EN: Record<string, string> = {
     'leaderboard.tab.level':   'Levels',
     'leaderboard.tab.endless': 'Endless',
     'leaderboard.tab.blind':   'Blind',
+    'leaderboard.scope.lang':  'My Language',
+    'leaderboard.scope.global':'Global',
     'leaderboard.you':         'You',
     'leaderboard.empty':       'No data yet',
     'leaderboard.mockName':    'Player {n}',

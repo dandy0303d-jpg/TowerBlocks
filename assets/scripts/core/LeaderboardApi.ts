@@ -102,8 +102,18 @@ export interface PlayerProfileUpdateResult {
 
 /** Fetch the top N entries for `mode`. Backend caps at 500 regardless
  *  of what you ask; asking for less just skips the tail. */
-export async function fetchTop(mode: LeaderboardApiMode, limit = 500): Promise<LeaderboardApiEntry[]> {
-    const url = `${BACKEND_BASE_URL}/leaderboard/${mode}/top?limit=${limit}`;
+export async function fetchTop(
+    mode: LeaderboardApiMode,
+    limit = 500,
+    /** When set, the server filters entries to players whose profile
+     *  language matches. `undefined` → global (all players). Server
+     *  is expected to accept `?lang=` and filter accordingly; if the
+     *  backend hasn't been patched yet, it silently ignores the param
+     *  and returns the global top. */
+    lang?: string,
+): Promise<LeaderboardApiEntry[]> {
+    let url = `${BACKEND_BASE_URL}/leaderboard/${mode}/top?limit=${limit}`;
+    if (lang) url += `&lang=${encodeURIComponent(lang)}`;
     const data = await httpGetJson<{ entries: LeaderboardApiEntry[] }>(url, BACKEND_TIMEOUT_MS);
     return data.entries ?? [];
 }
@@ -134,9 +144,10 @@ export async function submitScore(
 /** Fetch the current player's rank + score for `mode`. Both fields
  *  are `null` if the player hasn't submitted any score for that
  *  mode yet. */
-export async function fetchMyRank(mode: LeaderboardApiMode): Promise<MyRankResult> {
+export async function fetchMyRank(mode: LeaderboardApiMode, lang?: string): Promise<MyRankResult> {
     const uuid = encodeURIComponent(PlayerProfile.uuid);
-    const url = `${BACKEND_BASE_URL}/leaderboard/${mode}/rank/${uuid}`;
+    let url = `${BACKEND_BASE_URL}/leaderboard/${mode}/rank/${uuid}`;
+    if (lang) url += `?lang=${encodeURIComponent(lang)}`;
     return httpGetJson<MyRankResult>(url, BACKEND_TIMEOUT_MS);
 }
 
@@ -222,8 +233,9 @@ export async function submitLevelTime(
  *  a sparse array — levels with zero entries are simply not present.
  *  Client-side renderer indexes by `levelIdx` for O(1) row lookup
  *  when painting the 1..99 list. */
-export async function fetchLevelTops(): Promise<LevelTopEntry[]> {
-    const url = `${BACKEND_BASE_URL}/leaderboard/level-time/tops`;
+export async function fetchLevelTops(lang?: string): Promise<LevelTopEntry[]> {
+    let url = `${BACKEND_BASE_URL}/leaderboard/level-time/tops`;
+    if (lang) url += `?lang=${encodeURIComponent(lang)}`;
     const data = await httpGetJson<{ entries: LevelTopEntry[] }>(url, BACKEND_TIMEOUT_MS);
     return data.entries ?? [];
 }

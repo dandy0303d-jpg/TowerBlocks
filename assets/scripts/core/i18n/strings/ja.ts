@@ -186,6 +186,8 @@ export const JA: Record<string, string> = {
     'leaderboard.tab.level':   'ステージ',
     'leaderboard.tab.endless': 'エンドレス',
     'leaderboard.tab.blind':   'ブラインド',
+    'leaderboard.scope.lang':  '同じ言語',
+    'leaderboard.scope.global':'グローバル',
     'leaderboard.you':         'あなた',
     'leaderboard.empty':       'データなし',
     'leaderboard.mockName':    'プレイヤー{n}',

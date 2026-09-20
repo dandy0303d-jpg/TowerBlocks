@@ -955,11 +955,17 @@ export class GameState {
         // Hail/rocket/gatling/mortar storms freeze normal piece movement.
         if (this.hail.mode || this.rocket.mode || this.gatling.mode || this.mortar.mode) {
             if (this.hail.mode)    this.hail.tick(dt, this.state, this.makeStormHooks());
+            // Endless / blind: preserve the gray foundation from
+            // magic-item storm damage. Rocket + gatling both pass
+            // through 'X' cells without stopping or clearing them
+            // in these modes. Level / collect keep the existing
+            // "storms chew through gray" behaviour.
+            const preserveGray = isEndlessLike(this.mode);
             if (this.rocket.mode)  this.rocket.tick(dt, this.state, this.computeReservedTop(), {
                 ...this.makeStormHooks(),
                 onHit:  (r, c, color) => this.hooks.onRocketHit?.([{ r, c, color }]),
                 onFire: (col) => this.hooks.onRocketFire?.(col),
-            });
+            }, preserveGray);
             if (this.gatling.mode) this.gatling.tick(
                 dt,
                 this.state,
@@ -974,6 +980,7 @@ export class GameState {
                     onHit:  (r, c, color) => this.hooks.onGatlingHit?.([{ r, c, color }]),
                     onFire: (col) => this.hooks.onGatlingFire?.(col),
                 },
+                preserveGray,
             );
             if (this.mortar.mode)  this.mortar.tick(dt, this.state, this.makeMortarHooks());
             // Mid-storm win check: if the gatling / rocket / mortar

@@ -164,6 +164,8 @@ export const RU: Record<string, string> = {
     'leaderboard.tab.level':   'Уровни',
     'leaderboard.tab.endless': 'Бесконечный',
     'leaderboard.tab.blind':   'Слепой',
+    'leaderboard.scope.lang':  'Мой язык',
+    'leaderboard.scope.global':'Глобально',
     'leaderboard.you':         'Ты',
     'leaderboard.empty':       'Нет данных',
     'leaderboard.mockName':    'Игрок {n}',
