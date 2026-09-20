@@ -137,6 +137,16 @@ export class LeaderboardController extends Component {
     @property({ type: [Node], tooltip: '3 个 Tab 的"选中"指示节点（可空；有的话脚本会切换 active）' })
     modeTabIndicators: Node[] = [];
 
+    // ---- Scope tabs (语言 / 全球) ----
+    @property({ type: [Button], tooltip: '范围 Tab 按钮（顺序：语言 / 全球，共 2 个）— 可空。留空则永远看全球榜。默认选中"语言"。' })
+    scopeTabButtons: Button[] = [];
+
+    @property({ type: [Label], tooltip: '范围 Tab 按钮内部的 Label（可空；空的会自动 getComponentInChildren 找）' })
+    scopeTabLabels: Label[] = [];
+
+    @property({ type: [Node], tooltip: '范围 Tab 的选中指示节点（可空；有的话脚本会切换 active）' })
+    scopeTabIndicators: Node[] = [];
+
     // ---- Scroll list ----
     @property({ type: ScrollView, tooltip: '排行榜 ScrollView（Vertical）' })
     scrollView: ScrollView | null = null;
@@ -161,6 +171,12 @@ export class LeaderboardController extends Component {
 
     /** Currently-selected mode tab. */
     private currentMode: LeaderboardMode = 'level';
+
+    /** Currently-selected scope: same-language players ('lang') or all
+     *  players ('global'). Default 'lang' per user request. Sent as
+     *  the `?lang=` query param when set — server filters by language
+     *  and returns only matching entries. */
+    private currentScope: 'lang' | 'global' = 'lang';
 
     /** Cached row instances — grown on demand, reused across tab
      *  switches / re-shows. Extra rows past the current data length
@@ -400,6 +416,20 @@ export class LeaderboardController extends Component {
             const lab = this.modeTabLabels[i] ?? btn.getComponentInChildren(Label);
             if (lab) lab.string = t(tabKeys[i]);
         }
+        // Scope tabs (语言 / 全球). Order in the array matches
+        // ['lang', 'global']. Silent no-op when neither is wired.
+        const scopes: Array<'lang' | 'global'> = ['lang', 'global'];
+        const scopeKeys = ['leaderboard.scope.lang', 'leaderboard.scope.global'];
+        for (let i = 0; i < this.scopeTabButtons.length; i++) {
+            const btn = this.scopeTabButtons[i];
+            if (!btn) continue;
+            const scope = scopes[i];
+            if (!scope) continue;
+            btn.node.off('click');
+            btn.node.on('click', () => this.onScopeClick(scope), this);
+            const lab = this.scopeTabLabels[i] ?? btn.getComponentInChildren(Label);
+            if (lab) lab.string = t(scopeKeys[i]);
+        }
     }
 
     private retranslateTabs(): void {
@@ -410,6 +440,23 @@ export class LeaderboardController extends Component {
             const lab = this.modeTabLabels[i] ?? btn.getComponentInChildren(Label);
             if (lab) lab.string = t(tabKeys[i]);
         }
+        const scopeKeys = ['leaderboard.scope.lang', 'leaderboard.scope.global'];
+        for (let i = 0; i < this.scopeTabButtons.length; i++) {
+            const btn = this.scopeTabButtons[i];
+            if (!btn) continue;
+            const lab = this.scopeTabLabels[i] ?? btn.getComponentInChildren(Label);
+            if (lab) lab.string = t(scopeKeys[i]);
+        }
+    }
+
+    private onScopeClick(scope: 'lang' | 'global'): void {
+        if (this.currentScope === scope) return;
+        this.currentScope = scope;
+        // Wipe cached entries — scope switch changes the server filter,
+        // so any previously-cached list belonged to a different scope.
+        this.cachedEntries = {};
+        this.cachedMyRank = {};
+        this.refresh();
     }
 
     private onTabClick(mode: LeaderboardMode): void {
@@ -441,6 +488,13 @@ export class LeaderboardController extends Component {
             const ind = this.modeTabIndicators[i];
             if (!ind) continue;
             ind.active = tabModes[i] === this.currentMode;
+        }
+        // Scope indicators (语言 / 全球).
+        const scopes: Array<'lang' | 'global'> = ['lang', 'global'];
+        for (let i = 0; i < this.scopeTabIndicators.length; i++) {
+            const ind = this.scopeTabIndicators[i];
+            if (!ind) continue;
+            ind.active = scopes[i] === this.currentScope;
         }
 
         // ---- Paint cached data immediately so the list isn't empty
@@ -517,7 +571,7 @@ export class LeaderboardController extends Component {
             this.paintLevelMyRankRow();
             return;
         }
-        fetchMyRank(mode)
+        fetchMyRank(mode, this.currentScope === 'lang' ? getLang() : undefined)
             .then((r) => {
                 if (reqId !== this.lastFetchId) return;
                 if (this.currentMode !== mode) return;
@@ -737,8 +791,9 @@ export class LeaderboardController extends Component {
         // every floor's slot — filled OR "—" — for a stable at-a-glance
         // read. Rank column carries the floor number (level.order = idx+1
         // by convention for level mode), name/avatar/time from the top-1.
+        const scopeLang = this.currentScope === 'lang' ? getLang() : undefined;
         if (mode === 'level') {
-            const tops: LevelTopEntry[] = await fetchLevelTops();
+            const tops: LevelTopEntry[] = await fetchLevelTops(scopeLang);
             // Index the sparse response by levelIdx for O(1) row lookup.
             const byIdx = new Map<number, LevelTopEntry>();
             let maxIdx = -1;
@@ -794,7 +849,7 @@ export class LeaderboardController extends Component {
         }
 
         // ---- ENDLESS / BLIND tabs (unchanged): score = height ----
-        const apiEntries: LeaderboardApiEntry[] = await fetchTop(mode, MAX_ENTRIES);
+        const apiEntries: LeaderboardApiEntry[] = await fetchTop(mode, MAX_ENTRIES, scopeLang);
         return apiEntries.map((e) => ({
             rank:  e.rank,
             name:  e.name,

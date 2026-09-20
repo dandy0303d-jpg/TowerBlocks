@@ -184,6 +184,8 @@ export const ZH_HANT: Record<string, string> = {
     'leaderboard.tab.level':   '關卡模式',
     'leaderboard.tab.endless': '無盡模式',
     'leaderboard.tab.blind':   '閉眼模式',
+    'leaderboard.scope.lang':  '語言榜',
+    'leaderboard.scope.global':'全球榜',
     'leaderboard.you':         '你',
     'leaderboard.empty':       '暫無資料',
     'leaderboard.mockName':    '玩家暱稱{n}',

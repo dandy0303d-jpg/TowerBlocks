@@ -169,6 +169,8 @@ export const PT_BR: Record<string, string> = {
     'leaderboard.tab.level':   'Fases',
     'leaderboard.tab.endless': 'Infinito',
     'leaderboard.tab.blind':   'Cego',
+    'leaderboard.scope.lang':  'Meu idioma',
+    'leaderboard.scope.global':'Global',
     'leaderboard.you':         'Você',
     'leaderboard.empty':       'Sem dados',
     'leaderboard.mockName':    'Jogador {n}',

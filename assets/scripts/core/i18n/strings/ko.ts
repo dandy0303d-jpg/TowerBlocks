@@ -173,6 +173,8 @@ export const KO: Record<string, string> = {
     'leaderboard.tab.level':   '스테이지',
     'leaderboard.tab.endless': '무한 모드',
     'leaderboard.tab.blind':   '블라인드 모드',
+    'leaderboard.scope.lang':  '언어별',
+    'leaderboard.scope.global':'글로벌',
     'leaderboard.you':         '나',
     'leaderboard.empty':       '데이터 없음',
     'leaderboard.mockName':    '플레이어 {n}',
