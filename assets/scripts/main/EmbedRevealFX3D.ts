@@ -446,13 +446,23 @@ export class EmbedRevealFX3D extends Component {
                 const nZ = Math.cos(theta);
                 const qx = tmpQ.x + nX * layer.radialOffset;
                 const qz = tmpQ.z + nZ * layer.radialOffset;
-                // Taper: oldest = 0, newest = 1. Smoothstep ramps the
-                // width up gently from the tail; then a `(1 + 2u)`
-                // amplifier grows the head to 3× the classic ribbon
-                // width, producing a comet-like flare at the orb end.
-                const taper = u * u * (3 - 2 * u);
-                const headBoost = 1 + 2 * u;
-                const halfWidth = halfWidthBase * taper * headBoost;
+                // Width profile: thick head, thin tail.
+                //   • The tip (from u=0.3 upward — i.e. the newest 70%
+                //     of the ribbon) sits at the full 3× width so the
+                //     comet flare is visible from frame 1, not just
+                //     after the orb has been flying for a while.
+                //   • The oldest 30% smoothly tapers from 0 up to 3×,
+                //     giving the tail its wispy fade-out.
+                const HEAD_MUL = 3;
+                const TAIL_LEN = 0.3;
+                let widthMul: number;
+                if (u >= TAIL_LEN) {
+                    widthMul = HEAD_MUL;
+                } else {
+                    const r = u / TAIL_LEN;             // 0..1 across the tail
+                    widthMul = HEAD_MUL * r * r * (3 - 2 * r);   // smoothstep
+                }
+                const halfWidth = halfWidthBase * widthMul;
                 positions.push(
                     qx + tmpB.x * halfWidth,
                     tmpQ.y + tmpB.y * halfWidth,
