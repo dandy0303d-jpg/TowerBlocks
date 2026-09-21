@@ -15,6 +15,7 @@ import {
     Layout,
     Widget,
     Canvas,
+    Camera,
     director,
     Font,
     game,
@@ -4322,52 +4323,86 @@ export class HudController extends Component {
             .start();
     }
 
-    /** Phase B of the embed-pick intro: yellow orb + trail arcs from
-     *  screen centre → up → down to the target cell's on-screen
-     *  position, then a golden glow pulses on the cell.
+    /** Phase B of the embed-pick intro: a yellow orb + fading golden
+     *  trail spirals AROUND THE OUTSIDE of the cylindrical tower and
+     *  descends onto the target cell, ending with a golden glow pulse.
+     *
+     *  Path is computed in 3D world space each frame (so the orb reads
+     *  as "going around" the tower silhouette), then projected via
+     *  `camera.worldToScreen` → `canvasUT.convertToNodeSpaceAR` into
+     *  the overlay's Canvas UI space where Graphics draws it. No 3D
+     *  scene node is created — everything happens on a single Canvas
+     *  overlay, so no depth-sorting or material work is needed.
+     *
+     *  3D arc parameterisation (t ∈ 0..1):
+     *    • θ(t) — angular position around the tower's Y axis, sweeps
+     *      from 0 (front-facing) to `targetTheta` along the shorter
+     *      angular direction.
+     *    • r(t) — orbital radius. Stays at `targetR × 1.5` (outside
+     *      the cylinder) for the first 80% of the flight; converges
+     *      to `targetR` in the final 20% so the orb kisses the cell
+     *      rather than plunging through it.
+     *    • y(t) — linear from `startY` (a few cells above target) →
+     *      `targetY`, plus a `sin(πt)` bump for the arc peak.
      *
      *  Called by GameController AFTER `playLevelAssembly` completes
-     *  and BEFORE `state.modalPaused` is cleared (so the falling piece
-     *  stays frozen while the FX plays).
-     *
-     *  `uiPos` is the target cell projected into this Canvas's UI
-     *  coordinate space (centred at 0,0). Caller is responsible for
-     *  the 3D→UI conversion (needs the game camera + cubeManager).
-     *
-     *  Total wall time ≈ 900ms (500 arc + 400 glow).
-     *  Fires `onDone` once fully finished. */
-    public playEmbedRevealFx(uiPos: Vec3, _kind: EmbedProp, onDone: () => void): void {
-        const canvasNode = director.getScene()?.getComponentInChildren(Canvas)?.node;
-        if (!canvasNode) { onDone(); return; }
+     *  and BEFORE `state.modalPaused` is cleared (piece stays frozen
+     *  until `onDone` fires ~1s later). */
+    public playEmbedRevealFx(
+        targetWorld: Vec3,
+        camera: Camera,
+        canvasUT: UITransform,
+        _kind: EmbedProp,
+        onDone: () => void,
+    ): void {
+        const canvasNode = canvasUT.node;
 
         const overlay = new Node('EmbedRevealFx');
         overlay.layer = canvasNode.layer;
         canvasNode.addChild(overlay);
-        // Sit above every regular child so nothing occludes the arc.
         overlay.setSiblingIndex(9999);
         const ut = overlay.addComponent(UITransform);
-        ut.setContentSize(1, 1);   // canvas-space anchored at (0,0); Graphics draws in this space
+        ut.setContentSize(1, 1);
         const gfx = overlay.addComponent(Graphics);
 
-        // Quadratic bezier P0 → P1 (control) → P2:
-        //   P0 = canvas centre (0,0)
-        //   P2 = target cell UI pos
-        //   P1 = midpoint, lifted 260 px above the higher of P0/P2 so
-        //        the orb rises before descending to the cell (matches
-        //        the "从上方招手" arc direction).
-        const P0x = 0, P0y = 0;
-        const P2x = uiPos.x, P2y = uiPos.y;
-        const midX = (P0x + P2x) / 2;
-        const midY = Math.max(P0y, P2y) + 260;
-        const P1x = midX, P1y = midY;
+        // Tower geometry, derived from the target cell so we don't need
+        // to import Constants from here.
+        const targetR = Math.max(0.1, Math.sqrt(targetWorld.x * targetWorld.x + targetWorld.z * targetWorld.z));
+        const orbitR  = targetR * 1.5;
+        // Shortest angular direction from θ=0 (front) to targetTheta.
+        let targetTheta = Math.atan2(targetWorld.x, targetWorld.z);
+        // Ensure we take the shorter path — same normalisation as
+        // atan2 already gives us (-π .. π), which IS the shortest.
+        const startY = targetWorld.y + 3;   // start ~3 cells above target
+        const peakH  = 2;                   // sin-bump height above the linear glide
 
-        const flyDurMs  = 500;
+        // Reusable temp vectors to avoid GC.
+        const wp = new Vec3();
+        const sp = new Vec3();
+        const uiP = new Vec3();
+
+        // Compute 3D world → UI screen point (Canvas centre origin).
+        const worldToUi = (w: Vec3, out: Vec3): boolean => {
+            camera.worldToScreen(w, sp);
+            // Behind-camera or off-screen projection returns invalid
+            // values on some builds; z<0 is a reliable clue. Bail so
+            // we don't draw a nonsense frame.
+            if (!isFinite(sp.x) || !isFinite(sp.y)) return false;
+            canvasUT.convertToNodeSpaceAR(sp, out);
+            return true;
+        };
+
+        const flyDurMs  = 700;
         const glowDurMs = 400;
         const startTime = Date.now();
         const history: Array<{ x: number; y: number }> = [];
-        const HISTORY_LEN = 10;
+        const HISTORY_LEN = 14;
         let arrived = false;
         let arrivedAt = 0;
+
+        // Pre-compute the target cell's UI position for the glow pulse.
+        const targetUi = new Vec3();
+        worldToUi(targetWorld, targetUi);
 
         const drawFrame = () => {
             const now = Date.now();
@@ -4375,14 +4410,22 @@ export class HudController extends Component {
 
             if (!arrived) {
                 const t = Math.min(1, (now - startTime) / flyDurMs);
-                const s = 1 - t;
-                const x = s*s*P0x + 2*s*t*P1x + t*t*P2x;
-                const y = s*s*P0y + 2*s*t*P1y + t*t*P2y;
+                // Radius: outside for most, converges in last 20%.
+                const rt = t < 0.8 ? orbitR : orbitR + (targetR - orbitR) * ((t - 0.8) / 0.2);
+                // Angular sweep 0 → targetTheta with quadOut easing so
+                // the orb accelerates into the wrap and settles at the
+                // cell rather than passing it.
+                const ease = 1 - (1 - t) * (1 - t);
+                const theta = targetTheta * ease;
+                // Linear glide + sin-bump arc.
+                const y = startY + (targetWorld.y - startY) * t + peakH * Math.sin(Math.PI * t);
+                wp.set(rt * Math.sin(theta), y, rt * Math.cos(theta));
+                if (!worldToUi(wp, uiP)) return;   // skip degenerate frames
 
-                history.push({ x, y });
+                history.push({ x: uiP.x, y: uiP.y });
                 if (history.length > HISTORY_LEN) history.shift();
 
-                // Trail — fading golden strip from oldest → newest.
+                // Trail — golden strip, alpha fades from oldest to newest.
                 gfx.lineWidth = 10;
                 for (let i = 1; i < history.length; i++) {
                     const a = i / history.length;
@@ -4391,25 +4434,21 @@ export class HudController extends Component {
                     gfx.lineTo(history[i].x, history[i].y);
                     gfx.stroke();
                 }
-                // Outer halo
-                gfx.fillColor = new Color(255, 220, 100, 180);
-                gfx.circle(x, y, 26);
+                gfx.fillColor = new Color(255, 220, 100, 180);   // outer halo
+                gfx.circle(uiP.x, uiP.y, 26);
                 gfx.fill();
-                // Mid glow
-                gfx.fillColor = new Color(255, 235, 150, 220);
-                gfx.circle(x, y, 16);
+                gfx.fillColor = new Color(255, 235, 150, 220);   // mid glow
+                gfx.circle(uiP.x, uiP.y, 16);
                 gfx.fill();
-                // Core
-                gfx.fillColor = new Color(255, 252, 220, 255);
-                gfx.circle(x, y, 8);
+                gfx.fillColor = new Color(255, 252, 220, 255);   // core
+                gfx.circle(uiP.x, uiP.y, 8);
                 gfx.fill();
 
                 if (t >= 1) { arrived = true; arrivedAt = now; }
             } else {
-                // Golden pulse on the target cell (5 步: 放大→缩小→揭示).
-                // Emulated as ring expand + fade + inner glow throb.
+                // Golden pulse on the target cell (放大 → 缩小 → 揭示).
                 const t = Math.min(1, (now - arrivedAt) / glowDurMs);
-                const puff = Math.sin(Math.PI * t);   // 0 → 1 → 0 shape
+                const puff = Math.sin(Math.PI * t);
                 const rOuter = 30 + t * 130;
                 const rInner = 20 + puff * 40;
                 const alphaOuter = Math.floor(220 * (1 - t));
@@ -4417,11 +4456,11 @@ export class HudController extends Component {
 
                 gfx.lineWidth = 5;
                 gfx.strokeColor = new Color(255, 220, 80, alphaOuter);
-                gfx.circle(P2x, P2y, rOuter);
+                gfx.circle(targetUi.x, targetUi.y, rOuter);
                 gfx.stroke();
 
                 gfx.fillColor = new Color(255, 245, 170, alphaInner);
-                gfx.circle(P2x, P2y, rInner);
+                gfx.circle(targetUi.x, targetUi.y, rInner);
                 gfx.fill();
 
                 if (t >= 1) {
