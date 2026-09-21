@@ -882,28 +882,34 @@ export class GameState {
         }
     }
 
-    /** Backpack item — 重力压制 (Gravity Press). Every column's
-     *  colored cells (with their props) settle downward to fill any
-     *  empty spaces below them. Delegates to the well-tested
-     *  `applyColumnGravity` primitive, passing `computeReservedTop`
-     *  so the level-mode reserved zone (the black/gray foundation)
-     *  is untouched — colored cells settle onto the top of the
-     *  reserved zone rather than being scooped into it. Endless-like
-     *  modes have no reserved zone, so the whole tower compresses.
+    /** Backpack item — 重力压制 (Gravity Press), settle phase.
+     *  Every column's colored cells (with their props) settle
+     *  downward to fill any empty spaces below them. Delegates to
+     *  the well-tested `applyColumnGravity` primitive, passing
+     *  `computeReservedTop` so the level-mode reserved zone (the
+     *  black/gray foundation) is untouched — colored cells settle
+     *  onto the top of the reserved zone rather than being scooped
+     *  into it. Endless-like modes have no reserved zone, so the
+     *  whole tower compresses.
      *
-     *  Follow-up: any rows that end up fully packed after the gravity
-     *  settle are immediately cleared via the standard `clearLines`
-     *  pipeline (flash FX, stone HP decrement, chest progress hooks
-     *  — all the usual side effects). Score bonus is intentionally
-     *  NOT applied — the player paid a backpack item for the clear,
-     *  layering score points on top would double-dip. */
+     *  Row clearing is DEFERRED — call `applyGravityPressClearSweep`
+     *  after a 0.5 s pause so the player sees the settled state
+     *  before rows disappear. */
     applyGravityPress(): void {
         if (!this.state.board || this.state.board.length === 0) return;
+        applyColumnGravity(this.state, this.computeReservedTop());
+    }
+
+    /** Follow-up to `applyGravityPress` (called by GameController after
+     *  a short delay). Sweeps any rows that ended up fully packed
+     *  through the standard `clearLines` pipeline: flash FX, stone
+     *  HP decrement, chest progress hooks — all the usual side
+     *  effects. Score bonus is intentionally NOT applied — the
+     *  player paid a backpack item for the clear, layering score
+     *  points on top would double-dip. */
+    applyGravityPressClearSweep(): void {
+        if (!this.state.board || this.state.board.length === 0) return;
         const reservedTop = this.computeReservedTop();
-        applyColumnGravity(this.state, reservedTop);
-        // Sweep any newly-completed rows. Chest progress is credited
-        // (fair — the player did clear those rows, potion or not);
-        // score bonus is omitted for the reason above.
         const result = clearLines(this.state, reservedTop, this.makeClearHooks());
         if (result.fullyCleared > 0) {
             this._lastClearLinesFullyCleared = result.fullyCleared;
