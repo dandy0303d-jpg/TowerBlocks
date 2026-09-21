@@ -211,6 +211,18 @@ export class HudController extends Component {
     @property({ type: Label, tooltip: '『迷你方块』数量 Label（"×N"）。跟 authoredMiniBlockButton 配对；留空则不显示数量。' })
     authoredMiniBlockCountLabel: Label | null = null;
 
+    @property({ type: Button, tooltip: '游戏内快捷使用『甩干机』的按钮。点击后服务器扣 1 张，方块暂停下落，塔在 1 秒内旋转一圈，每层的方块横向挨到一起，然后继续。数量=0 时按钮所在节点自动隐藏。' })
+    authoredDryerButton: Button | null = null;
+
+    @property({ type: Label, tooltip: '『甩干机』数量 Label（"×N"）。跟 authoredDryerButton 配对；留空则不显示数量。' })
+    authoredDryerCountLabel: Label | null = null;
+
+    @property({ type: Button, tooltip: '游戏内快捷使用『重力压制』的按钮。点击后服务器扣 1 张，方块暂停下落，下方所有彩色方块因重力落下填满空格，然后继续。数量=0 时按钮所在节点自动隐藏。' })
+    authoredGravityPressButton: Button | null = null;
+
+    @property({ type: Label, tooltip: '『重力压制』数量 Label（"×N"）。跟 authoredGravityPressButton 配对；留空则不显示数量。' })
+    authoredGravityPressCountLabel: Label | null = null;
+
     @property({ type: SpriteFrame, tooltip: '小方块贴图（assets/image/smallBlock.png）— NEXT 预览 + 本命方块两处会用这张图 tint 出每种颜色的方块；留空 fallback 到旧的矢量矩形。' })
     authoredSmallBlockSprite: SpriteFrame | null = null;
 
@@ -5545,8 +5557,8 @@ export class HudController extends Component {
     /** Snapshot of the current per-item count from the last server
      *  fetch. Drives label + button visibility. Zeros mean the button
      *  is disabled + node hidden. */
-    private _backpackCounts: { bomb_block: number; mini_block: number } =
-        { bomb_block: 0, mini_block: 0 };
+    private _backpackCounts: { bomb_block: number; mini_block: number; dryer: number; gravity_press: number } =
+        { bomb_block: 0, mini_block: 0, dryer: 0, gravity_press: 0 };
     /** Prevents double-tap racing while a consume is in flight. */
     private _backpackConsuming: boolean = false;
     /** One-shot flag — the buttons stay wired for the component's
@@ -5601,6 +5613,22 @@ export class HudController extends Component {
             this.authoredMiniBlockButton.node.on('click',
                 () => this._onBackpackQuickUse('mini_block'), this);
         }
+        // Dryer + Gravity Press are IMMEDIATE-effect items (no
+        // NEXT-piece override, no fly-to-NEXT animation). They go
+        // through `_onBackpackImmediateUse` which just consumes then
+        // fires the world-effect callback on GameController.
+        if (this.authoredDryerButton) {
+            SoundManager.suppressClickSound(this.authoredDryerButton);
+            this.authoredDryerButton.node.off('click');
+            this.authoredDryerButton.node.on('click',
+                () => this._onBackpackImmediateUse('dryer'), this);
+        }
+        if (this.authoredGravityPressButton) {
+            SoundManager.suppressClickSound(this.authoredGravityPressButton);
+            this.authoredGravityPressButton.node.off('click');
+            this.authoredGravityPressButton.node.on('click',
+                () => this._onBackpackImmediateUse('gravity_press'), this);
+        }
     }
 
     /** Public — refetches backpack from server and repaints the two
@@ -5614,10 +5642,12 @@ export class HudController extends Component {
     /** Extract bomb_block / mini_block counts from a backpack result
      *  and paint. Shared between the cache-hit and network paths. */
     private _applyBackpackSnapshot(items: ReadonlyArray<{ id: string; count: number }>): void {
-        const next = { bomb_block: 0, mini_block: 0 };
+        const next = { bomb_block: 0, mini_block: 0, dryer: 0, gravity_press: 0 };
         for (const it of items) {
-            if (it.id === 'bomb_block') next.bomb_block = it.count;
-            else if (it.id === 'mini_block') next.mini_block = it.count;
+            if (it.id === 'bomb_block')     next.bomb_block     = it.count;
+            else if (it.id === 'mini_block')    next.mini_block     = it.count;
+            else if (it.id === 'dryer')         next.dryer          = it.count;
+            else if (it.id === 'gravity_press') next.gravity_press  = it.count;
         }
         this._backpackCounts = next;
         this._paintBackpackQuickButtons();
@@ -5655,6 +5685,16 @@ export class HudController extends Component {
             this.authoredMiniBlockButton,
             this.authoredMiniBlockCountLabel,
             this._backpackCounts.mini_block,
+        );
+        this._paintOneBackpackBtn(
+            this.authoredDryerButton,
+            this.authoredDryerCountLabel,
+            this._backpackCounts.dryer,
+        );
+        this._paintOneBackpackBtn(
+            this.authoredGravityPressButton,
+            this.authoredGravityPressCountLabel,
+            this._backpackCounts.gravity_press,
         );
     }
 
@@ -5843,6 +5883,50 @@ export class HudController extends Component {
                 this._pendingApply = null;
                 // Refresh to sync the client with server's real counts —
                 // maybe the item was consumed elsewhere.
+                this._refreshBackpackQuickCounts();
+            });
+    }
+
+    /** Immediate-effect backpack items (dryer / gravity_press) — no
+     *  NEXT-piece override + no fly-to-NEXT animation. Guards against
+     *  double-tap, consumes on server first, then dispatches to a
+     *  GameController hook that runs the actual world effect (pause
+     *  piece → animate → mutate board → resume).
+     *
+     *  Rejection paths:
+     *    • Not in game / paused → warn + no-op.
+     *    • Server consume failed → refresh counts + no effect fired
+     *      (the client thought it had one but the server disagreed;
+     *      wallet stays authoritative).
+     *  */
+    private _onBackpackImmediateUse(id: 'dryer' | 'gravity_press'): void {
+        if (this._backpackConsuming) return;
+        const gc = this.gameController;
+        const gs = gc?.gameState;
+        if (!gc || !gs || !gs.running || gs.gameOver) {
+            console.warn('[HUD] backpack immediate-use: game not running');
+            return;
+        }
+        SoundManager.instance?.play('item_pick');
+        this._backpackConsuming = true;
+        this._paintBackpackQuickButtons();
+        consumeBackpackItem(id)
+            .then((r) => {
+                this._backpackConsuming = false;
+                this._backpackCounts[id] = r.count;
+                this._paintBackpackQuickButtons();
+                // Fire the actual world effect on GameController.
+                if (id === 'dryer' && typeof (gc as any).applyDryerFromBackpack === 'function') {
+                    (gc as any).applyDryerFromBackpack();
+                } else if (id === 'gravity_press' && typeof (gc as any).applyGravityPressFromBackpack === 'function') {
+                    (gc as any).applyGravityPressFromBackpack();
+                } else {
+                    console.warn(`[HUD] no GameController hook for ${id}`);
+                }
+            })
+            .catch((err) => {
+                this._backpackConsuming = false;
+                console.warn('[HUD] consume', id, 'failed:', err?.message || err);
                 this._refreshBackpackQuickCounts();
             });
     }

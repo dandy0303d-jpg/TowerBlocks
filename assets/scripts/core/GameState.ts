@@ -790,6 +790,101 @@ export class GameState {
         this.paused = !this.paused;
     }
 
+    /** Backpack item — 甩干机 (Dryer). For every row, gather all
+     *  colored cells (along with any per-cell props: bombs, booms,
+     *  stones, chests, wreckers, meteors, blizzards, hails, rockets,
+     *  gatlings) and repack them into the first N columns starting
+     *  from col 0, leaving the rest of the row empty. The cylinder
+     *  wraps around at COLS, so the semantic is "close every gap in
+     *  the row" — colored cells clump into one contiguous arc segment
+     *  per layer.
+     *
+     *  Purely a state mutation — GameController handles the visual
+     *  (1-second 360° tower rotation) around the call. */
+    applyDryerRowCompact(): void {
+        const board = this.state.board;
+        if (!board || board.length === 0) return;
+        const cols = board[0]?.length ?? 0;
+        if (cols === 0) return;
+
+        // For each per-cell prop grid, gather + reset + repack in
+        // sync with the base board. Wall-of-nulls guards handle
+        // level modes where a grid is null (e.g. endless has no
+        // stones / chests).
+        for (let r = 0; r < board.length; r++) {
+            const row = board[r];
+            if (!row) continue;
+            const cells:      (typeof row[0])[] = [];
+            const bombs:      any[] = [];
+            const booms:      any[] = [];
+            const stones:     any[] = [];
+            const chests:     any[] = [];
+            const meteors:    any[] = [];
+            const blizzards:  any[] = [];
+            const wreckers:   any[] = [];
+            const hails:      any[] = [];
+            const hailPlaced: any[] = [];
+            const rockets:    any[] = [];
+            const gatlings:   any[] = [];
+            for (let c = 0; c < cols; c++) {
+                if (row[c] == null) continue;
+                cells.push(row[c]);
+                bombs.push(this.state.boardBombs?.[r]?.[c] ?? null);
+                booms.push(this.state.boardBooms?.[r]?.[c] ?? null);
+                stones.push(this.state.boardStones?.[r]?.[c] ?? null);
+                chests.push(this.state.boardChests?.[r]?.[c] ?? null);
+                meteors.push(this.state.boardMeteors?.[r]?.[c] ?? null);
+                blizzards.push(this.state.boardBlizzards?.[r]?.[c] ?? null);
+                wreckers.push(this.state.boardWreckers?.[r]?.[c] ?? null);
+                hails.push(this.state.boardHails?.[r]?.[c] ?? null);
+                hailPlaced.push(this.state.boardHailPlaced?.[r]?.[c] ?? null);
+                rockets.push(this.state.boardRockets?.[r]?.[c] ?? null);
+                gatlings.push(this.state.boardGatlings?.[r]?.[c] ?? null);
+            }
+            // Wipe the row.
+            for (let c = 0; c < cols; c++) {
+                row[c] = null;
+                if (this.state.boardBombs?.[r])      this.state.boardBombs[r][c]      = null;
+                if (this.state.boardBooms?.[r])      this.state.boardBooms[r][c]      = null;
+                if (this.state.boardStones?.[r])     this.state.boardStones[r][c]     = null;
+                if (this.state.boardChests?.[r])     this.state.boardChests[r][c]     = null;
+                if (this.state.boardMeteors?.[r])    this.state.boardMeteors[r][c]    = null;
+                if (this.state.boardBlizzards?.[r])  this.state.boardBlizzards[r][c]  = null;
+                if (this.state.boardWreckers?.[r])   this.state.boardWreckers[r][c]   = null;
+                if (this.state.boardHails?.[r])      this.state.boardHails[r][c]      = null;
+                if (this.state.boardHailPlaced?.[r]) this.state.boardHailPlaced[r][c] = null;
+                if (this.state.boardRockets?.[r])    this.state.boardRockets[r][c]    = null;
+                if (this.state.boardGatlings?.[r])   this.state.boardGatlings[r][c]   = null;
+            }
+            // Repack starting at col 0.
+            for (let i = 0; i < cells.length; i++) {
+                row[i] = cells[i];
+                if (this.state.boardBombs?.[r])      this.state.boardBombs[r][i]      = bombs[i];
+                if (this.state.boardBooms?.[r])      this.state.boardBooms[r][i]      = booms[i];
+                if (this.state.boardStones?.[r])     this.state.boardStones[r][i]     = stones[i];
+                if (this.state.boardChests?.[r])     this.state.boardChests[r][i]     = chests[i];
+                if (this.state.boardMeteors?.[r])    this.state.boardMeteors[r][i]    = meteors[i];
+                if (this.state.boardBlizzards?.[r])  this.state.boardBlizzards[r][i]  = blizzards[i];
+                if (this.state.boardWreckers?.[r])   this.state.boardWreckers[r][i]   = wreckers[i];
+                if (this.state.boardHails?.[r])      this.state.boardHails[r][i]      = hails[i];
+                if (this.state.boardHailPlaced?.[r]) this.state.boardHailPlaced[r][i] = hailPlaced[i];
+                if (this.state.boardRockets?.[r])    this.state.boardRockets[r][i]    = rockets[i];
+                if (this.state.boardGatlings?.[r])   this.state.boardGatlings[r][i]   = gatlings[i];
+            }
+        }
+    }
+
+    /** Backpack item — 重力压制 (Gravity Press). Every column's
+     *  colored cells (with their props) settle downward to fill any
+     *  empty spaces below them. Delegates to the well-tested
+     *  `applyColumnGravity` primitive, passing the FULL board height
+     *  as `reservedTop` so no rows are protected — the whole tower
+     *  gets compressed. */
+    applyGravityPress(): void {
+        if (!this.state.board || this.state.board.length === 0) return;
+        applyColumnGravity(this.state, this.state.board.length);
+    }
+
     /** Scan the just-locked `piece` for any `box3` bomb tags and
      *  return them as BombSeeds at their board-space (r, c). Called
      *  right after `lock()` so we can add box-bomb seeds to the

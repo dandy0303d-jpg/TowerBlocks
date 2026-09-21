@@ -3935,13 +3935,87 @@ export class GameController extends Component {
     private rotateCylinder(): void {
         if (!this.boardRoot3D) return;
         const centerCol = this.currentCenterCol();
-        const yawDeg = -math.toDegree(centerCol * ANGLE_PER_COL);
+        // `_dryerYawOffsetDeg` is normally 0; the 甩干机 backpack item
+        // tweens it from 0 → 360 over 1 s for the "tower spins once"
+        // visual, then resets to 0. Added to the swipe-driven yaw so
+        // the two effects compose cleanly instead of fighting each
+        // other frame-to-frame.
+        const yawDeg = -math.toDegree(centerCol * ANGLE_PER_COL) + this._dryerYawOffsetDeg;
         this.boardRoot3D.setRotationFromEuler(0, yawDeg, 0);
 
         this.boardRoot3D.setPosition(0, this.currentBoardYOffsetVal, 0);
 
         const totalRows = this.gameState?.state.board.length ?? VISIBLE_ROWS;
         this.updateWarningRing(totalRows);
+    }
+
+    /** 0 in the common case. The 甩干机 backpack item tweens this
+     *  from 0 → 360 over 1 s (see `applyDryerFromBackpack`) so the
+     *  tower does one full spin in-place without disrupting the
+     *  standard yaw-follows-swipe behaviour. */
+    private _dryerYawOffsetDeg: number = 0;
+
+    /** Backpack item — 甩干机. Freezes the falling piece, spins the
+     *  tower a full 360° over 1 s, and compacts every row (removes
+     *  gaps between colored cells). Piece resumes falling on
+     *  completion.
+     *
+     *  Timeline (t = seconds):
+     *    0.00 — set `modalPaused = true`, kick off the yaw-offset tween
+     *    0.15 — apply the row-compact state mutation (early enough that
+     *           the spin visibly "reshuffles" cells mid-rotation)
+     *    1.00 — reset yaw offset, clear `modalPaused`, piece resumes
+     *
+     *  Idempotent — a second call while already active is a no-op. */
+    public applyDryerFromBackpack(): void {
+        const gs = this.gameState;
+        if (!gs || !this.boardRoot3D) return;
+        if (this._dryerYawOffsetDeg !== 0) return;   // already running
+        gs.modalPaused = true;
+        // Tween the offset 0 → 360 over 1 s using a linear ease so the
+        // spin speed reads as constant. On complete, reset to 0 so
+        // rotateCylinder's normal yaw picks up cleanly.
+        const state = { deg: 0 };
+        const applied = { done: false };
+        tween(state)
+            .to(1.0, { deg: 360 }, {
+                easing: 'linear',
+                onUpdate: () => {
+                    this._dryerYawOffsetDeg = state.deg;
+                    // Apply the row-compact roughly one-sixth of the
+                    // way through so the player sees the shift while
+                    // the tower is still spinning — reads as "the spin
+                    // sloshes the blocks together".
+                    if (!applied.done && state.deg >= 60) {
+                        applied.done = true;
+                        gs.applyDryerRowCompact();
+                    }
+                },
+            })
+            .call(() => {
+                // Safety — if the update didn't cross 60° (super low
+                // frame rate), apply the compact now.
+                if (!applied.done) gs.applyDryerRowCompact();
+                this._dryerYawOffsetDeg = 0;
+                gs.modalPaused = false;
+            })
+            .start();
+    }
+
+    /** Backpack item — 重力压制. Freezes the falling piece briefly,
+     *  runs `applyColumnGravity` over the full tower so every colored
+     *  cell settles down to fill empty spaces below it, then resumes
+     *  the piece drop. Kept short (300 ms pause) so the player sees
+     *  the "before / after" state without disrupting flow. */
+    public applyGravityPressFromBackpack(): void {
+        const gs = this.gameState;
+        if (!gs) return;
+        gs.modalPaused = true;
+        gs.applyGravityPress();
+        // Small settle window so the player registers the change
+        // before the piece starts falling again. Runs on a Node-less
+        // scheduler tick — no need for a target node.
+        this.scheduleOnce(() => { gs.modalPaused = false; }, 0.3);
     }
 
     /** Place the warning ring `ENDLESS_HEIGHT_LIMIT` rows above the
