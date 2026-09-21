@@ -271,18 +271,34 @@ export async function fetchMyLevelTimes(): Promise<MyLevelTimeEntry[]> {
  *  + bearer token; the token is what future mutating calls carry in
  *  the Authorization header. `sign=false` because we don't have a
  *  token yet to prove identity — the server intentionally allows
- *  unsigned register. */
-export async function registerPlayer(): Promise<RegisterResult> {
+ *  unsigned register.
+ *
+ *  `lang` is the player's current UI language (e.g. 'zh', 'en',
+ *  'zh-Hant'), captured from the device at first launch. The server
+ *  stores it on the player row so the leaderboard's language-scope
+ *  filter (`?lang=`) can match players speaking the same language.
+ *  Optional: older servers that don't know about `lang` will just
+ *  ignore the extra field. */
+export async function registerPlayer(lang?: string): Promise<RegisterResult> {
     const url = `${BACKEND_BASE_URL}/player/register`;
-    return httpPostJson<RegisterResult>(url, {}, BACKEND_TIMEOUT_MS, /*sign=*/false);
+    const body: Record<string, string> = {};
+    if (lang) body.lang = lang;
+    return httpPostJson<RegisterResult>(url, body, BACKEND_TIMEOUT_MS, /*sign=*/false);
 }
 
 /** Rotate the bearer token before it expires. Requires the current
  *  (non-expired) bearer to be already set via setBearerToken. Server
- *  returns a fresh token + expiry. */
-export async function refreshPlayerToken(): Promise<RefreshResult> {
+ *  returns a fresh token + expiry.
+ *
+ *  `lang` piggybacks the same lang field as register — refresh runs
+ *  on every session start, so if the player has since changed device
+ *  language, the server's stored `lang` self-heals. Server ignores
+ *  the field when unchanged. */
+export async function refreshPlayerToken(lang?: string): Promise<RefreshResult> {
     const url = `${BACKEND_BASE_URL}/player/refresh`;
-    return httpPostJson<RefreshResult>(url, {}, BACKEND_TIMEOUT_MS, /*sign=*/false);
+    const body: Record<string, string> = {};
+    if (lang) body.lang = lang;
+    return httpPostJson<RefreshResult>(url, body, BACKEND_TIMEOUT_MS, /*sign=*/false);
 }
 
 /** Fetch the local player's full profile — name, avatar index, and
