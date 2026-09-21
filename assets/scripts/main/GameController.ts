@@ -26,9 +26,6 @@ import {
     tween,
     Button,
     Mesh,
-    Camera,
-    Canvas,
-    UITransform,
 } from 'cc';
 import { COLS, COLORS, CellValue, ENDLESS_HEIGHT_LIMIT, ENDLESS_GRAY_CAP } from '../core/Constants';
 import { isColoredCell } from '../core/Board';
@@ -48,6 +45,7 @@ import { countBottomCompleteRows, findTrappedCells } from '../core/Modes/Endless
 import { collides } from '../core/Pieces';
 import { loadLevel, validateLevelData } from '../core/LevelData';
 import { LevelData, EmbedProp } from '../core/Types';
+import { EmbedRevealFX3D } from './EmbedRevealFX3D';
 import { createCurvedBrickMesh } from './BrickMesh';
 // (No import of MenuController — avoids circular import. MenuController
 //  registers itself via setMenuController() below using a structural type.)
@@ -4198,64 +4196,37 @@ export class GameController extends Component {
     /** Phase B of the pre-game embed-picker sequence — called by
      *  MenuController after `playLevelAssembly` completes.
      *
-     *  When `gameState.lastEmbedInjection` is non-null (a Lvl 16+ picker
-     *  actually placed a prop), computes the target cell's on-screen
-     *  UI position via the main perspective camera + Canvas transform,
-     *  then hands off to HudController.playEmbedRevealFx for the
-     *  Graphics-based arc + glow animation. Clears `modalPaused` and
-     *  the injection record after the FX finishes so the piece can
-     *  start falling.
+     *  When `gameState.lastEmbedInjection` is non-null (a Lvl 16+
+     *  picker placed a prop), spawns `EmbedRevealFX3D` — a real 3D
+     *  effect (orb sphere + 3-layer strip trail + pulse cube) parented
+     *  to `boardRoot3D` so it inherits the tower's transform + occludes
+     *  correctly against tower cubes. The FX arcs around the outside
+     *  of the cylinder to the target cell, commits the prop on impact
+     *  (so `syncCubes` paints the overlay under the pulse), and
+     *  disposes on complete. Piece drop stays frozen via `modalPaused`
+     *  until the FX finishes.
      *
-     *  Idempotent + a fast no-op when no embed injection is pending
-     *  (early return before any node work). */
+     *  Idempotent + a fast no-op when no embed injection is pending. */
     public playEmbedRevealFxIfPending(onDone: () => void): void {
         const gs = this.gameState;
         const inj = gs?.lastEmbedInjection;
-        if (!gs || !inj || !this.cubeManager) { onDone(); return; }
-
-        // 3D world position of the target cell.
-        const totalRows = gs.state.board.length;
-        const worldPos = this.cubeManager.cellToWorldPosition(inj.c, inj.r, totalRows);
-
-        // Find the main perspective camera in the scene (same pattern
-        // as ColBlastDetonateEffect uses to auto-locate one).
-        const scene = director.getScene();
-        let camera: Camera | null = null;
-        if (scene) {
-            const cams = scene.getComponentsInChildren(Camera);
-            for (const c of cams) {
-                if (c.projection === Camera.ProjectionType.PERSPECTIVE && c.node.activeInHierarchy) {
-                    camera = c;
-                    break;
-                }
-            }
-            if (!camera && cams.length > 0) camera = cams[0];
-        }
-        const canvasNode = scene?.getComponentInChildren(Canvas)?.node;
-        const canvasUT = canvasNode?.getComponent(UITransform);
-        const hud = this.hudController as any;
-        if (!camera || !canvasUT || !hud || typeof hud.playEmbedRevealFx !== 'function') {
-            // FX pipeline missing — clear the pause + skip the visuals.
-            gs.modalPaused = false;
-            gs.lastEmbedInjection = null;
+        if (!gs || !inj || !this.cubeManager || !this.boardRoot3D) {
+            if (gs) { gs.modalPaused = false; gs.lastEmbedInjection = null; }
             onDone();
             return;
         }
 
-        // HUD FX drives the 3D-arc-around-tower path itself; it needs
-        // the 3D target world pos + camera + canvasUT to re-project
-        // each frame.
-        //
-        // Two callbacks:
-        //   onArrive — orb reached the cell → commit the prop to state
-        //              so `syncCubes` paints the overlay on the next
-        //              frame (glow pulse then reveals a REAL prop).
-        //   onDone   — glow finished → unfreeze piece drop.
-        hud.playEmbedRevealFx(
-            worldPos,
-            camera,
-            canvasUT,
-            inj.kind,
+        // Target cell in boardRoot3D LOCAL space. `EmbedRevealFX3D`
+        // parents itself under `boardRoot3D`, so LOCAL is exactly the
+        // space its own children live in — no worldMatrix conversion
+        // needed. If boardRoot3D scrolls after spawn, the FX scrolls
+        // with it because it's a descendant.
+        const totalRows = gs.state.board.length;
+        const localPos = this.cubeManager.cellToWorldPosition(inj.c, inj.r, totalRows);
+
+        EmbedRevealFX3D.spawn(
+            this.boardRoot3D,
+            localPos,
             () => { gs.commitPendingEmbedProp(); },
             () => {
                 gs.modalPaused = false;

@@ -4323,31 +4323,13 @@ export class HudController extends Component {
             .start();
     }
 
-    /** Phase B of the embed-pick intro: a yellow orb + fading golden
-     *  trail spirals AROUND THE OUTSIDE of the cylindrical tower and
-     *  descends onto the target cell, ending with a golden glow pulse.
+    /** [DEPRECATED — kept as fallback] 2D Canvas-Graphics version of
+     *  the embed-pick reveal FX. Superseded by `EmbedRevealFX3D` (real
+     *  3D scene FX with correct tower depth occlusion). Left in place
+     *  for reference and as a fallback if the 3D FX ever needs to be
+     *  disabled — swap the caller in `GameController.playEmbedRevealFxIfPending`.
      *
-     *  Path is computed in 3D world space each frame (so the orb reads
-     *  as "going around" the tower silhouette), then projected via
-     *  `camera.worldToScreen` → `canvasUT.convertToNodeSpaceAR` into
-     *  the overlay's Canvas UI space where Graphics draws it. No 3D
-     *  scene node is created — everything happens on a single Canvas
-     *  overlay, so no depth-sorting or material work is needed.
-     *
-     *  3D arc parameterisation (t ∈ 0..1):
-     *    • θ(t) — angular position around the tower's Y axis, sweeps
-     *      from 0 (front-facing) to `targetTheta` along the shorter
-     *      angular direction.
-     *    • r(t) — orbital radius. Stays at `targetR × 1.5` (outside
-     *      the cylinder) for the first 80% of the flight; converges
-     *      to `targetR` in the final 20% so the orb kisses the cell
-     *      rather than plunging through it.
-     *    • y(t) — linear from `startY` (a few cells above target) →
-     *      `targetY`, plus a `sin(πt)` bump for the arc peak.
-     *
-     *  Called by GameController AFTER `playLevelAssembly` completes
-     *  and BEFORE `state.modalPaused` is cleared (piece stays frozen
-     *  until `onDone` fires ~1s later). */
+     *  See `EmbedRevealFX3D.ts` for the current production path. */
     public playEmbedRevealFx(
         targetWorld: Vec3,
         camera: Camera,
