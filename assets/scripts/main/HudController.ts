@@ -3356,7 +3356,7 @@ export class HudController extends Component {
                 if (this.authoredEmbedStartButton) this.authoredEmbedStartButton.interactable = false;
                 consumeBackpackItem(picked).then((r) => {
                     console.log(`[FateEmbedPicker] consume OK ${picked} → remaining ${r.count}`);
-                    this._resolveEmbedAndClose(picked);
+                    this._playPickToCenterFx(picked, () => this._resolveEmbedAndClose(picked));
                 }).catch((err) => {
                     console.warn(`[FateEmbedPicker] consume failed for ${picked}:`, err);
                     this._embedConsuming = false;
@@ -4096,9 +4096,16 @@ export class HudController extends Component {
         this._fateEmbedModeActive = true;
         this._embedConsuming = false;
         if (this.authoredEmbedPickerRoot) this.authoredEmbedPickerRoot.active = true;
+        // Reset any transform mutations left by the previous open's
+        // pick-to-centre animation. Layout will reposition on next
+        // frame — we just have to restore scale/opacity/active state.
+        this._resetEmbedPickerButtons();
         this._refreshEmbedSelectMarks();
         if (this.authoredEmbedStartLabel) this.authoredEmbedStartLabel.string = t('fate.start');
-        if (this.authoredEmbedStartButton) this.authoredEmbedStartButton.interactable = true;
+        if (this.authoredEmbedStartButton) {
+            this.authoredEmbedStartButton.interactable = true;
+            this.authoredEmbedStartButton.node.active = true;
+        }
 
         // Populate counts optimistically from cache so the labels don't
         // flash empty during the network round-trip; then fetch fresh
@@ -4167,6 +4174,22 @@ export class HudController extends Component {
         }
     }
 
+    /** Restore active + scale + opacity on the three embed buttons.
+     *  Called by `showFateEmbedPicker` on every open so the previous
+     *  session's pick-to-centre animation doesn't leave a button
+     *  shrunk / hidden. Position is Layout-controlled so we don't
+     *  touch it. */
+    private _resetEmbedPickerButtons(): void {
+        for (const btn of [this.authoredEmbedBoomButton, this.authoredEmbedRowBombButton, this.authoredEmbedWreckerButton]) {
+            if (!btn) continue;
+            Tween.stopAllByTarget(btn.node);
+            btn.node.active = true;
+            btn.node.setScale(1, 1, 1);
+            const op = btn.node.getComponent(UIOpacity);
+            if (op) op.opacity = 255;
+        }
+    }
+
     /** Toggle picker state — tapping the currently-picked option
      *  deselects it, tapping another option switches. Called from the
      *  three @property click handlers. Guards against picking an item
@@ -4192,6 +4215,111 @@ export class HudController extends Component {
         if (this.authoredEmbedWreckerSelectMark) {
             this.authoredEmbedWreckerSelectMark.active = this._embedPicked === 'wrecker';
         }
+    }
+
+    /** Play the pre-game intro animation for the picked embed prop:
+     *    1. Hide the OTHER two option buttons + Start button so the
+     *       picked icon is visually alone.
+     *    2. Tween the picked button's node to the picker root's centre.
+     *    3. At centre, scale down + fade out.
+     *    4. Simultaneously spawn a Graphics-based radial burst that
+     *       expands + fades.
+     *  On completion (~500ms), fire `onDone` so MenuController can
+     *  hand off to the game transition. Non-blocking for the caller —
+     *  everything runs on Cocos tweens/schedulers.
+     *
+     *  Steps 4-5 of the design brief (yellow orb arcs to the actual
+     *  tower cell + prop reveal glow) require the game view to be up
+     *  and the target cell world-position known. GameController plays
+     *  those AFTER the level assembly animation completes (see the
+     *  `lastEmbedInjection` getter on GameState). */
+    private _playPickToCenterFx(picked: EmbedProp, onDone: () => void): void {
+        const button = picked === 'boom1' ? this.authoredEmbedBoomButton
+                     : picked === 'row1'  ? this.authoredEmbedRowBombButton
+                     : this.authoredEmbedWreckerButton;
+        const root = this.authoredEmbedPickerRoot;
+        if (!button || !root) { onDone(); return; }
+
+        // Hide siblings so the picked icon is alone at centre.
+        if (picked !== 'boom1'   && this.authoredEmbedBoomButton)    this.authoredEmbedBoomButton.node.active    = false;
+        if (picked !== 'row1'    && this.authoredEmbedRowBombButton) this.authoredEmbedRowBombButton.node.active = false;
+        if (picked !== 'wrecker' && this.authoredEmbedWreckerButton) this.authoredEmbedWreckerButton.node.active = false;
+        if (this.authoredEmbedStartButton) this.authoredEmbedStartButton.node.active = false;
+        // Also hide the selectmark so the icon looks clean during the fly.
+        this._embedPicked = null;
+        this._refreshEmbedSelectMarks();
+
+        const node = button.node;
+        // Bump the icon to the picker root's last-sibling so it renders
+        // ABOVE the burst (which we're about to add as a fresh child of
+        // root). Otherwise the burst can occlude the icon mid-fly.
+        node.setSiblingIndex(9999);
+        // Ensure a UIOpacity so we can fade later.
+        const opacity = node.getComponent(UIOpacity) ?? node.addComponent(UIOpacity);
+        opacity.opacity = 255;
+
+        // Destination — centre of picker root, converted to node.parent
+        // local space so we can tween `position` directly.
+        const destWorld = new Vec3();
+        root.getWorldPosition(destWorld);
+        const parentUT = node.parent?.getComponent(UITransform);
+        const destLocal = new Vec3(0, 0, 0);
+        if (parentUT) parentUT.convertToNodeSpaceAR(destWorld, destLocal);
+
+        // Spawn the burst node as a child of picker root, centred at (0,0)
+        // in root-local space. Graphics circle expands from r=0 → r=140
+        // while opacity fades 220 → 0.
+        const burst = new Node('EmbedPickBurst');
+        root.addChild(burst);
+        burst.setPosition(0, 0, 0);
+        const burstUT = burst.addComponent(UITransform);
+        burstUT.setContentSize(300, 300);
+        const gfx = burst.addComponent(Graphics);
+        const burstOp = burst.addComponent(UIOpacity);
+        burstOp.opacity = 0;
+        // Redraw each frame's tween tick — we schedule a small update
+        // loop keyed on start time.
+        const burstStart = Date.now();
+        const burstDurMs = 400;
+        const drawBurst = () => {
+            const t = Math.min(1, (Date.now() - burstStart) / burstDurMs);
+            const r = 30 + t * 130;                  // 30 → 160 px
+            const alpha = Math.floor(220 * (1 - t)); // 220 → 0
+            burstOp.opacity = alpha;
+            gfx.clear();
+            // Outer ring — golden.
+            gfx.lineWidth = 4;
+            gfx.strokeColor = new Color(255, 210, 80, 255);
+            gfx.circle(0, 0, r);
+            gfx.stroke();
+            // Inner glow — brighter, thinner ring at half radius.
+            gfx.lineWidth = 2;
+            gfx.strokeColor = new Color(255, 245, 180, 255);
+            gfx.circle(0, 0, r * 0.6);
+            gfx.stroke();
+            if (t >= 1) {
+                this.unschedule(drawBurst);
+                burst.destroy();
+            }
+        };
+
+        // Timeline:
+        //   0 - 300ms: fly to centre (position tween)
+        //   300 - 500ms: scale + fade + burst (kicked off inside .call)
+        //   ~500ms: fire onDone → game transition kicks in
+        Tween.stopAllByTarget(node);
+        tween(node)
+            .to(0.3, { position: destLocal }, { easing: 'quadOut' })
+            .call(() => {
+                // Start the burst as we reach centre.
+                this.schedule(drawBurst, 0);
+                // Shrink + fade (200ms, run in parallel with burst).
+                tween(node).to(0.2, { scale: new Vec3(0.05, 0.05, 1) }, { easing: 'quadIn' }).start();
+                tween(opacity).to(0.2, { opacity: 0 }).start();
+            })
+            .delay(0.22)
+            .call(() => onDone())
+            .start();
     }
 
     /** Fire the caller's onStart with the picked embed, then close. */

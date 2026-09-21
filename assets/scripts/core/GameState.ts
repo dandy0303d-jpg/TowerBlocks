@@ -616,6 +616,9 @@ export class GameState {
     }
 
     startLevel(lvl: LevelData, embed: EmbedProp | null = null): void {
+        // Reset the prior level's embed record — a fresh startLevel is
+        // authoritative regardless of what the previous run left.
+        this.lastEmbedInjection = null;
         const loaded = loadLevel(lvl);
         // Collect-mode levels carry a `collectGoals` array — they boot
         // into the dedicated collect mode (win = goals met, not the
@@ -665,6 +668,13 @@ export class GameState {
         this.hooks.onInventoryChanged?.(this.inventory);
         this.startRunning();
     }
+
+    /** Record of the last `_injectEmbedProp` call, exposed for the
+     *  post-assembly FX pipeline (yellow orb + glow pulse — see the
+     *  pre-game fate embed picker's design brief). Cleared when a
+     *  fresh `startLevel` runs. `null` when the current level didn't
+     *  ship an embed prop (levels < 16, or player skipped). */
+    public lastEmbedInjection: { r: number; c: number; kind: EmbedProp } | null = null;
 
     /** Drop the player-picked embed prop onto a single colored cell.
      *
@@ -735,6 +745,7 @@ export class GameState {
         const pool = clean.length > 0 ? clean : anyColored;
         if (pool.length === 0) return;
         const pick = pool[Math.floor(Math.random() * pool.length)];
+        this.lastEmbedInjection = { r: pick.r, c: pick.c, kind: embed };
         if (embed === 'boom1') {
             booms[pick.r][pick.c] = 1;
         } else if (embed === 'row1') {
