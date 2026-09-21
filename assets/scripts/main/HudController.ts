@@ -34,7 +34,7 @@ import { BackKeyManager } from './BackKeyManager';
 // Rollup rejects at build time.
 import { ITEM_KEYS, ITEM_BASE_PROBS, MagicItemKey, ENERGY_FULL_THRESHOLD, COLORS, SHAPES, PieceType, CellValue, COLS, Rarity, rarityForKey } from '../core/Constants';
 import { FATE_SHAPES, fateIndexOfShape, pickFateIndex, pickFateIndex4Connected, FATE_SHAPES_4CONNECTED_INDICES, fateShapeAsCustomPiece } from '../core/FateShapes';
-import { CustomPieceDef, LevelData } from '../core/Types';
+import { CustomPieceDef, EmbedProp, LevelData } from '../core/Types';
 import { getKeysMode, subscribe as subscribeSettings } from '../core/Settings';
 import { AnalyticsApi } from '../core/AnalyticsApi';
 import { BgmManager } from '../audio/BgmManager';
@@ -308,6 +308,41 @@ export class HudController extends Component {
 
     @property({ type: Label, tooltip: '按钮下面的提示文字（可选）' })
     authoredFateHintLabel: Label | null = null;
+
+    // ============================================================
+    //  Authored HUD — 嵌入道具选择器（Lvl 16+ 本命弹窗才启用）
+    //
+    //  Layout expectation: `embedPickerRoot` is a container (usually a
+    //  child of `authoredFateOverlay`) that holds:
+    //    - two option buttons (boom1 + row1) with icon sprites
+    //    - a "选中" 高亮节点 under each (active only when picked)
+    //    - a "开始" 确认按钮
+    //
+    //  Every field is optional — leaving `embedPickerRoot` unwired
+    //  degrades the level-16+ flow back to the classic auto-dismiss
+    //  preview (see MenuController's showFateEmbedPicker guard).
+    // ============================================================
+
+    @property({ type: Node, tooltip: '嵌入道具选择器容器节点（脚本 setActive 控制显示）' })
+    authoredEmbedPickerRoot: Node | null = null;
+
+    @property({ type: Button, tooltip: '选项 1：1 级范围爆破（boom lvl 1）— 点击 → 切换选中' })
+    authoredEmbedBoomButton: Button | null = null;
+
+    @property({ type: Node, tooltip: 'boom1 按钮的"选中"高亮节点（脚本 setActive 控制）' })
+    authoredEmbedBoomSelectMark: Node | null = null;
+
+    @property({ type: Button, tooltip: '选项 2：1 级横向爆破（row1 bomb）— 点击 → 切换选中' })
+    authoredEmbedRowBombButton: Button | null = null;
+
+    @property({ type: Node, tooltip: 'row1 按钮的"选中"高亮节点（脚本 setActive 控制）' })
+    authoredEmbedRowBombSelectMark: Node | null = null;
+
+    @property({ type: Button, tooltip: '"开始"确认按钮（点击 → 带着当前选中的道具进入游戏）' })
+    authoredEmbedStartButton: Button | null = null;
+
+    @property({ type: Label, tooltip: '"开始"按钮上的 Label（脚本会写 t("fate.start")）— 可空' })
+    authoredEmbedStartLabel: Label | null = null;
 
     // ============================================================
     //  Authored HUD — 暂停弹窗
@@ -653,6 +688,19 @@ export class HudController extends Component {
      *  subset so the player never ends up with a dead-lock shape. */
     private fateIsEndlessEntry = false;
     private fateButtonsGroup!: Node;
+
+    /** Embed-prop picker state (Lvl 16+ pre-game modal). `_embedResolve`
+     *  is set when `showFateEmbedPicker` opens and invoked on "开始"
+     *  click with the currently-picked embed (`null` when the player
+     *  chose to skip). `_embedPicked` mirrors the currently-highlighted
+     *  option so the two select-mark nodes can be toggled without an
+     *  extra field per button. */
+    private _embedResolve: ((picked: EmbedProp | null) => void) | null = null;
+    private _embedPicked: EmbedProp | null = null;
+    /** True while the level-16+ picker is on screen. Used by hideFateModal
+     *  to skip the auto-dismiss timer clear path (there is no timer in
+     *  picker mode) and to reset the picker root when the modal closes. */
+    private _fateEmbedModeActive = false;
     /** Auto-dismiss timer id for the read-only fate preview shown when
      *  entering a level. Cleared in `hideFateModal` in case the user
      *  navigates away before it fires. */
@@ -3244,6 +3292,33 @@ export class HudController extends Component {
             const lab = this.authoredFateStartButton.getComponentInChildren(Label);
             if (lab) this.trackI18nLabel(lab, 'fate.start');
         }
+
+        // -------- Embed-prop picker buttons (Lvl 16+ fate modal) --------
+        if (this.authoredEmbedBoomButton) {
+            this.authoredEmbedBoomButton.node.off('click');
+            this.authoredEmbedBoomButton.node.on('click', () => {
+                console.log('[FateEmbedPicker] boom1 clicked');
+                this._togglePickedEmbed('boom1');
+            }, this);
+        }
+        if (this.authoredEmbedRowBombButton) {
+            this.authoredEmbedRowBombButton.node.off('click');
+            this.authoredEmbedRowBombButton.node.on('click', () => {
+                console.log('[FateEmbedPicker] row1 clicked');
+                this._togglePickedEmbed('row1');
+            }, this);
+        }
+        if (this.authoredEmbedStartButton) {
+            this.authoredEmbedStartButton.node.off('click');
+            this.authoredEmbedStartButton.node.on('click', () => {
+                const picked = this._embedPicked;
+                console.log(`[FateEmbedPicker] START clicked, picked=${picked ?? 'none'}`);
+                this._resolveEmbedAndClose(picked);
+            }, this);
+            const lab = this.authoredEmbedStartLabel
+                     ?? this.authoredEmbedStartButton.getComponentInChildren(Label);
+            if (lab) this.trackI18nLabel(lab, 'fate.start');
+        }
     }
 
 
@@ -3804,6 +3879,9 @@ export class HudController extends Component {
         this.fateIsEndlessEntry = !cp;
         this.fateResolve = onStart;
         this.fateCancel  = onCancel || null;
+        // Belt: hide the embed picker root if a prior Lvl 16+ open left
+        // it visible (fresh interactive fate modal should never show it).
+        if (this.authoredEmbedPickerRoot) this.authoredEmbedPickerRoot.active = false;
         this.refreshFateSubtitle();
         this.drawFateShape();
         // Mutex with EnergyPicker — see showPicker for rationale.
@@ -3845,6 +3923,13 @@ export class HudController extends Component {
         }
         // Restore buttons for next interactive use.
         if (this.fateButtonsGroup) this.fateButtonsGroup.active = true;
+        // Also close the embed picker if it happened to be open (e.g.
+        // scene navigation while a Lvl 16+ modal is up). Reset state
+        // so the next open starts clean.
+        if (this.authoredEmbedPickerRoot) this.authoredEmbedPickerRoot.active = false;
+        this._embedResolve = null;
+        this._embedPicked = null;
+        this._fateEmbedModeActive = false;
     }
 
     /** Read-only preview variant: shows the level's assigned fate piece
@@ -3881,6 +3966,8 @@ export class HudController extends Component {
         this.drawFateShape();
         // Hide interactive buttons + hint for the preview pass.
         if (this.fateButtonsGroup) this.fateButtonsGroup.active = false;
+        // Hide embed picker root — preview mode is auto-dismiss.
+        if (this.authoredEmbedPickerRoot) this.authoredEmbedPickerRoot.active = false;
         // Mutex with EnergyPicker — see showPicker for rationale.
         if (this.pickerOverlay && this.pickerOverlay.active) {
             console.warn('[FatePreview] picker still active — closing it first');
@@ -3893,6 +3980,106 @@ export class HudController extends Component {
             this.hideFateModal();
             onDone();
         }, durationMs);
+    }
+
+    /** Interactive fate modal for level 16+ entries.
+     *
+     *  Same visual layout as `showFatePreview` for the fate piece itself
+     *  (title / subtitle / shape canvas), but instead of auto-dismissing
+     *  it stays open and reveals a picker:
+     *
+     *    [ boom1 ]  [ row1 ]        ← tap once to select (mutually
+     *                                  exclusive; tap again to deselect)
+     *    [    开 始    ]            ← enters game with the current pick
+     *                                  (or `null` if nothing selected)
+     *
+     *  The picker root + option buttons are wired via `@property`; if
+     *  the scene hasn't been extended yet, this method still opens the
+     *  overlay (so behaviour degrades to a preview) but the option
+     *  buttons stay hidden and the caller sees `null` on 开始.
+     *
+     *  `subtitleOverride` matches the same param on `showFatePreview`
+     *  (used by the post-clear flow to show "下一关 - X 层" instead of
+     *  the default "关卡 X - Y 格" line).
+     */
+    public showFateEmbedPicker(
+        level: LevelData,
+        onStart: (picked: EmbedProp | null) => void,
+        subtitleOverride?: string | null,
+    ): void {
+        if (!this.fateOverlay) { onStart(null); return; }
+
+        // ---- Same shape-canvas setup as showFatePreview ----
+        const cp = level.customPiece;
+        let idx = -1;
+        if (cp && Array.isArray(cp.shape)) idx = fateIndexOfShape(cp.shape);
+        if (idx < 0) idx = ((level.order || 1) - 1) % FATE_SHAPES.length;
+        this.fateCurrentShape = (cp && Array.isArray(cp.shape)) ? cp.shape : null;
+        this.fateCurrentIdx   = idx;
+        this.fateCurrentBase  = (cp && cp.baseType) || (['I','O','T','S','Z','J','L'] as PieceType[])[idx % 7];
+        this.fateLevelOrder   = level.order || 0;
+        this.fateIsEndlessEntry = false;
+        if (subtitleOverride != null && this.fateSubLab) {
+            this.fateSubLab.string = subtitleOverride;
+        } else {
+            this.refreshFateSubtitle();
+        }
+        this.drawFateShape();
+
+        // ---- Hide the standard reroll/paid-refresh/start button row.
+        //      The picker's own start button replaces it. ----
+        if (this.fateButtonsGroup) this.fateButtonsGroup.active = false;
+
+        // Mutex with EnergyPicker — see showPicker for rationale.
+        if (this.pickerOverlay && this.pickerOverlay.active) {
+            console.warn('[FateEmbedPicker] picker still active — closing it first');
+            this.hidePicker();
+        }
+
+        // ---- Show the embed picker + reset selection ----
+        this._embedPicked = null;
+        this._embedResolve = onStart;
+        this._fateEmbedModeActive = true;
+        if (this.authoredEmbedPickerRoot) this.authoredEmbedPickerRoot.active = true;
+        this._refreshEmbedSelectMarks();
+        if (this.authoredEmbedStartLabel) this.authoredEmbedStartLabel.string = t('fate.start');
+
+        // Cancel any pending preview timer left over from a previous
+        // preview open — the picker is stay-open until 开始.
+        if (this.fatePreviewTimer) { clearTimeout(this.fatePreviewTimer); this.fatePreviewTimer = null; }
+
+        this.fateOverlay.setSiblingIndex(999);
+        this.fateOverlay.active = true;
+    }
+
+    /** Toggle picker state — tapping the currently-picked option
+     *  deselects it, tapping the other option switches. Called from the
+     *  two @property click handlers. */
+    private _togglePickedEmbed(next: EmbedProp): void {
+        this._embedPicked = (this._embedPicked === next) ? null : next;
+        this._refreshEmbedSelectMarks();
+    }
+
+    /** Sync the two select-mark nodes to the current `_embedPicked`. */
+    private _refreshEmbedSelectMarks(): void {
+        if (this.authoredEmbedBoomSelectMark) {
+            this.authoredEmbedBoomSelectMark.active = this._embedPicked === 'boom1';
+        }
+        if (this.authoredEmbedRowBombSelectMark) {
+            this.authoredEmbedRowBombSelectMark.active = this._embedPicked === 'row1';
+        }
+    }
+
+    /** Fire the caller's onStart with the picked embed, then close. */
+    private _resolveEmbedAndClose(picked: EmbedProp | null): void {
+        const cb = this._embedResolve;
+        this._embedResolve = null;
+        this._embedPicked = null;
+        this._fateEmbedModeActive = false;
+        if (this.authoredEmbedPickerRoot) this.authoredEmbedPickerRoot.active = false;
+        this._refreshEmbedSelectMarks();   // clear both marks visually
+        this.hideFateModal();
+        if (cb) cb(picked);
     }
 
     private refreshFateSubtitle(): void {
