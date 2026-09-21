@@ -416,10 +416,9 @@ export class LeaderboardController extends Component {
             const lab = this.modeTabLabels[i] ?? btn.getComponentInChildren(Label);
             if (lab) lab.string = t(tabKeys[i]);
         }
-        // Scope tabs (语言 / 全球). Order in the array matches
+        // Scope tabs (language / global). Order in the array matches
         // ['lang', 'global']. Silent no-op when neither is wired.
         const scopes: Array<'lang' | 'global'> = ['lang', 'global'];
-        const scopeKeys = ['leaderboard.scope.lang', 'leaderboard.scope.global'];
         for (let i = 0; i < this.scopeTabButtons.length; i++) {
             const btn = this.scopeTabButtons[i];
             if (!btn) continue;
@@ -428,8 +427,22 @@ export class LeaderboardController extends Component {
             btn.node.off('click');
             btn.node.on('click', () => this.onScopeClick(scope), this);
             const lab = this.scopeTabLabels[i] ?? btn.getComponentInChildren(Label);
-            if (lab) lab.string = t(scopeKeys[i]);
+            if (lab) lab.string = this.scopeLabel(scope);
         }
+    }
+
+    /** Label rendered on a scope tab.
+     *
+     *  Global tab: fully i18n'd ("全球榜" / "Global" / "グローバル" / …).
+     *  Language tab: shows the current UI language's ISO code in upper
+     *  case (e.g. "ZH", "EN", "JA", "PT-BR"). Deliberately NOT i18n'd
+     *  — the code itself already tells the player what they're looking
+     *  at regardless of which language the rest of the UI is in. Keeps
+     *  the pill narrow enough for the two-tab row on mobile, and
+     *  matches the `?lang=` query param the server sees. */
+    private scopeLabel(scope: 'lang' | 'global'): string {
+        if (scope === 'global') return t('leaderboard.scope.global');
+        return getLang().toUpperCase();
     }
 
     private retranslateTabs(): void {
@@ -440,12 +453,14 @@ export class LeaderboardController extends Component {
             const lab = this.modeTabLabels[i] ?? btn.getComponentInChildren(Label);
             if (lab) lab.string = t(tabKeys[i]);
         }
-        const scopeKeys = ['leaderboard.scope.lang', 'leaderboard.scope.global'];
+        const scopes: Array<'lang' | 'global'> = ['lang', 'global'];
         for (let i = 0; i < this.scopeTabButtons.length; i++) {
             const btn = this.scopeTabButtons[i];
             if (!btn) continue;
+            const scope = scopes[i];
+            if (!scope) continue;
             const lab = this.scopeTabLabels[i] ?? btn.getComponentInChildren(Label);
-            if (lab) lab.string = t(scopeKeys[i]);
+            if (lab) lab.string = this.scopeLabel(scope);
         }
     }
 
