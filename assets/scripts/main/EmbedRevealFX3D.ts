@@ -50,12 +50,17 @@ interface TrailLayer {
 
 const TRAIL_LAYERS: TrailLayer[] = [
     // Outer halo — yellow (unchanged from the classic look).
-    { samples: 16, widthMul: 0.65, radialOffset: 0.10, color: new Color(255, 210, 80,  180) },
+    { samples: 64, widthMul: 0.65, radialOffset: 0.10, color: new Color(255, 210, 80,  180) },
     // Middle — amber, sits between the yellow halo and the red core.
-    { samples: 11, widthMul: 0.42, radialOffset: 0.14, color: new Color(255, 140, 60,  220) },
+    { samples: 44, widthMul: 0.42, radialOffset: 0.14, color: new Color(255, 140, 60,  220) },
     // Inner core — RED (per player spec, "光晕还是黄色，里面改成红色").
-    { samples: 7,  widthMul: 0.22, radialOffset: 0.18, color: new Color(255, 60,  50,  245) },
+    { samples: 28, widthMul: 0.22, radialOffset: 0.18, color: new Color(255, 60,  50,  245) },
 ];
+/** Length of the trail expressed as a fraction of the total flight
+ *  parameter t. e.g. 0.35 = the ribbon covers 35% of the arc behind
+ *  the orb. Combined with the analytical resampling in `_rebuildTrail`
+ *  this gives a smooth curved ribbon regardless of frame rate. */
+const TRAIL_WINDOW_T = 0.35;
 
 /** Total flight time (start → arrival on cell). Longer than the
  *  single-loop version because the orb now takes an extra full lap
@@ -152,7 +157,12 @@ export class EmbedRevealFX3D extends Component {
     private _trailNodes:  Node[] = [];
     private _trailMRs:    MeshRenderer[] = [];
     private _trailMeshes: (Mesh | null)[] = [];
-    private _history: Vec3[] = [];
+    /** Current flight parameter (0..1). Advanced each frame while
+     *  `_arrived` is false; the trail resamples the analytical
+     *  `_samplePath` between `_currentT - TRAIL_WINDOW_T` and
+     *  `_currentT` every frame so the ribbon is smooth regardless of
+     *  frame rate (no visible segment corners). */
+    private _currentT: number = 0;
     /** Rainbow sparkle particles trailing behind the orb. Alive
      *  particles get ticked in `update` (age + fade + drift), dead
      *  ones are removed and their Node destroyed. */
@@ -216,16 +226,11 @@ export class EmbedRevealFX3D extends Component {
         }
 
         // Position orb at spawn (t=0 point) so frame 1 doesn't flash
-        // from origin.
+        // from origin. No need to pre-seed a history buffer any more —
+        // the trail rebuild resamples the analytical path each frame,
+        // so it's smooth from frame 1 regardless.
         const p = this._samplePath(0);
         orb.setPosition(p);
-        // Pre-seed a few history samples so the trail has visible
-        // width from the very first frame instead of ramping over
-        // ~4 frames.
-        for (let k = 3; k >= 1; k--) {
-            const q = this._samplePath(-k * 0.02);
-            this._history.push(q);
-        }
 
         this._startTime = Date.now();
     }
@@ -259,13 +264,9 @@ export class EmbedRevealFX3D extends Component {
 
         if (!this._arrived) {
             const t = Math.min(1, (now - this._startTime) / FLY_DUR_MS);
+            this._currentT = t;
             const p = this._samplePath(t);
             this._orb?.setPosition(p);
-            this._history.push(p.clone());
-            // Cap at longest layer's window so the strip doesn't grow
-            // unbounded.
-            const cap = TRAIL_LAYERS[0].samples;
-            while (this._history.length > cap) this._history.shift();
             this._rebuildTrail();
             // Spawn a couple of rainbow sparkles at the orb's current
             // position each frame. Cheap: reuses a shared sphere mesh
@@ -409,42 +410,53 @@ export class EmbedRevealFX3D extends Component {
     }
 
     private _rebuildTrail(): void {
+        // Resample the analytical path each frame from
+        // `tail..currentT` at HIGH density so the ribbon reads as a
+        // smooth curve — no visible corners between per-frame
+        // history samples like the RocketTrailFX approach has.
+        const tHead = this._currentT;
+        const tTail = Math.max(0, tHead - TRAIL_WINDOW_T);
+        if (tHead <= tTail) return;   // t=0 case, nothing to draw yet
+
         const tmpB = new Vec3();
+        const tmpQ = new Vec3();
         for (let li = 0; li < TRAIL_LAYERS.length; li++) {
             const layer = TRAIL_LAYERS[li];
             const node  = this._trailNodes[li];
             const mr    = this._trailMRs[li];
             if (!node || !mr) continue;
-            const takeFrom = Math.max(0, this._history.length - layer.samples);
-            const slice = this._history.slice(takeFrom);
-            const N = slice.length;
-            if (N < 2) {
-                if (node.active) node.active = false;
-                continue;
-            }
+            const N = layer.samples;
+            if (N < 2) continue;
             if (!node.active) node.active = true;
 
             const positions: number[] = [];
             const indices:   number[] = [];
             const halfWidthBase = UNIT_SIZE * layer.widthMul * 0.5;
             for (let i = 0; i < N; i++) {
-                const q = slice[i];
+                // Even distribution across [tTail..tHead], i=0 oldest.
+                const u = i / (N - 1);
+                const tt = tTail + (tHead - tTail) * u;
+                const p = this._samplePath(tt);
+                tmpQ.set(p.x, p.y, p.z);
                 // Tangent to the cylinder wall at this sample: theta =
                 // atan2(x, z) — width lays along the horizontal tangent.
-                const theta = Math.atan2(q.x, q.z);
+                const theta = Math.atan2(tmpQ.x, tmpQ.z);
                 tmpB.set(Math.cos(theta), 0, -Math.sin(theta));
                 const nX = Math.sin(theta);
                 const nZ = Math.cos(theta);
-                const qx = q.x + nX * layer.radialOffset;
-                const qz = q.z + nZ * layer.radialOffset;
-                const taper = i / (N - 1);   // 0 oldest → 1 newest
+                const qx = tmpQ.x + nX * layer.radialOffset;
+                const qz = tmpQ.z + nZ * layer.radialOffset;
+                // Taper: oldest = 0, newest = 1. Also add a mild
+                // easeIn so the width ramps up smoothly rather than
+                // linearly (avoids the "flat tail" look).
+                const taper = u * u * (3 - 2 * u);
                 const halfWidth = halfWidthBase * taper;
                 positions.push(
                     qx + tmpB.x * halfWidth,
-                    q.y + tmpB.y * halfWidth,
+                    tmpQ.y + tmpB.y * halfWidth,
                     qz + tmpB.z * halfWidth,
                     qx - tmpB.x * halfWidth,
-                    q.y - tmpB.y * halfWidth,
+                    tmpQ.y - tmpB.y * halfWidth,
                     qz - tmpB.z * halfWidth,
                 );
             }
