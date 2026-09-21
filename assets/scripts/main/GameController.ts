@@ -4269,13 +4269,10 @@ export class GameController extends Component {
             return;
         }
 
-        // World → screen pixels → Canvas UI space (centre-origin).
-        const screenPixel = new Vec3();
-        camera.worldToScreen(worldPos, screenPixel);
-        const uiPos = new Vec3();
-        canvasUT.convertToNodeSpaceAR(screenPixel, uiPos);
-
-        hud.playEmbedRevealFx(uiPos, inj.kind, () => {
+        // HUD FX drives the 3D-arc-around-tower path itself; it needs
+        // the 3D target world pos + camera + canvasUT to re-project
+        // each frame.
+        hud.playEmbedRevealFx(worldPos, camera, canvasUT, inj.kind, () => {
             gs.modalPaused = false;
             gs.lastEmbedInjection = null;
             onDone();
