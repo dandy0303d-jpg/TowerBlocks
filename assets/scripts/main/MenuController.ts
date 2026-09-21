@@ -1296,12 +1296,23 @@ export class MenuController extends Component {
         // Assembly shot — every board cube starts off-screen and tweens
         // to its target position. Game logic (piece falling, input) is
         // paused inside GameController until this completes.
+        //
+        // After assembly, if the Lvl 16+ embed picker armed a prop,
+        // `playEmbedRevealFxIfPending` fires the yellow-orb arc + cell
+        // glow reveal, then clears `modalPaused` so the piece drops.
+        // No-op for levels < 16 or when the player skipped the pick.
+        const afterAssembly = () => {
+            const gc = this.gameController as any;
+            if (gc && typeof gc.playEmbedRevealFxIfPending === 'function') {
+                gc.playEmbedRevealFxIfPending(() => { if (onGameplayReady) onGameplayReady(); });
+            } else if (onGameplayReady) {
+                onGameplayReady();
+            }
+        };
         if (this.gameController && typeof this.gameController.playLevelAssembly === 'function') {
-            this.gameController.playLevelAssembly(this.enterAssembleSec, () => {
-                if (onGameplayReady) onGameplayReady();
-            });
-        } else if (onGameplayReady) {
-            onGameplayReady();
+            this.gameController.playLevelAssembly(this.enterAssembleSec, afterAssembly);
+        } else {
+            afterAssembly();
         }
     }
 

@@ -863,6 +863,21 @@ export class CubeManager extends Component {
         }
     }
 
+    /** Public world-position lookup for a (col, row) cell in a tower
+     *  with `totalRows` rows. Uses the same formula the `placeCube`
+     *  path uses so callers get the exact spot a cube would sit at
+     *  — needed by the pre-game embed-prop FX (yellow orb arcs from
+     *  screen centre to the injected cell) which doesn't own a cube
+     *  itself. Y is the CENTRE of the cell. */
+    public cellToWorldPosition(col: number, row: number, totalRows: number, out?: Vec3): Vec3 {
+        const theta = col * ANGLE_PER_COL;
+        const x = RADIUS * Math.sin(theta);
+        const z = RADIUS * Math.cos(theta);
+        const y = Y_BOTTOM + ((totalRows - 1) - row) * CELL_SIZE;
+        if (out) { out.set(x, y, z); return out; }
+        return new Vec3(x, y, z);
+    }
+
     private placeCube(col: number, row: number, totalRows: number, color: CellValue, centerCol: number): void {
         if (this.poolCursor >= this.pool.length) return;
         const cube = this.pool[this.poolCursor];
