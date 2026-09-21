@@ -49,13 +49,18 @@ interface TrailLayer {
 }
 
 const TRAIL_LAYERS: TrailLayer[] = [
-    { samples: 14, widthMul: 0.60, radialOffset: 0.10, color: new Color(255, 210, 80,  170) },
-    { samples: 10, widthMul: 0.40, radialOffset: 0.14, color: new Color(255, 230, 130, 210) },
-    { samples: 6,  widthMul: 0.22, radialOffset: 0.18, color: new Color(255, 250, 210, 250) },
+    // Outer halo — yellow (unchanged from the classic look).
+    { samples: 16, widthMul: 0.65, radialOffset: 0.10, color: new Color(255, 210, 80,  180) },
+    // Middle — amber, sits between the yellow halo and the red core.
+    { samples: 11, widthMul: 0.42, radialOffset: 0.14, color: new Color(255, 140, 60,  220) },
+    // Inner core — RED (per player spec, "光晕还是黄色，里面改成红色").
+    { samples: 7,  widthMul: 0.22, radialOffset: 0.18, color: new Color(255, 60,  50,  245) },
 ];
 
-/** Total flight time (start → arrival on cell). */
-const FLY_DUR_MS   = 900;
+/** Total flight time (start → arrival on cell). Longer than the
+ *  single-loop version because the orb now takes an extra full lap
+ *  around the tower before settling on the target cell. */
+const FLY_DUR_MS   = 1600;
 /** Pulse expand + shrink duration after arrival. */
 const PULSE_DUR_MS = 500;
 /** Unit size baseline — 1 = one cell edge. Trail widths scale off this. */
@@ -66,7 +71,44 @@ const PEAK_H       = 2.0;
 const ORBIT_R_MUL  = 1.5;
 /** Fraction of the flight over which the orbit radius contracts from
  *  `orbitR` down to `targetR` (converges into the tower). */
-const CONVERGE_T   = 0.8;
+const CONVERGE_T   = 0.85;
+/** Number of EXTRA full loops around the tower before the orb hits
+ *  the target cell. 1 = "once around, then land". */
+const EXTRA_LOOPS  = 1;
+
+/** Rainbow palette for the trail sparkle particles — HSV around the
+ *  hue wheel at full saturation + full value. Shared instances so we
+ *  don't allocate a new Color per particle spawn. */
+const PARTICLE_PALETTE: Color[] = [
+    new Color(255,  80,  80, 255),   // red
+    new Color(255, 165,  50, 255),   // orange
+    new Color(255, 235,  70, 255),   // yellow
+    new Color(120, 230, 100, 255),   // green
+    new Color( 90, 200, 255, 255),   // cyan / sky
+    new Color(110, 130, 255, 255),   // blue
+    new Color(220, 130, 255, 255),   // violet
+];
+
+/** One rainbow sparkle riding along in the trail — see `_spawnParticle`. */
+interface Particle {
+    node: Node;
+    mat:  Material;
+    /** Base color at t=0; alpha fades over the particle's lifetime. */
+    base: Color;
+    velocity: Vec3;
+    /** ms lived so far. */
+    age:  number;
+    /** Total lifetime in ms. */
+    life: number;
+}
+/** Max particles alive concurrently — bounds allocation pressure. */
+const MAX_PARTICLES = 60;
+/** New particles spawned per frame while the orb is in flight. */
+const PARTICLES_PER_FRAME = 2;
+/** Per-particle lifetime — long enough to trail visibly behind the orb. */
+const PARTICLE_LIFE_MS = 550;
+/** Base scale of each particle sphere (relative to cell size). */
+const PARTICLE_SIZE = 0.14;
 
 @ccclass('EmbedRevealFX3D')
 export class EmbedRevealFX3D extends Component {
@@ -111,15 +153,37 @@ export class EmbedRevealFX3D extends Component {
     private _trailMRs:    MeshRenderer[] = [];
     private _trailMeshes: (Mesh | null)[] = [];
     private _history: Vec3[] = [];
+    /** Rainbow sparkle particles trailing behind the orb. Alive
+     *  particles get ticked in `update` (age + fade + drift), dead
+     *  ones are removed and their Node destroyed. */
+    private _particles: Particle[] = [];
+    /** Total angular sweep from θ=0 to landing. Includes any extra
+     *  full loops (see `EXTRA_LOOPS`). Cached on `_init` so the path
+     *  sampler doesn't recompute it every frame. */
+    private _totalTheta: number = 0;
+    /** Shared unit sphere mesh for the rainbow particles — one build
+     *  at init, reused by every particle so we don't recreate the
+     *  primitive on every spawn. */
+    private _particleMesh: Mesh | null = null;
 
     private _init(targetLocal: Vec3, onArrive: () => void, onDone: () => void): void {
         this._targetLocal.set(targetLocal);
         this._targetR = Math.max(0.1, Math.sqrt(targetLocal.x * targetLocal.x + targetLocal.z * targetLocal.z));
         this._orbitR  = this._targetR * ORBIT_R_MUL;
         this._targetTheta = Math.atan2(targetLocal.x, targetLocal.z);
+        // Total angular sweep = target angle + EXTRA_LOOPS full circles
+        // in the same rotational direction. Sign matches the shorter
+        // signed atan2 result so the "extra lap" wraps consistently;
+        // when targetTheta is exactly 0 (front-facing cell), default
+        // to positive so we still see a loop rather than nothing.
+        const dir = Math.sign(this._targetTheta) || 1;
+        this._totalTheta = this._targetTheta + EXTRA_LOOPS * 2 * Math.PI * dir;
         this._startY = targetLocal.y + 3;
         this._onArrive = onArrive;
         this._onDone   = onDone;
+        // Prebuild the particle sphere mesh once; every particle
+        // MeshRenderer reuses it.
+        this._particleMesh = utils.MeshUtils.createMesh(primitives.sphere(PARTICLE_SIZE, { segments: 8 }));
 
         // --- Orb node: unlit-additive sphere, golden ---
         const orb = new Node('Orb');
@@ -175,8 +239,12 @@ export class EmbedRevealFX3D extends Component {
     private _samplePath(t: number): Vec3 {
         // Clamp so pre-seed values (negative t) don't overshoot.
         const tc = Math.max(0, Math.min(1, t));
-        const ease = 1 - (1 - tc) * (1 - tc);   // quadOut
-        const theta = this._targetTheta * ease;
+        // Angular easing: use a smoothstep-ish curve so the orb has a
+        // more constant angular speed during the extra loop and only
+        // decelerates at the very end. Pure quadOut with a large total
+        // sweep read as "too fast at the start, glacial at the end".
+        const ease = tc * tc * (3 - 2 * tc);   // smoothstep
+        const theta = this._totalTheta * ease;
         let r: number;
         if (tc < CONVERGE_T) r = this._orbitR;
         else r = this._orbitR + (this._targetR - this._orbitR) * ((tc - CONVERGE_T) / (1 - CONVERGE_T));
@@ -185,8 +253,9 @@ export class EmbedRevealFX3D extends Component {
         return new Vec3(r * Math.sin(theta), y, r * Math.cos(theta));
     }
 
-    update(_dt: number): void {
+    update(dt: number): void {
         const now = Date.now();
+        const dtMs = dt * 1000;
 
         if (!this._arrived) {
             const t = Math.min(1, (now - this._startTime) / FLY_DUR_MS);
@@ -198,6 +267,13 @@ export class EmbedRevealFX3D extends Component {
             const cap = TRAIL_LAYERS[0].samples;
             while (this._history.length > cap) this._history.shift();
             this._rebuildTrail();
+            // Spawn a couple of rainbow sparkles at the orb's current
+            // position each frame. Cheap: reuses a shared sphere mesh
+            // and preallocated palette colors.
+            for (let i = 0; i < PARTICLES_PER_FRAME; i++) {
+                if (this._particles.length >= MAX_PARTICLES) break;
+                this._spawnParticle(p);
+            }
 
             if (t >= 1) {
                 this._arrived = true;
@@ -234,7 +310,79 @@ export class EmbedRevealFX3D extends Component {
                 this._onDone = null;
                 if (this.node && this.node.isValid) this.node.destroy();
                 if (done) done();
+                // No further work — the destroy above already tore
+                // down every particle child.
+                return;
             }
+        }
+
+        // Tick + fade + prune the rainbow sparkle trail. Runs in BOTH
+        // the flight and pulse phases so leftover particles from the
+        // final frames still fade out naturally over the pulse.
+        this._tickParticles(dtMs);
+    }
+
+    /** Spawn one rainbow sparkle at world-position `at` (in the FX
+     *  holder's local space — same space the orb tweens through).
+     *  Adds a tiny outward + slightly-downward random velocity so the
+     *  particles read as bursting off the orb rather than sticking to
+     *  its path. */
+    private _spawnParticle(at: Vec3): void {
+        if (!this._particleMesh) return;
+        const n = new Node('Sparkle');
+        n.parent = this.node;
+        n.layer  = this.node.layer;
+        n.setPosition(at);
+        const mr = n.addComponent(MeshRenderer);
+        mr.mesh = this._particleMesh;
+        const mat = new Material();
+        mat.initialize({ effectName: 'builtin-unlit', technique: 1 });
+        const base = PARTICLE_PALETTE[Math.floor(Math.random() * PARTICLE_PALETTE.length)];
+        mat.setProperty('mainColor', new Color(base.r, base.g, base.b, base.a));
+        mr.material = mat;
+        // Random-direction velocity — outward from the tower axis
+        // with a tiny vertical wobble so the trail spreads a bit.
+        const outX = at.x;
+        const outZ = at.z;
+        const outMag = Math.max(0.001, Math.sqrt(outX * outX + outZ * outZ));
+        const vx = (outX / outMag) * (0.5 + Math.random() * 0.4) + (Math.random() - 0.5) * 0.4;
+        const vz = (outZ / outMag) * (0.5 + Math.random() * 0.4) + (Math.random() - 0.5) * 0.4;
+        const vy = (Math.random() - 0.3) * 0.7;
+        this._particles.push({
+            node: n,
+            mat,
+            base,
+            velocity: new Vec3(vx, vy, vz),
+            age:  0,
+            life: PARTICLE_LIFE_MS * (0.7 + Math.random() * 0.6),
+        });
+    }
+
+    /** Age every particle by `dtMs`; move by velocity; fade alpha;
+     *  destroy expired ones. */
+    private _tickParticles(dtMs: number): void {
+        const tmp = new Vec3();
+        for (let i = this._particles.length - 1; i >= 0; i--) {
+            const p = this._particles[i];
+            p.age += dtMs;
+            if (p.age >= p.life || !p.node.isValid) {
+                if (p.node.isValid) p.node.destroy();
+                this._particles.splice(i, 1);
+                continue;
+            }
+            // Position: previous + velocity * dt (seconds).
+            const dtSec = dtMs / 1000;
+            p.node.getPosition(tmp);
+            tmp.x += p.velocity.x * dtSec;
+            tmp.y += p.velocity.y * dtSec;
+            tmp.z += p.velocity.z * dtSec;
+            p.node.setPosition(tmp);
+            // Slight scale down + alpha fade over lifetime.
+            const lifeT = p.age / p.life;
+            const scale = PARTICLE_SIZE * (1 - 0.5 * lifeT);
+            p.node.setScale(scale / PARTICLE_SIZE, scale / PARTICLE_SIZE, scale / PARTICLE_SIZE);
+            const alpha = Math.floor(p.base.a * (1 - lifeT));
+            p.mat.setProperty('mainColor', new Color(p.base.r, p.base.g, p.base.b, alpha));
         }
     }
 
@@ -316,6 +464,12 @@ export class EmbedRevealFX3D extends Component {
     onDestroy(): void {
         for (const m of this._trailMeshes) if (m) m.destroy();
         this._trailMeshes = [];
+        if (this._particleMesh) this._particleMesh.destroy();
+        this._particleMesh = null;
+        // Particles are child nodes of `this.node`; they get destroyed
+        // by Cocos's own tree teardown when the holder dies. Clear the
+        // JS-side list so callers see an empty array.
+        this._particles.length = 0;
         this._orbMat   = null;
         this._pulseMat = null;
     }
