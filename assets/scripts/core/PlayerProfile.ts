@@ -28,6 +28,7 @@ import type { DailyFreeState } from './LeaderboardApi';
 import { setBearerToken } from './Http';
 import { GameCenter } from '../channels/apple/GameCenter';
 import { loginWithGameCenter, linkGameCenterAccount } from '../channels/apple/GameCenterAuthApi';
+import { getLang } from './i18n/I18n';
 
 const UUID_KEY    = 'tt.player.uuid';
 const NAME_KEY    = 'tt.player.name';
@@ -462,7 +463,7 @@ class Profile {
             }
             if (secondsLeft < REFRESH_WINDOW_SEC) {
                 try {
-                    const r = await refreshPlayerToken();
+                    const r = await refreshPlayerToken(getLang());
                     sys.localStorage.setItem(TOKEN_KEY, r.token);
                     sys.localStorage.setItem(TOKEN_EXP_KEY, String(r.expEpochSec));
                     setBearerToken(r.token);
@@ -491,7 +492,7 @@ class Profile {
         }
 
         try {
-            const { uuid, nickname, avatarIdx, token, expEpochSec } = await registerPlayer();
+            const { uuid, nickname, avatarIdx, token, expEpochSec } = await registerPlayer(getLang());
             sys.localStorage.setItem(UUID_KEY, uuid);
             sys.localStorage.setItem(NAME_KEY, nickname);
             sys.localStorage.setItem(ACCOUNT_KEY, 'anonymous');
