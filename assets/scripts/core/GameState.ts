@@ -790,14 +790,19 @@ export class GameState {
         this.paused = !this.paused;
     }
 
-    /** Backpack item — 甩干机 (Dryer). For every row, gather all
-     *  colored cells (along with any per-cell props: bombs, booms,
-     *  stones, chests, wreckers, meteors, blizzards, hails, rockets,
-     *  gatlings) and repack them into the first N columns starting
-     *  from col 0, leaving the rest of the row empty. The cylinder
-     *  wraps around at COLS, so the semantic is "close every gap in
-     *  the row" — colored cells clump into one contiguous arc segment
-     *  per layer.
+    /** Backpack item — 甩干机 (Dryer). For every row IN THE TASK
+     *  ZONE, gather all colored cells (along with any per-cell props:
+     *  bombs, booms, stones, chests, wreckers, meteors, blizzards,
+     *  hails, rockets, gatlings) and repack them into the first N
+     *  columns starting from col 0, leaving the rest of the row
+     *  empty. The cylinder wraps around at COLS, so the semantic is
+     *  "close every gap in the row" — colored cells clump into one
+     *  contiguous arc segment per layer.
+     *
+     *  Level-mode reserved zone (the gray/black foundation at the
+     *  bottom) is UNTOUCHED — the item only affects the task-zone
+     *  colored cells the player is actively clearing. Endless-like
+     *  modes have no reserved zone so every row qualifies.
      *
      *  Purely a state mutation — GameController handles the visual
      *  (1-second 360° tower rotation) around the call. */
@@ -806,12 +811,15 @@ export class GameState {
         if (!board || board.length === 0) return;
         const cols = board[0]?.length ?? 0;
         if (cols === 0) return;
+        // Skip the reserved-zone rows so the black foundation stays
+        // exactly where the level author placed it.
+        const reservedTop = this.computeReservedTop();
 
         // For each per-cell prop grid, gather + reset + repack in
         // sync with the base board. Wall-of-nulls guards handle
         // level modes where a grid is null (e.g. endless has no
         // stones / chests).
-        for (let r = 0; r < board.length; r++) {
+        for (let r = 0; r < reservedTop; r++) {
             const row = board[r];
             if (!row) continue;
             const cells:      (typeof row[0])[] = [];
@@ -877,12 +885,14 @@ export class GameState {
     /** Backpack item — 重力压制 (Gravity Press). Every column's
      *  colored cells (with their props) settle downward to fill any
      *  empty spaces below them. Delegates to the well-tested
-     *  `applyColumnGravity` primitive, passing the FULL board height
-     *  as `reservedTop` so no rows are protected — the whole tower
-     *  gets compressed. */
+     *  `applyColumnGravity` primitive, passing `computeReservedTop`
+     *  so the level-mode reserved zone (the black/gray foundation)
+     *  is untouched — colored cells settle onto the top of the
+     *  reserved zone rather than being scooped into it. Endless-like
+     *  modes have no reserved zone, so the whole tower compresses. */
     applyGravityPress(): void {
         if (!this.state.board || this.state.board.length === 0) return;
-        applyColumnGravity(this.state, this.state.board.length);
+        applyColumnGravity(this.state, this.computeReservedTop());
     }
 
     /** Scan the just-locked `piece` for any `box3` bomb tags and
