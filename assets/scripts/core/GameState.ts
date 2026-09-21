@@ -44,6 +44,7 @@ import {
     Piece,
     BombKind,
     BoomLevel,
+    EmbedProp,
     HistorySnapshot,
     Inventory,
     LevelData,
@@ -614,7 +615,7 @@ export class GameState {
         this.startRunning();
     }
 
-    startLevel(lvl: LevelData): void {
+    startLevel(lvl: LevelData, embed: EmbedProp | null = null): void {
         const loaded = loadLevel(lvl);
         // Collect-mode levels carry a `collectGoals` array — they boot
         // into the dedicated collect mode (win = goals met, not the
@@ -627,6 +628,10 @@ export class GameState {
         this.levelTaskHeight     = loaded.taskHeight;
         this.levelReservedHeight = loaded.reservedHeight;
         this.state = loaded.state;
+        // Optional pre-level embed prop (level 16+ picker in HudController).
+        // Injects the picked prop into one random colored cell BEFORE the
+        // player sees the board — see `_injectEmbedProp` for details.
+        if (embed) this._injectEmbedProp(embed);
         // `resetCommon` would re-shuffle the bag immediately, so we
         // inline its work here and register the level's optional
         // custom-shape piece BETWEEN bag.reset() and bag.refill() —
@@ -659,6 +664,83 @@ export class GameState {
         }
         this.hooks.onInventoryChanged?.(this.inventory);
         this.startRunning();
+    }
+
+    /** Drop the player-picked embed prop onto a single colored cell.
+     *
+     *  Landing rule (matches the picker copy "任意一个彩色方块"):
+     *    1. Scan every non-null cell in `state.board` — both the task
+     *       zone AND the reserved zone qualify.
+     *    2. Prefer "clean" cells that carry no existing prop (bomb,
+     *       boom, stone, chest, meteor, blizzard, wrecker, hail,
+     *       rocket, gatling). This keeps a hand-authored level bomb
+     *       from being silently overwritten.
+     *    3. If the level is stone/prop-saturated and no clean cell
+     *       exists, fall back to any colored cell — the player asked
+     *       for an embed, better to grant SOMETHING than skip silently.
+     *    4. If the board has no colored cells at all (extreme edge
+     *       case), the embed is dropped — no crash, no cell to host it.
+     *
+     *  Both target props are single-cell:
+     *    'boom1' → `boardBooms[r][c] = 1`   (5-cell plus on host clear)
+     *    'row1'  → `boardBombs[r][c] = 'row1'` (row clear when host row fills)
+     *
+     *  Called BEFORE `reset()` / hook events fire, so no repaint work
+     *  is needed here — the first render of the new state already
+     *  includes the injected prop. */
+    private _injectEmbedProp(embed: EmbedProp): void {
+        const board = this.state.board;
+        if (!board || board.length === 0) return;
+        const bombs = this.state.boardBombs;
+        const booms = this.state.boardBooms;
+        if (!bombs || !booms) return;   // level state always has both, guard is TypeScript-belt
+
+        const clean: Array<{ r: number; c: number }> = [];
+        const anyColored: Array<{ r: number; c: number }> = [];
+        const stones    = this.state.boardStones;
+        const chests    = this.state.boardChests;
+        const meteors   = this.state.boardMeteors;
+        const blizzards = this.state.boardBlizzards;
+        const wreckers  = this.state.boardWreckers;
+        const hails     = this.state.boardHails;
+        const rockets   = this.state.boardRockets;
+        const gatlings  = this.state.boardGatlings;
+
+        for (let r = 0; r < board.length; r++) {
+            const row = board[r];
+            if (!row) continue;
+            for (let c = 0; c < row.length; c++) {
+                const v = row[c];
+                if (v == null) continue;
+                // Gray cells (endless-mode debris) do exist in level
+                // mode via `X` stones? No — 'X' is endless-only. But
+                // guard anyway: treat only proper colored letters as
+                // valid hosts.
+                if (v === 'X') continue;
+                anyColored.push({ r, c });
+                const dirty =
+                       (bombs[r]?.[c] != null)
+                    || (booms[r]?.[c] != null)
+                    || (stones?.[r]?.[c] != null)
+                    || (chests?.[r]?.[c] != null)
+                    || (meteors?.[r]?.[c] != null)
+                    || (blizzards?.[r]?.[c] != null)
+                    || (wreckers?.[r]?.[c] != null)
+                    || (hails?.[r]?.[c] != null)
+                    || (rockets?.[r]?.[c] != null)
+                    || (gatlings?.[r]?.[c] != null);
+                if (!dirty) clean.push({ r, c });
+            }
+        }
+        const pool = clean.length > 0 ? clean : anyColored;
+        if (pool.length === 0) return;
+        const pick = pool[Math.floor(Math.random() * pool.length)];
+        if (embed === 'boom1') {
+            booms[pick.r][pick.c] = 1;
+        } else if (embed === 'row1') {
+            bombs[pick.r][pick.c] = 'row1';
+        }
+        console.log(`[EmbedProp] injected ${embed} at r=${pick.r} c=${pick.c} (clean=${clean.length}/${anyColored.length})`);
     }
 
     togglePause(): void {

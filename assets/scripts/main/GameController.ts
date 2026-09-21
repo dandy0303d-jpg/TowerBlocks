@@ -44,7 +44,7 @@ import { GameState, BOX3_ARM_DURATION_MS } from '../core/GameState';
 import { countBottomCompleteRows, findTrappedCells } from '../core/Modes/EndlessMode';
 import { collides } from '../core/Pieces';
 import { loadLevel, validateLevelData } from '../core/LevelData';
-import { LevelData } from '../core/Types';
+import { LevelData, EmbedProp } from '../core/Types';
 import { createCurvedBrickMesh } from './BrickMesh';
 // (No import of MenuController — avoids circular import. MenuController
 //  registers itself via setMenuController() below using a structural type.)
@@ -4144,8 +4144,14 @@ export class GameController extends Component {
     //  Level loading
     // ============================================================
     /** Load level at index `idx` from the flattened level list.
-     *  Public so MenuController can call it from the level-select panel. */
-    public loadLevelByIndex(idx: number): void {
+     *  Public so MenuController can call it from the level-select panel.
+     *
+     *  `embed` — optional player-picked prop from the level-16+ fate
+     *  picker (see HudController.showFateEmbedPicker). Threaded straight
+     *  into GameState.startLevel where a single random colored cell
+     *  receives the prop. `null` / omitted for levels < 16 or when the
+     *  player declined to pick. */
+    public loadLevelByIndex(idx: number, embed: EmbedProp | null = null): void {
         if (!this.gameState) return;
         if (idx < 0 || idx >= this.flatLevels.length) {
             log(`[TowerBlocks] level ${idx + 1} not found (have ${this.flatLevels.length} levels).`);
@@ -4160,7 +4166,7 @@ export class GameController extends Component {
             // Remember which level is playing so `onLevelWin` can persist
             // the completion via LevelProgress.
             this._activeLevelIdx = idx;
-            this.gameState.startLevel(lvl);
+            this.gameState.startLevel(lvl, embed);
             // Snap the HUD level timer back to its top-strip rest
             // position + un-freeze its value. Otherwise the previous
             // level's tween-to-center parking would still be in effect

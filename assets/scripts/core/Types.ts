@@ -29,6 +29,14 @@ export type StoneHP = 2 | 3 | 4;
  *  3 (25 cells). Triggers when the host cell is cleared. */
 export type BoomLevel = 1 | 2 | 3;
 
+/** Player-selectable embed prop offered by the pre-level fate picker
+ *  from level 16 onwards. `'boom1'` → tier-1 boom (5-cell plus at the
+ *  host cell's layer). `'row1'` → tier-1 row bomb (clears the row when
+ *  it fills). Injected into a random colored cell by GameState.startLevel.
+ *  See HudController.showFateEmbedPicker + MenuController's afterScatter
+ *  branch for the entry-flow wiring. */
+export type EmbedProp = 'boom1' | 'row1';
+
 /** A single tetromino in flight. */
 export interface Piece {
     type:   PieceType;

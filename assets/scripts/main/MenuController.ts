@@ -39,6 +39,7 @@ import { EventButtonSparkles } from './EventButtonSparkles';
 import { fetchNewbie14Status } from '../core/EventNewbie14Api';
 import { BackKeyManager } from './BackKeyManager';
 import { PlayerProfile } from '../core/PlayerProfile';
+import type { EmbedProp } from '../core/Types';
 import { setBannedHandler, getBannedState, setBearerToken, type BannedState } from '../core/Http';
 import { fetchWallet, subscribeBalance } from '../core/WalletApi';
 import { BACKEND_BASE_URL } from '../core/BackendConfig';
@@ -68,6 +69,13 @@ import { fetchReviveCost, purchaseRevive, DEFAULT_REVIVE_COST_GEMS } from '../co
 /** Seconds the revive prompt sits on screen before it auto-dismisses
  *  and hands off to the regular game-over panel. */
 const REVIVE_COUNTDOWN_SEC = 10;
+
+/** First level (1-based, matches LevelData.order) at which the pre-game
+ *  fate popup swaps from an auto-dismiss preview to an interactive
+ *  embed-prop picker (HudController.showFateEmbedPicker). Levels below
+ *  this stay on the classic 1-second preview so the early curve isn't
+ *  cluttered with prop decisions. */
+const EMBED_MIN_LEVEL_ORDER = 16;
 import { fetchConsentStatus } from '../core/ConsentApi';
 import { ConsentModal } from './ConsentModal';
 import { GoogleWebOAuth } from '../channels/google/GoogleWebOAuth';
@@ -1219,6 +1227,12 @@ export class MenuController extends Component {
         // Previously the fate preview ran first, but the player asked
         // for it to land AFTER the tower's exit-scatter so the modal
         // pops on a clean stage instead of over an intact tower.
+        //
+        // From level 16 onwards the auto-dismiss preview is replaced by
+        // an interactive embed-prop picker (see HudController's
+        // `showFateEmbedPicker`) — the modal waits until the player
+        // taps 开始, and the chosen prop (if any) is threaded through
+        // to `doEnterLevel`.
         const afterScatter = () => {
             // playExitScatter's restore callback puts every cube back
             // at its original position + full scale (needed so the
@@ -1229,7 +1243,12 @@ export class MenuController extends Component {
             // node now so the restored cubes stay invisible — doEnterLevel
             // hides it again later (idempotent, no-op the second time).
             if (this.levelStage3D) this.levelStage3D.node.active = false;
-            if (hud && typeof hud.showFatePreview === 'function' && rawLvl) {
+            const useEmbed = (rawLvl?.order ?? 0) >= EMBED_MIN_LEVEL_ORDER;
+            if (useEmbed && hud && typeof hud.showFateEmbedPicker === 'function' && rawLvl) {
+                hud.showFateEmbedPicker(rawLvl, (embed: EmbedProp | null) => {
+                    this.doEnterLevel(idx, releaseGuard, embed);
+                });
+            } else if (hud && typeof hud.showFatePreview === 'function' && rawLvl) {
                 hud.showFatePreview(rawLvl, () => this.doEnterLevel(idx, releaseGuard), 1000);
             } else {
                 this.doEnterLevel(idx, releaseGuard);
@@ -1261,7 +1280,7 @@ export class MenuController extends Component {
      *  Triggers the "assemble from outside" animation on the game side —
      *  cubes fly in and settle into place before the level actually
      *  starts. */
-    private doEnterLevel(idx: number, onGameplayReady?: () => void): void {
+    private doEnterLevel(idx: number, onGameplayReady?: () => void, embed: EmbedProp | null = null): void {
         if (this.levelStage3D) {
             // Hide the Enter / Back overlay buttons — they sit on the
             // main Canvas, not on `levelStage3D.node`, so deactivating
@@ -1273,7 +1292,7 @@ export class MenuController extends Component {
         this.setGameplayVisible(true);
         BgmManager.instance?.play('level');
 
-        this.gameController?.loadLevelByIndex(idx);
+        this.gameController?.loadLevelByIndex(idx, embed);
         // Assembly shot — every board cube starts off-screen and tweens
         // to its target position. Game logic (piece falling, input) is
         // paused inside GameController until this completes.
@@ -1532,7 +1551,7 @@ export class MenuController extends Component {
         const flatLevels = (this.gameController as any)?.flatLevels as Array<any> | undefined;
         const nextRawLvl = flatLevels && flatLevels[nextIdx];
 
-        const advance = () => {
+        const advance = (embed: EmbedProp | null = null) => {
             // Step 5: fate popup just closed → restart level BGM and hand
             // off to the same entry point the level-select stage uses,
             // so the assembly animation + camera swap match exactly with
@@ -1541,7 +1560,7 @@ export class MenuController extends Component {
             //   boardRoot3D, then plays the assembly fly-in.
             BgmManager.instance?.play('level');
             this.currentLevelIdx = nextIdx;
-            this.doEnterLevel(nextIdx);
+            this.doEnterLevel(nextIdx, undefined, embed);
         };
 
         const showPreview = () => {
@@ -1554,17 +1573,21 @@ export class MenuController extends Component {
             // (per design — audio lines up with the popup pop-in beat,
             // not the earlier scatter visual).
             SoundManager.instance?.play('level_scatter');
-            // Step 3+4: pop the fate preview modal; onDone (after holdMs)
-            // triggers assembly.
-            if (hud && typeof hud.showFatePreview === 'function' && nextRawLvl) {
+            // Step 3+4: pop the fate modal.
+            //   levels < 16 → auto-dismiss preview (advance after holdMs)
+            //   levels ≥ 16 → interactive embed-prop picker (advance on
+            //                  START click with the chosen embed threaded
+            //                  into `advance`)
+            const floorNum = nextIdx + 1;
+            const useEmbed = (nextRawLvl?.order ?? 0) >= EMBED_MIN_LEVEL_ORDER;
+            if (useEmbed && hud && typeof hud.showFateEmbedPicker === 'function' && nextRawLvl) {
+                hud.showFateEmbedPicker(nextRawLvl, (embed: EmbedProp | null) => advance(embed), t('level.floor', { n: floorNum }));
+            } else if (hud && typeof hud.showFatePreview === 'function' && nextRawLvl) {
                 // Title reads "第 {n} 层" / "Floor {n}" using the
                 // stage's 1-based order. Level 0 → 1층, level 98 → 99층.
-                // Kept flatLevels.length available for future dynamic-
-                // count use but not needed for the numeric conversion.
-                const floorNum = nextIdx + 1;
-                hud.showFatePreview(nextRawLvl, advance, holdMs, t('level.floor', { n: floorNum }));
+                hud.showFatePreview(nextRawLvl, () => advance(), holdMs, t('level.floor', { n: floorNum }));
             } else {
-                this.scheduleOnce(advance, holdMs / 1000);
+                this.scheduleOnce(() => advance(), holdMs / 1000);
             }
         };
 
