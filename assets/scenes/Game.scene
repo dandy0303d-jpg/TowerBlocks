@@ -23331,7 +23331,7 @@
         "__id__": 588
       }
     ],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 688
@@ -25481,7 +25481,7 @@
         "__id__": 670
       }
     ],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 682
@@ -27164,7 +27164,7 @@
       "a": 255
     },
     "_outlineWidth": 2,
-    "_enableShadow": true,
+    "_enableShadow": false,
     "_shadowColor": {
       "__type__": "cc.Color",
       "r": 0,
@@ -69102,15 +69102,42 @@
     "authoredFateHintLabel": {
       "__id__": 625
     },
-    "authoredEmbedPickerRoot": null,
-    "authoredEmbedBoomButton": null,
-    "authoredEmbedBoomSelectMark": null,
-    "authoredEmbedRowBombButton": null,
-    "authoredEmbedRowBombSelectMark": null,
-    "authoredEmbedWreckerButton": null,
-    "authoredEmbedWreckerSelectMark": null,
-    "authoredEmbedStartButton": null,
-    "authoredEmbedStartLabel": null,
+    "authoredEmbedPickerRoot": {
+      "__id__": 636
+    },
+    "authoredEmbedBoomButton": {
+      "__id__": 646
+    },
+    "authoredEmbedBoomSelectMark": {
+      "__id__": 638
+    },
+    "authoredEmbedBoomCountLabel": {
+      "__id__": 643
+    },
+    "authoredEmbedRowBombButton": {
+      "__id__": 657
+    },
+    "authoredEmbedRowBombSelectMark": {
+      "__id__": 652
+    },
+    "authoredEmbedRowBombCountLabel": {
+      "__id__": 651
+    },
+    "authoredEmbedWreckerButton": {
+      "__id__": 668
+    },
+    "authoredEmbedWreckerSelectMark": {
+      "__id__": 663
+    },
+    "authoredEmbedWreckerCountLabel": {
+      "__id__": 662
+    },
+    "authoredEmbedStartButton": {
+      "__id__": 680
+    },
+    "authoredEmbedStartLabel": {
+      "__id__": 673
+    },
     "authoredPauseOverlay": {
       "__id__": 730
     },

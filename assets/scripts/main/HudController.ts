@@ -4125,7 +4125,15 @@ export class HudController extends Component {
     }
 
     /** Sync `_embedCounts` from a backpack items list, then paint the
-     *  three button labels + disable buttons that have zero count. */
+     *  three button labels + disable buttons that have zero count.
+     *
+     *  Zero-count button state:
+     *    • Label reads `0` (not `-`) so the visual matches "有多少"
+     *      semantics rather than "缺失".
+     *    • `button.interactable = false` blocks the click handler.
+     *    • The button node's opacity is dimmed to ~120/255 so the grey
+     *      state reads visually even when the Button component has no
+     *      transition configured (the default authoring case). */
     private _paintEmbedCounts(items: Array<{ id: string; count: number }>): void {
         // Reset then apply — items missing from the list mean 0 owned.
         this._embedCounts = { boom1: 0, row1: 0, wrecker: 0 };
@@ -4134,17 +4142,25 @@ export class HudController extends Component {
             if (it.id === 'row1'    && it.count > 0) this._embedCounts.row1    = it.count;
             if (it.id === 'wrecker' && it.count > 0) this._embedCounts.wrecker = it.count;
         }
-        const fmt = (n: number) => (n > 0 ? `x${n}` : '-');
+        const fmt = (n: number) => `x${n}`;
         if (this.authoredEmbedBoomCountLabel)    this.authoredEmbedBoomCountLabel.string    = fmt(this._embedCounts.boom1);
         if (this.authoredEmbedRowBombCountLabel) this.authoredEmbedRowBombCountLabel.string = fmt(this._embedCounts.row1);
         if (this.authoredEmbedWreckerCountLabel) this.authoredEmbedWreckerCountLabel.string = fmt(this._embedCounts.wrecker);
         // Disable interaction for zero-count options so the player
-        // can't pick something they don't own. Selected-but-now-zero
-        // (extremely unlikely — count only shrinks between picker
-        // opens) is cleared here too.
-        if (this.authoredEmbedBoomButton)    this.authoredEmbedBoomButton.interactable    = this._embedCounts.boom1   > 0;
-        if (this.authoredEmbedRowBombButton) this.authoredEmbedRowBombButton.interactable = this._embedCounts.row1    > 0;
-        if (this.authoredEmbedWreckerButton) this.authoredEmbedWreckerButton.interactable = this._embedCounts.wrecker > 0;
+        // can't pick something they don't own. Also modulate the node
+        // opacity so the grey state reads visually — Button.interactable
+        // alone only affects transitions when one is configured, so
+        // without an explicit dim the "禁用" state looks identical to
+        // "可选" in the default authoring case.
+        const dim = (btn: Button | null, on: boolean) => {
+            if (!btn) return;
+            btn.interactable = on;
+            const op = btn.node.getComponent(UIOpacity) ?? btn.node.addComponent(UIOpacity);
+            op.opacity = on ? 255 : 120;
+        };
+        dim(this.authoredEmbedBoomButton,    this._embedCounts.boom1   > 0);
+        dim(this.authoredEmbedRowBombButton, this._embedCounts.row1    > 0);
+        dim(this.authoredEmbedWreckerButton, this._embedCounts.wrecker > 0);
         if (this._embedPicked && this._embedCounts[this._embedPicked] === 0) {
             this._embedPicked = null;
             this._refreshEmbedSelectMarks();
