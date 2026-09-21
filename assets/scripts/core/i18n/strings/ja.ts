@@ -119,6 +119,7 @@ export const JA: Record<string, string> = {
     'fate.endlessMid':   'エンドレス · {layer} 層',
     'fate.subtitle':     '{tag} · {n} マス',
     'fate.hint':         '運命を変える：広告視聴で新しい運命ブロックに交換',
+    'fate.embedPick.hint': 'オープニングアイテムを選ぶ',
 
     // ---------- コレクトモード ----------
     'collect.header':    'コレクト目標',

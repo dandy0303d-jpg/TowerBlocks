@@ -108,6 +108,7 @@ export const DE: Record<string, string> = {
     'fate.endlessMid':   'Endlos · Ebene {layer}',
     'fate.subtitle':     '{tag} · {n} Felder',
     'fate.hint':         'Schicksal ändern: Werbung ansehen für neues Stück',
+    'fate.embedPick.hint': 'Wähle ein Start-Item',
 
     'collect.header':    'Sammelziele',
 

@@ -119,6 +119,7 @@ export const ZH: Record<string, string> = {
     'fate.endlessMid':   '无尽模式 · {layer} 层',
     'fate.subtitle':     '{tag} · 共 {n} 格',
     'fate.hint':         '逆天改命：观看广告随机换一个本命方块',
+    'fate.embedPick.hint': '选择一个开场道具',
     'fate.reroll.failed':'广告加载失败，请稍后再试',
 
     // ---------- 收集模式 ----------

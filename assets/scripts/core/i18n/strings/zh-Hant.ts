@@ -117,6 +117,7 @@ export const ZH_HANT: Record<string, string> = {
     'fate.endlessMid':   '無盡模式 · {layer} 層',
     'fate.subtitle':     '{tag} · 共 {n} 格',
     'fate.hint':         '逆天改命：觀看廣告隨機換一個本命方塊',
+    'fate.embedPick.hint': '選擇一個開場道具',
 
     // ---------- 收集模式 ----------
     'collect.header':    '收集目標',

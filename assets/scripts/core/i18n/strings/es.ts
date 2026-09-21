@@ -115,6 +115,7 @@ export const ES: Record<string, string> = {
     'fate.endlessMid':   'Infinito · Capa {layer}',
     'fate.subtitle':     '{tag} · {n} celdas',
     'fate.hint':         'Rerroll: ver anuncio para cambiar la pieza',
+    'fate.embedPick.hint': 'Elige un objeto inicial',
 
     // ---------- Collect mode ----------
     'collect.header':    'Objetivos de colección',
