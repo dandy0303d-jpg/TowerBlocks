@@ -332,17 +332,26 @@ export class HudController extends Component {
     @property({ type: Node, tooltip: 'boom1 按钮的"选中"高亮节点（脚本 setActive 控制）' })
     authoredEmbedBoomSelectMark: Node | null = null;
 
+    @property({ type: Label, tooltip: 'boom1 按钮上的数量 Label（脚本会写 "x N" / "-"）' })
+    authoredEmbedBoomCountLabel: Label | null = null;
+
     @property({ type: Button, tooltip: '选项 2：1 级横向爆破（row1 bomb）— 点击 → 切换选中' })
     authoredEmbedRowBombButton: Button | null = null;
 
     @property({ type: Node, tooltip: 'row1 按钮的"选中"高亮节点（脚本 setActive 控制）' })
     authoredEmbedRowBombSelectMark: Node | null = null;
 
+    @property({ type: Label, tooltip: 'row1 按钮上的数量 Label（脚本会写 "x N" / "-"）' })
+    authoredEmbedRowBombCountLabel: Label | null = null;
+
     @property({ type: Button, tooltip: '选项 3：拆迁队（wrecker）— 点击 → 切换选中' })
     authoredEmbedWreckerButton: Button | null = null;
 
     @property({ type: Node, tooltip: 'wrecker 按钮的"选中"高亮节点（脚本 setActive 控制）' })
     authoredEmbedWreckerSelectMark: Node | null = null;
+
+    @property({ type: Label, tooltip: 'wrecker 按钮上的数量 Label（脚本会写 "x N" / "-"）' })
+    authoredEmbedWreckerCountLabel: Label | null = null;
 
     @property({ type: Button, tooltip: '"开始"确认按钮（点击 → 带着当前选中的道具进入游戏）' })
     authoredEmbedStartButton: Button | null = null;
@@ -707,6 +716,15 @@ export class HudController extends Component {
      *  to skip the auto-dismiss timer clear path (there is no timer in
      *  picker mode) and to reset the picker root when the modal closes. */
     private _fateEmbedModeActive = false;
+    /** Server-authoritative count of each embed item, refreshed every
+     *  time the picker opens (see `_paintEmbedCounts`). Rendered onto
+     *  the three button labels; count=0 disables its button so a
+     *  player can't pick an item they don't own. */
+    private _embedCounts: Record<EmbedProp, number> = { boom1: 0, row1: 0, wrecker: 0 };
+    /** True while a `consumeBackpackItem` for the picker's Start click
+     *  is in flight — the Start button is greyed for the duration so
+     *  a double-tap doesn't fire a second consume. */
+    private _embedConsuming = false;
     /** Auto-dismiss timer id for the read-only fate preview shown when
      *  entering a level. Cleared in `hideFateModal` in case the user
      *  navigates away before it fires. */
@@ -3324,9 +3342,32 @@ export class HudController extends Component {
         if (this.authoredEmbedStartButton) {
             this.authoredEmbedStartButton.node.off('click');
             this.authoredEmbedStartButton.node.on('click', () => {
+                if (this._embedConsuming) return;   // debounce double-tap during network round-trip
                 const picked = this._embedPicked;
                 console.log(`[FateEmbedPicker] START clicked, picked=${picked ?? 'none'}`);
-                this._resolveEmbedAndClose(picked);
+                if (!picked) {
+                    // No item to consume — resolve immediately.
+                    this._resolveEmbedAndClose(null);
+                    return;
+                }
+                // Debit server-side FIRST — client-side embed injection
+                // must only fire after the server confirms the debit.
+                this._embedConsuming = true;
+                if (this.authoredEmbedStartButton) this.authoredEmbedStartButton.interactable = false;
+                consumeBackpackItem(picked).then((r) => {
+                    console.log(`[FateEmbedPicker] consume OK ${picked} → remaining ${r.count}`);
+                    this._resolveEmbedAndClose(picked);
+                }).catch((err) => {
+                    console.warn(`[FateEmbedPicker] consume failed for ${picked}:`, err);
+                    this._embedConsuming = false;
+                    if (this.authoredEmbedStartButton) this.authoredEmbedStartButton.interactable = true;
+                    // Refetch server truth so the label updates (probably
+                    // 0 now if it was a not-enough error). Selection clears
+                    // in _paintEmbedCounts if the count fell to 0.
+                    fetchBackpack().then((res) => {
+                        if (this._fateEmbedModeActive) this._paintEmbedCounts(res.items);
+                    }).catch(() => { /* stay on cached */ });
+                });
             }, this);
             const lab = this.authoredEmbedStartLabel
                      ?? this.authoredEmbedStartButton.getComponentInChildren(Label);
@@ -4053,9 +4094,27 @@ export class HudController extends Component {
         this._embedPicked = null;
         this._embedResolve = onStart;
         this._fateEmbedModeActive = true;
+        this._embedConsuming = false;
         if (this.authoredEmbedPickerRoot) this.authoredEmbedPickerRoot.active = true;
         this._refreshEmbedSelectMarks();
         if (this.authoredEmbedStartLabel) this.authoredEmbedStartLabel.string = t('fate.start');
+        if (this.authoredEmbedStartButton) this.authoredEmbedStartButton.interactable = true;
+
+        // Populate counts optimistically from cache so the labels don't
+        // flash empty during the network round-trip; then fetch fresh
+        // and repaint. If the network fails we keep the cached values.
+        const cached = getCachedBackpack(60_000);
+        if (cached) this._paintEmbedCounts(cached.items);
+        else this._paintEmbedCounts([]);   // renders "-" placeholders + disables buttons
+        fetchBackpack().then((r) => {
+            // Only apply if this picker session is still current — a
+            // fast player who closed + reopened before the fetch resolved
+            // shouldn't have the stale reply stomp their new state.
+            if (!this._fateEmbedModeActive) return;
+            this._paintEmbedCounts(r.items);
+        }).catch((err) => {
+            console.warn('[FateEmbedPicker] backpack fetch failed:', err);
+        });
 
         // Cancel any pending preview timer left over from a previous
         // preview open — the picker is stay-open until 开始.
@@ -4065,10 +4124,43 @@ export class HudController extends Component {
         this.fateOverlay.active = true;
     }
 
+    /** Sync `_embedCounts` from a backpack items list, then paint the
+     *  three button labels + disable buttons that have zero count. */
+    private _paintEmbedCounts(items: Array<{ id: string; count: number }>): void {
+        // Reset then apply — items missing from the list mean 0 owned.
+        this._embedCounts = { boom1: 0, row1: 0, wrecker: 0 };
+        for (const it of items) {
+            if (it.id === 'boom1'   && it.count > 0) this._embedCounts.boom1   = it.count;
+            if (it.id === 'row1'    && it.count > 0) this._embedCounts.row1    = it.count;
+            if (it.id === 'wrecker' && it.count > 0) this._embedCounts.wrecker = it.count;
+        }
+        const fmt = (n: number) => (n > 0 ? `x${n}` : '-');
+        if (this.authoredEmbedBoomCountLabel)    this.authoredEmbedBoomCountLabel.string    = fmt(this._embedCounts.boom1);
+        if (this.authoredEmbedRowBombCountLabel) this.authoredEmbedRowBombCountLabel.string = fmt(this._embedCounts.row1);
+        if (this.authoredEmbedWreckerCountLabel) this.authoredEmbedWreckerCountLabel.string = fmt(this._embedCounts.wrecker);
+        // Disable interaction for zero-count options so the player
+        // can't pick something they don't own. Selected-but-now-zero
+        // (extremely unlikely — count only shrinks between picker
+        // opens) is cleared here too.
+        if (this.authoredEmbedBoomButton)    this.authoredEmbedBoomButton.interactable    = this._embedCounts.boom1   > 0;
+        if (this.authoredEmbedRowBombButton) this.authoredEmbedRowBombButton.interactable = this._embedCounts.row1    > 0;
+        if (this.authoredEmbedWreckerButton) this.authoredEmbedWreckerButton.interactable = this._embedCounts.wrecker > 0;
+        if (this._embedPicked && this._embedCounts[this._embedPicked] === 0) {
+            this._embedPicked = null;
+            this._refreshEmbedSelectMarks();
+        }
+    }
+
     /** Toggle picker state — tapping the currently-picked option
-     *  deselects it, tapping the other option switches. Called from the
-     *  two @property click handlers. */
+     *  deselects it, tapping another option switches. Called from the
+     *  three @property click handlers. Guards against picking an item
+     *  the player doesn't own (defense in depth — the button should
+     *  already be non-interactable in that case). */
     private _togglePickedEmbed(next: EmbedProp): void {
+        if (this._embedCounts[next] <= 0) {
+            console.log(`[FateEmbedPicker] ignore pick — ${next} count=0`);
+            return;
+        }
         this._embedPicked = (this._embedPicked === next) ? null : next;
         this._refreshEmbedSelectMarks();
     }
