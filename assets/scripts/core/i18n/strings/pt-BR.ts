@@ -112,6 +112,7 @@ export const PT_BR: Record<string, string> = {
     'fate.endlessMid':   'Infinito · Camada {layer}',
     'fate.subtitle':     '{tag} · {n} células',
     'fate.hint':         'Reroll: assista anúncio para trocar a peça',
+    'fate.embedPick.hint': 'Escolha um item inicial',
 
     'collect.header':    'Objetivos',
 

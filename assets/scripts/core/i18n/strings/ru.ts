@@ -107,6 +107,7 @@ export const RU: Record<string, string> = {
     'fate.endlessMid':   'Бесконечный · Слой {layer}',
     'fate.subtitle':     '{tag} · {n} клеток',
     'fate.hint':         'Изменить судьбу: смотри рекламу для замены блока',
+    'fate.embedPick.hint': 'Выбери стартовый предмет',
 
     'collect.header':    'Цели сбора',
 

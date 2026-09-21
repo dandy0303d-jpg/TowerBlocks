@@ -125,6 +125,7 @@ export const KO: Record<string, string> = {
     'fate.endlessMid':   '무한 모드 · {layer}층',
     'fate.subtitle':     '{tag} · {n}칸',
     'fate.hint':         '운명을 바꿔라: 광고를 보고 새 운명 블록으로 교체',
+    'fate.embedPick.hint': '오프닝 아이템을 선택하세요',
 
     // ---------- Level select ----------
     'level.name':        '스테이지 {n}',

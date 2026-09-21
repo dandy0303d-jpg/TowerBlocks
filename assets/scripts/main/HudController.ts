@@ -372,6 +372,9 @@ export class HudController extends Component {
     @property({ type: Label, tooltip: '"开始"按钮上的 Label（脚本会写 t("fate.start")）— 可空' })
     authoredEmbedStartLabel: Label | null = null;
 
+    @property({ type: Label, tooltip: '选择器提示 Label（"选择一个开场道具"）— 脚本会写 t("fate.embedPick.hint") 并跟随 i18n 切换' })
+    authoredEmbedHintLabel: Label | null = null;
+
     // ============================================================
     //  Authored HUD — 暂停弹窗
     // ============================================================
@@ -3386,6 +3389,11 @@ export class HudController extends Component {
                      ?? this.authoredEmbedStartButton.getComponentInChildren(Label);
             if (lab) this.trackI18nLabel(lab, 'fate.start');
         }
+        // Picker hint label — track for i18n so it updates when the
+        // player changes UI language mid-game.
+        if (this.authoredEmbedHintLabel) {
+            this.trackI18nLabel(this.authoredEmbedHintLabel, 'fate.embedPick.hint');
+        }
     }
 
 
@@ -4115,6 +4123,7 @@ export class HudController extends Component {
         this._resetEmbedPickerButtons();
         this._refreshEmbedSelectMarks();
         if (this.authoredEmbedStartLabel) this.authoredEmbedStartLabel.string = t('fate.start');
+        if (this.authoredEmbedHintLabel)  this.authoredEmbedHintLabel.string  = t('fate.embedPick.hint');
         if (this.authoredEmbedStartButton) {
             this.authoredEmbedStartButton.interactable = true;
             this.authoredEmbedStartButton.node.active = true;

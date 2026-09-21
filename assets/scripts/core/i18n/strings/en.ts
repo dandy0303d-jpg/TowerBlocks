@@ -116,6 +116,7 @@ export const EN: Record<string, string> = {
     'fate.endlessMid':   'Endless · Layer {layer}',
     'fate.subtitle':     '{tag} · {n} cells',
     'fate.hint':         'Reroll: watch an ad to swap for a random fate piece',
+    'fate.embedPick.hint': 'Choose an opening item',
     'fate.reroll.failed':'Ad unavailable, try again later',
 
     // ---------- Collect mode ----------

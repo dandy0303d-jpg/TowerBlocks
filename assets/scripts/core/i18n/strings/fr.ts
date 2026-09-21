@@ -106,6 +106,7 @@ export const FR: Record<string, string> = {
     'fate.endlessMid':   'Infini · Étage {layer}',
     'fate.subtitle':     '{tag} · {n} cases',
     'fate.hint':         'Reroll : regarde une pub pour changer',
+    'fate.embedPick.hint': 'Choisis un objet de départ',
 
     'collect.header':    'Objectifs',
 
