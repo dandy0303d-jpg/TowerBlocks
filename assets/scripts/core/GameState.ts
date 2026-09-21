@@ -889,10 +889,35 @@ export class GameState {
      *  so the level-mode reserved zone (the black/gray foundation)
      *  is untouched — colored cells settle onto the top of the
      *  reserved zone rather than being scooped into it. Endless-like
-     *  modes have no reserved zone, so the whole tower compresses. */
+     *  modes have no reserved zone, so the whole tower compresses.
+     *
+     *  Follow-up: any rows that end up fully packed after the gravity
+     *  settle are immediately cleared via the standard `clearLines`
+     *  pipeline (flash FX, stone HP decrement, chest progress hooks
+     *  — all the usual side effects). Score bonus is intentionally
+     *  NOT applied — the player paid a backpack item for the clear,
+     *  layering score points on top would double-dip. */
     applyGravityPress(): void {
         if (!this.state.board || this.state.board.length === 0) return;
-        applyColumnGravity(this.state, this.computeReservedTop());
+        const reservedTop = this.computeReservedTop();
+        applyColumnGravity(this.state, reservedTop);
+        // Sweep any newly-completed rows. Chest progress is credited
+        // (fair — the player did clear those rows, potion or not);
+        // score bonus is omitted for the reason above.
+        const result = clearLines(this.state, reservedTop, this.makeClearHooks());
+        if (result.fullyCleared > 0) {
+            this._lastClearLinesFullyCleared = result.fullyCleared;
+            this.lines += result.fullyCleared;
+            this.hooks.onLinesChanged?.(this.lines);
+            const chests = this.levelProgress.consume(result.fullyCleared);
+            for (let i = 0; i < chests; i++) this.grantOneChest();
+            // Also fire the natural-clears hook so screen-shake +
+            // downstream systems that hook on multi-line clears see
+            // the event.
+            if (result.fullyCleared >= 1) {
+                this.hooks.onNaturalRowClears?.(result.fullyCleared);
+            }
+        }
     }
 
     /** Scan the just-locked `piece` for any `box3` bomb tags and
