@@ -26,7 +26,7 @@ import { registerPlayer, updatePlayerProfile, fetchPlayerProfile, refreshPlayerT
 import { AnalyticsApi } from './AnalyticsApi';
 import type { DailyFreeState } from './LeaderboardApi';
 import { setBearerToken } from './Http';
-import { getLang } from './i18n/I18n';
+import { getLang, subscribe as subscribeLang } from './i18n/I18n';
 
 const UUID_KEY    = 'tt.player.uuid';
 const NAME_KEY    = 'tt.player.name';
@@ -456,3 +456,31 @@ class Profile {
 
 /** Module-singleton — everywhere in the game reads from this. */
 export const PlayerProfile = new Profile();
+
+// ---------------------------------------------------------------------------
+// Language-change → server sync
+//
+// When the player changes UI language mid-session, push it to the server
+// so subsequent leaderboard `?lang=` queries include their score in the
+// new cohort. Fire-and-forget: token refresh piggybacks the lang payload
+// (see LeaderboardApi.refreshPlayerToken). If offline / not yet
+// registered we skip — next session's boot-time refresh will heal.
+// ---------------------------------------------------------------------------
+subscribeLang(() => {
+    // Guard: skip if we never completed a real register (no persisted
+    // token means the server doesn't have a row for us to update).
+    try {
+        const hasToken = !!sys.localStorage.getItem(TOKEN_KEY);
+        if (!hasToken) return;
+    } catch (_) { return; }
+
+    refreshPlayerToken(getLang()).then((r) => {
+        try {
+            sys.localStorage.setItem(TOKEN_KEY, r.token);
+            sys.localStorage.setItem(TOKEN_EXP_KEY, String(r.expEpochSec));
+            setBearerToken(r.token);
+        } catch (_) { /* ignore */ }
+    }).catch((err) => {
+        console.warn('[PlayerProfile] lang-change refresh failed (will retry next session):', err);
+    });
+});
