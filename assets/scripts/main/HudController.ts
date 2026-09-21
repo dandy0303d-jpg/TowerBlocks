@@ -4175,11 +4175,19 @@ export class HudController extends Component {
         }
     }
 
-    /** Restore active + scale + opacity on the three embed buttons.
-     *  Called by `showFateEmbedPicker` on every open so the previous
-     *  session's pick-to-centre animation doesn't leave a button
-     *  shrunk / hidden. Position is Layout-controlled so we don't
-     *  touch it. */
+    /** Snapshot of each embed-button's original local position, taken
+     *  the FIRST time `_resetEmbedPickerButtons` runs (i.e. before
+     *  any pick-to-centre animation has moved them). We can't rely on
+     *  a parent Layout to reposition them on reopen — Layout only
+     *  re-lays-out on child add/remove or an explicit call, so the
+     *  animated position sticks and the buttons stack in the middle
+     *  on the second open. */
+    private _embedButtonHomePos: Map<Node, Vec3> = new Map();
+
+    /** Restore active + scale + opacity + position on the three embed
+     *  buttons. Called by `showFateEmbedPicker` on every open so the
+     *  previous session's pick-to-centre animation doesn't leave a
+     *  button shrunk / hidden / mid-flight. */
     private _resetEmbedPickerButtons(): void {
         for (const btn of [this.authoredEmbedBoomButton, this.authoredEmbedRowBombButton, this.authoredEmbedWreckerButton]) {
             if (!btn) continue;
@@ -4188,6 +4196,30 @@ export class HudController extends Component {
             btn.node.setScale(1, 1, 1);
             const op = btn.node.getComponent(UIOpacity);
             if (op) op.opacity = 255;
+            // Snapshot original position on first pass, restore
+            // afterwards. First-open positions are Layout-authored;
+            // we cache them so re-opens land in the same spot even
+            // after our tween has moved the node.
+            const home = this._embedButtonHomePos.get(btn.node);
+            if (home) {
+                btn.node.setPosition(home);
+            } else {
+                this._embedButtonHomePos.set(btn.node, btn.node.position.clone());
+            }
+        }
+        // If there's a Layout anywhere along the button-parent chain,
+        // force a recompute — snapshot restore alone should suffice,
+        // this is belt-and-suspenders. Walks up from each button's
+        // direct parent since the Layout can live on any container.
+        const seen: Set<Node> = new Set();
+        for (const btn of [this.authoredEmbedBoomButton, this.authoredEmbedRowBombButton, this.authoredEmbedWreckerButton]) {
+            let n: Node | null = btn?.node.parent ?? null;
+            while (n && !seen.has(n)) {
+                seen.add(n);
+                const layout = n.getComponent(Layout);
+                if (layout) { layout.updateLayout(); break; }
+                n = n.parent;
+            }
         }
     }
 
@@ -4251,10 +4283,12 @@ export class HudController extends Component {
         this._refreshEmbedSelectMarks();
 
         const node = button.node;
-        // Bump the icon to the picker root's last-sibling so it renders
-        // ABOVE the burst (which we're about to add as a fresh child of
-        // root). Otherwise the burst can occlude the icon mid-fly.
-        node.setSiblingIndex(9999);
+        // Note: intentionally do NOT touch node.setSiblingIndex here.
+        // The picker's parent is (typically) a Layout, which re-lays-
+        // out children by sibling order — bumping the sibling index
+        // permanently reorders it, breaking re-open positions. We
+        // instead put the burst node BEHIND every child by inserting
+        // it at index 0 below.
         // Ensure a UIOpacity so we can fade later.
         const opacity = node.getComponent(UIOpacity) ?? node.addComponent(UIOpacity);
         opacity.opacity = 255;
@@ -4270,9 +4304,22 @@ export class HudController extends Component {
         // Spawn the burst node as a child of picker root, centred at (0,0)
         // in root-local space. Graphics circle expands from r=0 → r=140
         // while opacity fades 220 → 0.
+        // Parent the burst to the fate overlay (or the picker root's
+        // parent as a fallback) rather than the picker root itself —
+        // adding a child to a Layout-managed node re-lays-out siblings,
+        // which would shove the three buttons around while one of them
+        // is flying to centre. The overlay has no Layout, so it's safe.
+        const burstParent = this.fateOverlay ?? root.parent ?? root;
         const burst = new Node('EmbedPickBurst');
-        root.addChild(burst);
-        burst.setPosition(0, 0, 0);
+        burstParent.addChild(burst);
+        // Position the burst at the picker root's centre in the
+        // burst-parent's local space.
+        const rootWorld = new Vec3();
+        root.getWorldPosition(rootWorld);
+        const burstParentUT = burstParent.getComponent(UITransform);
+        const burstLocal = new Vec3();
+        if (burstParentUT) burstParentUT.convertToNodeSpaceAR(rootWorld, burstLocal);
+        burst.setPosition(burstLocal);
         const burstUT = burst.addComponent(UITransform);
         burstUT.setContentSize(300, 300);
         const gfx = burst.addComponent(Graphics);
