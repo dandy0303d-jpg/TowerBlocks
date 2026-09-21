@@ -338,6 +338,12 @@ export class HudController extends Component {
     @property({ type: Node, tooltip: 'row1 按钮的"选中"高亮节点（脚本 setActive 控制）' })
     authoredEmbedRowBombSelectMark: Node | null = null;
 
+    @property({ type: Button, tooltip: '选项 3：拆迁队（wrecker）— 点击 → 切换选中' })
+    authoredEmbedWreckerButton: Button | null = null;
+
+    @property({ type: Node, tooltip: 'wrecker 按钮的"选中"高亮节点（脚本 setActive 控制）' })
+    authoredEmbedWreckerSelectMark: Node | null = null;
+
     @property({ type: Button, tooltip: '"开始"确认按钮（点击 → 带着当前选中的道具进入游戏）' })
     authoredEmbedStartButton: Button | null = null;
 
@@ -3308,6 +3314,13 @@ export class HudController extends Component {
                 this._togglePickedEmbed('row1');
             }, this);
         }
+        if (this.authoredEmbedWreckerButton) {
+            this.authoredEmbedWreckerButton.node.off('click');
+            this.authoredEmbedWreckerButton.node.on('click', () => {
+                console.log('[FateEmbedPicker] wrecker clicked');
+                this._togglePickedEmbed('wrecker');
+            }, this);
+        }
         if (this.authoredEmbedStartButton) {
             this.authoredEmbedStartButton.node.off('click');
             this.authoredEmbedStartButton.node.on('click', () => {
@@ -4060,13 +4073,16 @@ export class HudController extends Component {
         this._refreshEmbedSelectMarks();
     }
 
-    /** Sync the two select-mark nodes to the current `_embedPicked`. */
+    /** Sync the three select-mark nodes to the current `_embedPicked`. */
     private _refreshEmbedSelectMarks(): void {
         if (this.authoredEmbedBoomSelectMark) {
             this.authoredEmbedBoomSelectMark.active = this._embedPicked === 'boom1';
         }
         if (this.authoredEmbedRowBombSelectMark) {
             this.authoredEmbedRowBombSelectMark.active = this._embedPicked === 'row1';
+        }
+        if (this.authoredEmbedWreckerSelectMark) {
+            this.authoredEmbedWreckerSelectMark.active = this._embedPicked === 'wrecker';
         }
     }
 
