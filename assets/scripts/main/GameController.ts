@@ -4026,20 +4026,31 @@ export class GameController extends Component {
             .start();
     }
 
-    /** Backpack item — 重力压制. Freezes the falling piece briefly,
-     *  runs `applyColumnGravity` over the full tower so every colored
-     *  cell settles down to fill empty spaces below it, then resumes
-     *  the piece drop. Kept short (300 ms pause) so the player sees
-     *  the "before / after" state without disrupting flow. */
+    /** Backpack item — 重力压制. Timeline:
+     *    t = 0.0 s — pause piece, run column gravity so colored cells
+     *                sink into every empty space below them (task
+     *                zone only; reserved foundation stays put).
+     *    t = 0.5 s — sweep any rows that ended up fully packed and
+     *                clear them via the standard `clearLines`
+     *                pipeline (flash FX, chest progress, no score
+     *                double-dip).
+     *    t = 0.8 s — resume piece drop.
+     *
+     *  Split-and-delayed so the player has time to see the settled
+     *  state before rows vanish, per the design brief. */
     public applyGravityPressFromBackpack(): void {
         const gs = this.gameState;
         if (!gs) return;
         gs.modalPaused = true;
         gs.applyGravityPress();
-        // Small settle window so the player registers the change
-        // before the piece starts falling again. Runs on a Node-less
-        // scheduler tick — no need for a target node.
-        this.scheduleOnce(() => { gs.modalPaused = false; }, 0.3);
+        // Half-second pause so the player registers the new packed
+        // state, THEN the clear pass runs (with its own flash FX).
+        this.scheduleOnce(() => {
+            gs.applyGravityPressClearSweep();
+            // Small trailing window so the clear FX has a beat to
+            // read before the piece starts falling again.
+            this.scheduleOnce(() => { gs.modalPaused = false; }, 0.3);
+        }, 0.5);
     }
 
     /** Place the warning ring `ENDLESS_HEIGHT_LIMIT` rows above the
