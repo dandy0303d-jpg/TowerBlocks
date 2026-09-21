@@ -4322,6 +4322,118 @@ export class HudController extends Component {
             .start();
     }
 
+    /** Phase B of the embed-pick intro: yellow orb + trail arcs from
+     *  screen centre → up → down to the target cell's on-screen
+     *  position, then a golden glow pulses on the cell.
+     *
+     *  Called by GameController AFTER `playLevelAssembly` completes
+     *  and BEFORE `state.modalPaused` is cleared (so the falling piece
+     *  stays frozen while the FX plays).
+     *
+     *  `uiPos` is the target cell projected into this Canvas's UI
+     *  coordinate space (centred at 0,0). Caller is responsible for
+     *  the 3D→UI conversion (needs the game camera + cubeManager).
+     *
+     *  Total wall time ≈ 900ms (500 arc + 400 glow).
+     *  Fires `onDone` once fully finished. */
+    public playEmbedRevealFx(uiPos: Vec3, _kind: EmbedProp, onDone: () => void): void {
+        const canvasNode = director.getScene()?.getComponentInChildren(Canvas)?.node;
+        if (!canvasNode) { onDone(); return; }
+
+        const overlay = new Node('EmbedRevealFx');
+        overlay.layer = canvasNode.layer;
+        canvasNode.addChild(overlay);
+        // Sit above every regular child so nothing occludes the arc.
+        overlay.setSiblingIndex(9999);
+        const ut = overlay.addComponent(UITransform);
+        ut.setContentSize(1, 1);   // canvas-space anchored at (0,0); Graphics draws in this space
+        const gfx = overlay.addComponent(Graphics);
+
+        // Quadratic bezier P0 → P1 (control) → P2:
+        //   P0 = canvas centre (0,0)
+        //   P2 = target cell UI pos
+        //   P1 = midpoint, lifted 260 px above the higher of P0/P2 so
+        //        the orb rises before descending to the cell (matches
+        //        the "从上方招手" arc direction).
+        const P0x = 0, P0y = 0;
+        const P2x = uiPos.x, P2y = uiPos.y;
+        const midX = (P0x + P2x) / 2;
+        const midY = Math.max(P0y, P2y) + 260;
+        const P1x = midX, P1y = midY;
+
+        const flyDurMs  = 500;
+        const glowDurMs = 400;
+        const startTime = Date.now();
+        const history: Array<{ x: number; y: number }> = [];
+        const HISTORY_LEN = 10;
+        let arrived = false;
+        let arrivedAt = 0;
+
+        const drawFrame = () => {
+            const now = Date.now();
+            gfx.clear();
+
+            if (!arrived) {
+                const t = Math.min(1, (now - startTime) / flyDurMs);
+                const s = 1 - t;
+                const x = s*s*P0x + 2*s*t*P1x + t*t*P2x;
+                const y = s*s*P0y + 2*s*t*P1y + t*t*P2y;
+
+                history.push({ x, y });
+                if (history.length > HISTORY_LEN) history.shift();
+
+                // Trail — fading golden strip from oldest → newest.
+                gfx.lineWidth = 10;
+                for (let i = 1; i < history.length; i++) {
+                    const a = i / history.length;
+                    gfx.strokeColor = new Color(255, 220, 90, Math.floor(a * 180));
+                    gfx.moveTo(history[i - 1].x, history[i - 1].y);
+                    gfx.lineTo(history[i].x, history[i].y);
+                    gfx.stroke();
+                }
+                // Outer halo
+                gfx.fillColor = new Color(255, 220, 100, 180);
+                gfx.circle(x, y, 26);
+                gfx.fill();
+                // Mid glow
+                gfx.fillColor = new Color(255, 235, 150, 220);
+                gfx.circle(x, y, 16);
+                gfx.fill();
+                // Core
+                gfx.fillColor = new Color(255, 252, 220, 255);
+                gfx.circle(x, y, 8);
+                gfx.fill();
+
+                if (t >= 1) { arrived = true; arrivedAt = now; }
+            } else {
+                // Golden pulse on the target cell (5 步: 放大→缩小→揭示).
+                // Emulated as ring expand + fade + inner glow throb.
+                const t = Math.min(1, (now - arrivedAt) / glowDurMs);
+                const puff = Math.sin(Math.PI * t);   // 0 → 1 → 0 shape
+                const rOuter = 30 + t * 130;
+                const rInner = 20 + puff * 40;
+                const alphaOuter = Math.floor(220 * (1 - t));
+                const alphaInner = Math.floor(200 * puff);
+
+                gfx.lineWidth = 5;
+                gfx.strokeColor = new Color(255, 220, 80, alphaOuter);
+                gfx.circle(P2x, P2y, rOuter);
+                gfx.stroke();
+
+                gfx.fillColor = new Color(255, 245, 170, alphaInner);
+                gfx.circle(P2x, P2y, rInner);
+                gfx.fill();
+
+                if (t >= 1) {
+                    this.unschedule(drawFrame);
+                    overlay.destroy();
+                    onDone();
+                }
+            }
+        };
+        this.schedule(drawFrame, 0);
+    }
+
     /** Fire the caller's onStart with the picked embed, then close. */
     private _resolveEmbedAndClose(picked: EmbedProp | null): void {
         const cb = this._embedResolve;

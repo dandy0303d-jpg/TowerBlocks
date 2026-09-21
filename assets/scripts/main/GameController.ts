@@ -26,6 +26,9 @@ import {
     tween,
     Button,
     Mesh,
+    Camera,
+    Canvas,
+    UITransform,
 } from 'cc';
 import { COLS, COLORS, CellValue, ENDLESS_HEIGHT_LIMIT, ENDLESS_GRAY_CAP } from '../core/Constants';
 import { isColoredCell } from '../core/Board';
@@ -4167,6 +4170,14 @@ export class GameController extends Component {
             // the completion via LevelProgress.
             this._activeLevelIdx = idx;
             this.gameState.startLevel(lvl, embed);
+            // Pre-game embed picker (Lvl 16+): if startLevel actually
+            // injected a prop, freeze piece movement via modalPaused so
+            // the reveal FX (yellow orb arc + cell glow) can play on
+            // top of a static tower right after the assembly animation.
+            // Cleared by `playEmbedRevealFxIfPending` when the FX ends.
+            if (this.gameState.lastEmbedInjection) {
+                this.gameState.modalPaused = true;
+            }
             // Snap the HUD level timer back to its top-strip rest
             // position + un-freeze its value. Otherwise the previous
             // level's tween-to-center parking would still be in effect
@@ -4182,6 +4193,66 @@ export class GameController extends Component {
         } catch (err) {
             log(`[TowerBlocks] failed to load level ${idx + 1}: ${(err as Error).message}`);
         }
+    }
+
+    /** Phase B of the pre-game embed-picker sequence — called by
+     *  MenuController after `playLevelAssembly` completes.
+     *
+     *  When `gameState.lastEmbedInjection` is non-null (a Lvl 16+ picker
+     *  actually placed a prop), computes the target cell's on-screen
+     *  UI position via the main perspective camera + Canvas transform,
+     *  then hands off to HudController.playEmbedRevealFx for the
+     *  Graphics-based arc + glow animation. Clears `modalPaused` and
+     *  the injection record after the FX finishes so the piece can
+     *  start falling.
+     *
+     *  Idempotent + a fast no-op when no embed injection is pending
+     *  (early return before any node work). */
+    public playEmbedRevealFxIfPending(onDone: () => void): void {
+        const gs = this.gameState;
+        const inj = gs?.lastEmbedInjection;
+        if (!gs || !inj || !this.cubeManager) { onDone(); return; }
+
+        // 3D world position of the target cell.
+        const totalRows = gs.state.board.length;
+        const worldPos = this.cubeManager.cellToWorldPosition(inj.c, inj.r, totalRows);
+
+        // Find the main perspective camera in the scene (same pattern
+        // as ColBlastDetonateEffect uses to auto-locate one).
+        const scene = director.getScene();
+        let camera: Camera | null = null;
+        if (scene) {
+            const cams = scene.getComponentsInChildren(Camera);
+            for (const c of cams) {
+                if (c.projection === Camera.ProjectionType.PERSPECTIVE && c.node.activeInHierarchy) {
+                    camera = c;
+                    break;
+                }
+            }
+            if (!camera && cams.length > 0) camera = cams[0];
+        }
+        const canvasNode = scene?.getComponentInChildren(Canvas)?.node;
+        const canvasUT = canvasNode?.getComponent(UITransform);
+        const hud = this.hudController as any;
+        if (!camera || !canvasUT || !hud || typeof hud.playEmbedRevealFx !== 'function') {
+            // FX pipeline missing — clear the pause + skip the visuals.
+            gs.modalPaused = false;
+            gs.lastEmbedInjection = null;
+            onDone();
+            return;
+        }
+
+        // World → screen pixels → Canvas UI space (centre-origin).
+        const screenPixel = new Vec3();
+        camera.worldToScreen(worldPos, screenPixel);
+        const uiPos = new Vec3();
+        canvasUT.convertToNodeSpaceAR(screenPixel, uiPos);
+
+        hud.playEmbedRevealFx(uiPos, inj.kind, () => {
+            gs.modalPaused = false;
+            gs.lastEmbedInjection = null;
+            onDone();
+        });
     }
 
     /** Level-entry transition — every board cube the level just loaded
