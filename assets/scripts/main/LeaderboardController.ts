@@ -389,6 +389,10 @@ export class LeaderboardController extends Component {
 
         // Re-translate everything on language change while open;
         // hidden panels get a fresh render at next `show()` anyway.
+        // Also wipe cached entries — under scope='lang' the cache
+        // belonged to the OLD language cohort, so re-using it would
+        // paint the wrong list until the network re-fetch resolves.
+        // Cheap to drop: refresh() below fires a fresh fetch anyway.
         this.i18nUnsub = subscribeI18n(() => {
             if (!this.panel?.active) return;
             if (this.titleLabel) this.titleLabel.string = t('leaderboard.title');
@@ -396,6 +400,8 @@ export class LeaderboardController extends Component {
                 const lab = this.backButton.getComponentInChildren(Label);
                 if (lab) lab.string = t('leaderboard.back');
             }
+            this.cachedEntries = {};
+            this.cachedMyRank = {};
             this.retranslateTabs();
             this.refresh();
         });
