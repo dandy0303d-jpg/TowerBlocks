@@ -4353,6 +4353,7 @@ export class HudController extends Component {
         camera: Camera,
         canvasUT: UITransform,
         _kind: EmbedProp,
+        onArrive: () => void,
         onDone: () => void,
     ): void {
         const canvasNode = canvasUT.node;
@@ -4444,7 +4445,15 @@ export class HudController extends Component {
                 gfx.circle(uiP.x, uiP.y, 8);
                 gfx.fill();
 
-                if (t >= 1) { arrived = true; arrivedAt = now; }
+                if (t >= 1) {
+                    arrived = true;
+                    arrivedAt = now;
+                    // Impact — commit the prop to state so the glow
+                    // pulse (about to draw below on the next frame)
+                    // reveals a freshly-formed embed overlay rather
+                    // than an already-visible one.
+                    try { onArrive(); } catch (e) { console.warn('[EmbedRevealFx] onArrive threw', e); }
+                }
             } else {
                 // Golden pulse on the target cell (放大 → 缩小 → 揭示).
                 const t = Math.min(1, (now - arrivedAt) / glowDurMs);

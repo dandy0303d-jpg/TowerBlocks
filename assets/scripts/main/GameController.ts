@@ -4272,11 +4272,24 @@ export class GameController extends Component {
         // HUD FX drives the 3D-arc-around-tower path itself; it needs
         // the 3D target world pos + camera + canvasUT to re-project
         // each frame.
-        hud.playEmbedRevealFx(worldPos, camera, canvasUT, inj.kind, () => {
-            gs.modalPaused = false;
-            gs.lastEmbedInjection = null;
-            onDone();
-        });
+        //
+        // Two callbacks:
+        //   onArrive — orb reached the cell → commit the prop to state
+        //              so `syncCubes` paints the overlay on the next
+        //              frame (glow pulse then reveals a REAL prop).
+        //   onDone   — glow finished → unfreeze piece drop.
+        hud.playEmbedRevealFx(
+            worldPos,
+            camera,
+            canvasUT,
+            inj.kind,
+            () => { gs.commitPendingEmbedProp(); },
+            () => {
+                gs.modalPaused = false;
+                gs.lastEmbedInjection = null;   // belt: commit already cleared it
+                onDone();
+            },
+        );
     }
 
     /** Level-entry transition — every board cube the level just loaded
