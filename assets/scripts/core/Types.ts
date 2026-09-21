@@ -32,10 +32,11 @@ export type BoomLevel = 1 | 2 | 3;
 /** Player-selectable embed prop offered by the pre-level fate picker
  *  from level 16 onwards. `'boom1'` → tier-1 boom (5-cell plus at the
  *  host cell's layer). `'row1'` → tier-1 row bomb (clears the row when
- *  it fills). Injected into a random colored cell by GameState.startLevel.
- *  See HudController.showFateEmbedPicker + MenuController's afterScatter
+ *  it fills). `'wrecker'` → wrecker (10-cell random sweep). Injected
+ *  into a random colored cell by GameState.startLevel. See
+ *  HudController.showFateEmbedPicker + MenuController's afterScatter
  *  branch for the entry-flow wiring. */
-export type EmbedProp = 'boom1' | 'row1';
+export type EmbedProp = 'boom1' | 'row1' | 'wrecker';
 
 /** A single tetromino in flight. */
 export interface Piece {

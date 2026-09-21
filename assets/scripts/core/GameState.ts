@@ -739,6 +739,14 @@ export class GameState {
             booms[pick.r][pick.c] = 1;
         } else if (embed === 'row1') {
             bombs[pick.r][pick.c] = 'row1';
+        } else if (embed === 'wrecker') {
+            // wreckers is nullable on the state — allocate lazily if
+            // the level's zone painter didn't provision it.
+            if (!this.state.boardWreckers) {
+                const cols = board[0]?.length ?? 0;
+                this.state.boardWreckers = board.map(() => new Array<true | null>(cols).fill(null));
+            }
+            this.state.boardWreckers[pick.r][pick.c] = true;
         }
         console.log(`[EmbedProp] injected ${embed} at r=${pick.r} c=${pick.c} (clean=${clean.length}/${anyColored.length})`);
     }
