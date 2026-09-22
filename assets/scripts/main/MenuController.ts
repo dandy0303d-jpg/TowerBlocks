@@ -1386,8 +1386,22 @@ export class MenuController extends Component {
             badge.active = true;
             const icon = this.authoredBadgeIcons[i];
             if (icon) {
-                const spr = badge.getComponent(Sprite) ?? badge.getComponentInChildren(Sprite);
-                if (spr) spr.spriteFrame = icon;
+                // If the template didn't carry a Sprite component, add
+                // one so the icon has somewhere to render. Playing it
+                // safe — the author might have intentionally used a
+                // Node with a decorative child that itself carries the
+                // Sprite; only add a fallback when neither the node
+                // nor any descendant has one.
+                let spr = badge.getComponent(Sprite) ?? badge.getComponentInChildren(Sprite);
+                if (!spr) {
+                    spr = badge.addComponent(Sprite);
+                    // Match UITransform size so the sprite fills the
+                    // authored badge slot instead of showing at the
+                    // sprite's native pixel size.
+                    const ut = badge.getComponent(UITransform);
+                    if (ut) spr.sizeMode = Sprite.SizeMode.CUSTOM;
+                }
+                spr.spriteFrame = icon;
             }
             // Diagnostic — surfaces "why can't I see my badge?" cases
             // (template unwired, sprite frame missing, size zero).
