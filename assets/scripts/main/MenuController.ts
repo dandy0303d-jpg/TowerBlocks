@@ -155,17 +155,29 @@ export class MenuController extends Component {
     //  method silently no-ops on missing pieces.
     // ================================================================
 
-    @property({ type: [Node], tooltip: '本命方块 9 关进度条的 9 个"已通关指示"节点。索引 0-8 对应组内第 1-9 关。脚本会在已通关关卡对应的节点上 setActive(true)，未通关的 setActive(false)。可空。' })
-    authoredFatePieceProgressSlots: Node[] = [];
+    @property({ type: Sprite, tooltip: '本命方块 9 关进度条的填充 Sprite（组件 Type = FILLED, FillType = HORIZONTAL, FillStart = 0）。脚本会写 fillRange = clearedInGroup / 9。可空。' })
+    authoredFatePieceProgressFill: Sprite | null = null;
 
-    @property({ type: Node, tooltip: '徽章容器 Node — 完成一整组本命方块 9 关就添加一枚徽章。建议挂 Layout 组件让徽章自动排列。留空时徽章功能整体禁用。' })
+    @property({ type: Label, tooltip: '本命方块 9 关进度条右侧的 "X/9" 文字 Label。脚本会写 "3/9" 格式。可空。' })
+    authoredFatePieceProgressLabel: Label | null = null;
+
+    @property({ type: Node, tooltip: '徽章横排容器 Node — 完成一整组本命方块 9 关就添加一枚徽章图标到里面。建议挂 Layout（HORIZONTAL）自动排列。留空时徽章展示整体禁用。' })
     authoredBadgesRoot: Node | null = null;
 
-    @property({ type: Node, tooltip: '徽章模板 Node（必须是 authoredBadgesRoot 的子节点或独立预制的原型）。首次 refresh 时会被脚本置为 inactive；每张徽章都是它的克隆。含一个 Sprite 组件用来贴徽章图。可空。' })
+    @property({ type: Node, tooltip: '徽章模板 Node（须是 authoredBadgesRoot 的子节点或独立预制的原型）。首次 refresh 时会被隐藏；每枚展示的徽章都是它的克隆。含一个 Sprite 组件贴徽章图。可空。' })
     authoredBadgeTemplate: Node | null = null;
 
     @property({ type: [SpriteFrame], tooltip: '徽章图标数组 — 索引 i 对应第 i 组本命方块（第 i*9+1..i*9+9 关）的徽章。留空或长度不够时，落后位置会 fallback 到模板自带的 Sprite。可空。' })
     authoredBadgeIcons: SpriteFrame[] = [];
+
+    @property({ type: Label, tooltip: '"已获得徽章 N 枚" 文字 Label。脚本会写 t("badges.earned", {n}) 并跟随 i18n 切换。可空。' })
+    authoredBadgeCountLabel: Label | null = null;
+
+    @property({ type: Number, tooltip: '徽章横排最多显示几枚（超出后要看全部就点右上角的徽章图鉴入口）。默认 5；改成 0 表示不限制。' })
+    authoredBadgeInlineMax: number = 5;
+
+    @property({ type: Button, tooltip: '右上角"徽章图鉴"按钮（点击 → 打开完整徽章面板）。目前脚本会 log 一条占位事件；等图鉴面板做好再接。可空。' })
+    authoredBadgeCollectionButton: Button | null = null;
 
     /** Main gameplay camera. Toggled off while the 3D level-select
      *  stage's own camera is rendering, so the two don't fight over
@@ -1269,24 +1281,34 @@ export class MenuController extends Component {
         return Math.floor((maxClearedIdx + 1) / LEVELS_PER_FATE_PIECE);
     }
 
-    /** Repaint the progress bar (9 slots — filled = cleared) and the
-     *  badge case (one badge per fully-completed fate piece).
-     *  Called after every `showForLevel` and after a successful level
-     *  clear so the UI stays in sync with LevelProgress. */
+    /** Repaint:
+     *    • Progress bar — a single filled Sprite whose `fillRange`
+     *      tracks `clearedInGroup / 9`, with an "X/9" label alongside.
+     *    • Badge case — a horizontal row of small badge icons, one
+     *      per fully-completed fate piece. Capped at
+     *      `authoredBadgeInlineMax` icons; overflow lives behind the
+     *      collection button (top-right entry point).
+     *    • Badge count label — "已获得徽章 N 枚" i18n.
+     *  Called after every `showForLevel` (fresh entry, post-clear
+     *  re-entry) so the UI stays in sync with LevelProgress. */
     public refreshFatePieceProgressUi(currentIdx: number): void {
         const maxCleared = LevelProgress.maxClearedIdx;
         const groupIdx   = this._fatePieceGroupIdx(currentIdx);
         const progress   = this._fatePieceProgressInGroup(maxCleared, groupIdx);
 
-        // ---- Progress bar: 9 slots ----
-        for (let i = 0; i < this.authoredFatePieceProgressSlots.length; i++) {
-            const slot = this.authoredFatePieceProgressSlots[i];
-            if (!slot || !slot.isValid) continue;
-            const on = i < progress;
-            if (slot.active !== on) slot.active = on;
+        // ---- Progress bar fill + label ----
+        if (this.authoredFatePieceProgressFill) {
+            this.authoredFatePieceProgressFill.fillRange = progress / LEVELS_PER_FATE_PIECE;
+        }
+        if (this.authoredFatePieceProgressLabel) {
+            this.authoredFatePieceProgressLabel.string = `${progress}/${LEVELS_PER_FATE_PIECE}`;
         }
 
         // ---- Badges ----
+        const badgeCount = this._earnedBadgeCount(maxCleared);
+        if (this.authoredBadgeCountLabel) {
+            this.authoredBadgeCountLabel.string = t('badges.earned', { n: badgeCount });
+        }
         if (!this.authoredBadgesRoot || !this.authoredBadgesRoot.isValid) return;
         const root = this.authoredBadgesRoot;
         // Hide the template on its first paint so it doesn't leak
@@ -1294,8 +1316,8 @@ export class MenuController extends Component {
         if (this.authoredBadgeTemplate && this.authoredBadgeTemplate.isValid) {
             this.authoredBadgeTemplate.active = false;
         }
-        // Wipe every child EXCEPT the template — badges are recreated
-        // each refresh from a clean slate (cheap: at most 220 nodes).
+        // Wipe our previously-cloned badges so the next paint is
+        // fresh. The template + any hand-authored decor stay.
         const template = this.authoredBadgeTemplate;
         const toDestroy: Node[] = [];
         for (const child of root.children) {
@@ -1304,16 +1326,19 @@ export class MenuController extends Component {
         }
         for (const c of toDestroy) if (c.isValid) c.destroy();
 
-        const badgeCount = this._earnedBadgeCount(maxCleared);
-        for (let i = 0; i < badgeCount; i++) {
+        // Inline cap — anything past the max lives in the collection
+        // panel behind the top-right button.
+        const inlineMax = this.authoredBadgeInlineMax > 0
+            ? this.authoredBadgeInlineMax
+            : badgeCount;
+        const showCount = Math.min(badgeCount, inlineMax);
+        for (let i = 0; i < showCount; i++) {
             const badge = template && template.isValid
                 ? instantiate(template)
                 : new Node(`Badge_${i}`);
             (badge as any)._isMenuBadge = true;
             badge.active = true;
             badge.parent = root;
-            // Assign per-piece icon if the author supplied one; fall
-            // back to whatever the template's Sprite already carries.
             const icon = this.authoredBadgeIcons[i];
             if (icon) {
                 const spr = badge.getComponent(Sprite) ?? badge.getComponentInChildren(Sprite);
@@ -2230,6 +2255,16 @@ export class MenuController extends Component {
         }
         this._refreshDevButtonsVisibility();
         subscribeSettings(() => this._refreshDevButtonsVisibility());
+        // Badge-collection button (top-right of the level-select
+        // stage). Panel is TODO — the click currently logs a marker
+        // so it's easy to spot in analytics that the entry point is
+        // being used before the panel ships.
+        if (this.authoredBadgeCollectionButton) {
+            this.authoredBadgeCollectionButton.node.off('click');
+            this.authoredBadgeCollectionButton.node.on('click', () => {
+                log('[MenuController] badge collection button clicked — panel not yet implemented');
+            }, this);
+        }
         // Initial paint of lock state — showModeSelect will refresh on
         // subsequent shows as progress changes.
         this._loadEndlessBestFromStorage();
