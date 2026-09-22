@@ -180,6 +180,16 @@ export class LevelSelectStage3D extends Component {
     @property
     cameraLookOffsetY: number = 3.0;
 
+    /** Extra vertical shift of the camera position, in world units.
+     *  Positive values move the camera UP, which frames the tower
+     *  LOWER on screen — useful for reserving room at the top of the
+     *  canvas for the back arrow / progress bar / badge row without
+     *  changing the pitch or the perceived focus of the shot. Applied
+     *  AFTER `cameraLookOffsetY` so the two knobs stay independent
+     *  (offset = focus tuning; shift = layout tuning). */
+    @property({ range: [-10, 20, 0.5], slide: true, tooltip: '塔在画面里的整体下移量（世界单位）。数值越大 → 相机越高 → 塔在屏幕上越靠下。用来给顶部 UI（back / 进度条 / 徽章）留出空间。' })
+    frameShiftY: number = 4;
+
     /** Distance from tower axis for camera framing. */
     @property
     cameraDistance: number = 12;
@@ -1602,7 +1612,11 @@ export class LevelSelectStage3D extends Component {
         // the visual TOP of the frame; older levels sit lower.
         const bodyStartRow = FOUNDATION_ROWS;
         const focusY = (bodyStartRow + LEVEL_BODY_ROWS / 2) * this.rowHeight;
-        this.camera3D.setPosition(0, focusY + this.cameraLookOffsetY, this.cameraDistance);
+        // `frameShiftY` moves the camera up (tower renders lower) to
+        // reserve headroom for the 2D overlay (back arrow, progress
+        // bar, badges). Independent of the focus offset so tuning one
+        // doesn't fight the other.
+        this.camera3D.setPosition(0, focusY + this.cameraLookOffsetY + this.frameShiftY, this.cameraDistance);
         // Aim down-forward by pitch degrees.
         this.camera3D.setRotationFromEuler(this.cameraPitchDeg, 0, 0);
     }
