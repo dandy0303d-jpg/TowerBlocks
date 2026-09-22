@@ -1346,6 +1346,74 @@ export class MenuController extends Component {
      *    • Badge count label — "已获得徽章 N 枚" i18n.
      *  Called after every `showForLevel` (fresh entry, post-clear
      *  re-entry) so the UI stays in sync with LevelProgress. */
+    /** Badge-earned celebration: fires when the player clears the
+     *  9th (last) level in a fate-piece group.
+     *
+     *  Timeline (canvas-space):
+     *    0.00 s — spawn a temp badge sprite at the top-right
+     *             collection button's world position, at scale 1×.
+     *    0.00 → 0.50 s — tween to canvas centre (0,0) + scale 1.5×.
+     *    0.50 → 1.00 s — pause (holds at centre for the player to
+     *             register what they just earned).
+     *    1.00 → 1.35 s — "slam" tween into the badge case root
+     *             (position + scale back to 1×, easeIn).
+     *    1.35 s  — destroy temp sprite + refresh the case (the new
+     *             badge appears as a real child of the case root). */
+    private _playBadgeEarnedFx(earnedGroupIdx: number): void {
+        const icon = this.authoredBadgeIcons[earnedGroupIdx];
+        const collectionBtn = this.authoredBadgeCollectionButton;
+        const caseRoot = this.authoredBadgesRoot;
+        if (!icon || !collectionBtn || !caseRoot) {
+            // FX pipeline unwired — still refresh so the new badge
+            // shows up statically in the case at least.
+            this.refreshFatePieceProgressUi(LevelProgress.currentIdx);
+            return;
+        }
+        const canvasNode = director.getScene()?.getComponentInChildren(Canvas)?.node;
+        const canvasUT = canvasNode?.getComponent(UITransform);
+        if (!canvasNode || !canvasUT) {
+            this.refreshFatePieceProgressUi(LevelProgress.currentIdx);
+            return;
+        }
+
+        // Convert start (collection button) + end (badge case) world
+        // positions into canvas-local UI coords.
+        const wp = new Vec3();
+        const startPos = new Vec3();
+        collectionBtn.node.getWorldPosition(wp);
+        canvasUT.convertToNodeSpaceAR(wp, startPos);
+        const endPos = new Vec3();
+        caseRoot.getWorldPosition(wp);
+        canvasUT.convertToNodeSpaceAR(wp, endPos);
+
+        // Spawn a temp badge sprite on top of everything.
+        const fx = new Node('BadgeEarnFx');
+        fx.parent = canvasNode;
+        fx.layer  = canvasNode.layer;
+        fx.setSiblingIndex(9999);
+        const ut = fx.addComponent(UITransform);
+        ut.setContentSize(96, 96);
+        const spr = fx.addComponent(Sprite);
+        spr.sizeMode = Sprite.SizeMode.CUSTOM;
+        spr.spriteFrame = icon;
+        fx.setPosition(startPos);
+        fx.setScale(1, 1, 1);
+
+        SoundManager.instance?.play('item_pick');
+        tween(fx)
+            .to(0.5, { position: new Vec3(0, 0, 0), scale: new Vec3(1.5, 1.5, 1) }, { easing: 'quadOut' })
+            .delay(0.5)
+            .to(0.35, { position: endPos, scale: new Vec3(1, 1, 1) }, { easing: 'quadIn' })
+            .call(() => {
+                if (fx && fx.isValid) fx.destroy();
+                // Repaint — the newly-earned badge is now included
+                // in `_earnedBadgeCount(maxClearedIdx)`, so
+                // refresh will add it as a child of the case root.
+                this.refreshFatePieceProgressUi(LevelProgress.currentIdx);
+            })
+            .start();
+    }
+
     public refreshFatePieceProgressUi(currentIdx: number): void {
         const maxCleared = LevelProgress.maxClearedIdx;
         const groupIdx   = this._fatePieceGroupIdx(currentIdx);
@@ -1741,14 +1809,31 @@ export class MenuController extends Component {
         const totalLevels = (this.gameController as any)?.flatLevels?.length ?? 0;
         const nextIdx = this.currentLevelIdx + 1;
         const hasNext = nextIdx < totalLevels;
+        // Just cleared the LAST level in a fate-piece group → a new
+        // badge was earned. Divert from the auto-advance flow into a
+        // "return to level-select + play badge-earned FX" flow so the
+        // player gets the celebration + the tower collapse-rebuild
+        // brings the next fate piece up as background action.
+        const justEarnedBadge =
+            ((this.currentLevelIdx % LEVELS_PER_FATE_PIECE) === LEVELS_PER_FATE_PIECE - 1);
+        const earnedGroupIdx = Math.floor(this.currentLevelIdx / LEVELS_PER_FATE_PIECE);
 
-        // ---- Game-complete path: no next level. Show clear-time
-        // celebration (same beat as between-level: scatter + level_win
-        // + timer center animation all together), then go to select. ----
-        if (!hasNext) {
+        // ---- Game-complete path OR badge-earned path: no auto-advance.
+        // Both go through the same celebration → level-select gateway
+        // so the tower's collapse-rebuild animation runs on stage
+        // re-entry, and (for badge earns) the badge FX layers on top. ----
+        if (!hasNext || justEarnedBadge) {
             const gotoSelect = () => {
                 this.showLevelSelect();
                 this.setGameplayVisible(false);
+                // Badge-earned FX: wait a beat for the tower's own
+                // collapse-rebuild animation (playCollapseThenRebuild)
+                // to settle, then fly the badge from the top-right
+                // preview slot → screen centre (scale 1.5×, 0.5 s) →
+                // pause 0.5 s → slam into the badge case (0.35 s).
+                if (justEarnedBadge) {
+                    this.scheduleOnce(() => this._playBadgeEarnedFx(earnedGroupIdx), 1.5);
+                }
             };
             SoundManager.instance?.play('level_win');
             const finalHudAny = this.hudController as any;
