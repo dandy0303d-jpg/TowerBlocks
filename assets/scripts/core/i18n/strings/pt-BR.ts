@@ -210,6 +210,8 @@ export const PT_BR: Record<string, string> = {
     'settings.haptic':       'Vibração',
     'settings.hideDev':      'Ocultar botões DEV',
     'badges.earned':        'Emblemas: {n}',
+    'badges.claim':         'Resgatar +1💎',
+    'badges.claimed':       'Resgatado',
     'settings.controls':       'Controles',
     'controls.title':          'Escolher esquema de controle',
     'controls.legacy':         'Clássico (deslizar + segurar)',

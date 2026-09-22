@@ -43,7 +43,8 @@ import { BackKeyManager } from './BackKeyManager';
 import { PlayerProfile } from '../core/PlayerProfile';
 import type { EmbedProp } from '../core/Types';
 import { setBannedHandler, getBannedState, setBearerToken, type BannedState } from '../core/Http';
-import { fetchWallet, subscribeBalance } from '../core/WalletApi';
+import { fetchWallet, subscribeBalance, emitBalance } from '../core/WalletApi';
+import { BadgeClaims } from '../core/BadgeClaims';
 import { BACKEND_BASE_URL } from '../core/BackendConfig';
 import { TutorialProgress } from '../core/TutorialProgress';
 import { TutorialController } from './TutorialController';
@@ -180,8 +181,21 @@ export class MenuController extends Component {
     @property({ type: Number, tooltip: '徽章横排最多显示几枚（超出后要看全部就点右上角的徽章图鉴入口）。默认 5；改成 0 表示不限制。' })
     authoredBadgeInlineMax: number = 5;
 
-    @property({ type: Button, tooltip: '右上角"徽章图鉴"按钮（点击 → 打开完整徽章面板）。目前脚本会 log 一条占位事件；等图鉴面板做好再接。可空。' })
+    @property({ type: Button, tooltip: '右上角"徽章图鉴"按钮（点击 → 打开完整徽章面板）。' })
     authoredBadgeCollectionButton: Button | null = null;
+
+    // ---- 徽章图鉴面板 ----
+    @property({ type: Node, tooltip: '徽章图鉴面板根节点（含 dim 遮罩 + 卡片）。脚本 setActive 控制开关。可空。' })
+    authoredBadgePanelRoot: Node | null = null;
+
+    @property({ type: Button, tooltip: '徽章图鉴面板的关闭按钮。' })
+    authoredBadgePanelCloseButton: Button | null = null;
+
+    @property({ type: Node, tooltip: '徽章图鉴面板里的徽章列表容器 Node（建议放在 ScrollView 的 Content 下 + 挂 Layout: GRID / VERTICAL / HORIZONTAL）。脚本会 populate 每组一枚 Cell 到里面。可空。' })
+    authoredBadgePanelList: Node | null = null;
+
+    @property({ type: Node, tooltip: '徽章 Cell 模板 Node（可以放在 List 里当第一个子节点）。首次 populate 时被隐藏；每枚展示的 Cell 都是它的克隆。含: 徽章图 Sprite、"领取"按钮（含子 Label）、"已领取" 状态节点（可选）。' })
+    authoredBadgePanelCellTemplate: Node | null = null;
 
     /** Main gameplay camera. Toggled off while the 3D level-select
      *  stage's own camera is rendering, so the two don't fight over
@@ -1523,6 +1537,147 @@ export class MenuController extends Component {
         }
     }
 
+    // ================================================================
+    //  Badge collection panel
+    //  Full-screen(-ish) modal listing every fate-piece group:
+    //    • earned + not claimed → colored icon + "领取 +1💎" button
+    //    • earned + claimed     → colored icon + "已领取" state
+    //    • not earned           → greyscale-tinted icon + no button
+    //  Claim button fires a wallet credit (client-side + TODO server
+    //  call) and marks the group as claimed via `BadgeClaims`.
+    // ================================================================
+
+    /** Open the badge panel + populate cells for every group. */
+    public showBadgePanel(): void {
+        if (!this.authoredBadgePanelRoot) {
+            log('[MenuController] authoredBadgePanelRoot unwired — badge panel disabled');
+            return;
+        }
+        this.authoredBadgePanelRoot.active = true;
+        this._populateBadgePanel();
+    }
+
+    /** Close the panel — cells stay in the tree (cheap to leave). */
+    public hideBadgePanel(): void {
+        if (!this.authoredBadgePanelRoot) return;
+        this.authoredBadgePanelRoot.active = false;
+    }
+
+    /** Rebuild every cell from scratch — called on open + after every
+     *  successful claim so the state flips (领取 → 已领取) live. */
+    private _populateBadgePanel(): void {
+        const list = this.authoredBadgePanelList;
+        const template = this.authoredBadgePanelCellTemplate;
+        if (!list || !list.isValid) return;
+
+        // Total number of fate groups — derived from the flat level
+        // count. Falls back to the badge-icon array length if the game
+        // controller isn't wired yet (unlikely at this point but cheap).
+        const flat = (this.gameController as any)?.flatLevels as Array<any> | undefined;
+        const groupCount = flat
+            ? Math.ceil(flat.length / LEVELS_PER_FATE_PIECE)
+            : this.authoredBadgeIcons.length;
+
+        // Hide the template so it doesn't count as one of the cells.
+        if (template && template.isValid) template.active = false;
+
+        // Wipe previously-cloned cells.
+        const toDestroy: Node[] = [];
+        for (const child of list.children) {
+            if (child === template) continue;
+            if ((child as any)._isBadgePanelCell) toDestroy.push(child);
+        }
+        for (const c of toDestroy) if (c.isValid) c.destroy();
+
+        const maxCleared = LevelProgress.maxClearedIdx;
+        const earnedCount = this._earnedBadgeCount(maxCleared);
+
+        for (let g = 0; g < groupCount; g++) {
+            const cell = template && template.isValid
+                ? instantiate(template)
+                : new Node(`BadgeCell_${g}`);
+            (cell as any)._isBadgePanelCell = true;
+            cell.parent = list;
+            cell.active = true;
+            this._paintBadgePanelCell(cell, g, g < earnedCount);
+        }
+    }
+
+    /** Set a single cell's visual state based on
+     *    - `earned`: from LevelProgress (colored vs greyscale)
+     *    - `BadgeClaims.isClaimed(g)`: claim button visible / hidden
+     *  Also wires the claim button's click handler. */
+    private _paintBadgePanelCell(cell: Node, groupIdx: number, earned: boolean): void {
+        // 1) Icon — colored when earned, greyscale tint when locked.
+        const iconSpr = cell.getComponentInChildren(Sprite);
+        if (iconSpr) {
+            const icon = this.authoredBadgeIcons[groupIdx];
+            if (icon) iconSpr.spriteFrame = icon;
+            iconSpr.color = earned
+                ? new Color(255, 255, 255, 255)
+                : new Color(80, 80, 80, 255);
+        }
+
+        // 2) Claim button + "已领取" state.
+        // Convention: the cell's Button component (if any) is the
+        // claim button. Alternatively the author can nest a
+        // dedicated `ClaimButton` named child.
+        const claimBtn = cell.getComponentInChildren(Button);
+        const claimed = BadgeClaims.isClaimed(groupIdx);
+        const canClaim = earned && !claimed;
+        if (claimBtn) {
+            claimBtn.node.active = earned;                 // hidden on locked
+            claimBtn.interactable = canClaim;
+            claimBtn.node.off('click');
+            if (canClaim) {
+                claimBtn.node.on('click', () => this._onClaimBadgeReward(groupIdx), this);
+            }
+            const lab = claimBtn.getComponentInChildren(Label);
+            if (lab) {
+                lab.string = claimed
+                    ? t('badges.claimed')
+                    : t('badges.claim');
+            }
+        }
+    }
+
+    /** Handle the "领取" tap: mark claimed, credit +1 gem, repaint.
+     *  Placeholder for a server-side call — TODO once the backend
+     *  `/player/badge/claim` endpoint exists. */
+    private _onClaimBadgeReward(groupIdx: number): void {
+        if (BadgeClaims.isClaimed(groupIdx)) return;   // double-tap guard
+        BadgeClaims.markClaimed(groupIdx);
+        // Credit +1 gem client-side. This is a fire-and-forget stub
+        // until we ship the server endpoint that actually adjusts the
+        // wallet — do NOT ship this to production without server
+        // enforcement or players will grief-claim from local storage.
+        fetchWallet().then((w) => {
+            emitBalance((w.gems ?? 0) + 1);
+            log(`[BadgePanel] claimed badge ${groupIdx}; +1 gem (client-side stub, wallet=${w.gems})`);
+        }).catch((err) => {
+            console.warn('[BadgePanel] claim wallet fetch failed:', err?.message || err);
+            emitBalance(1);   // best-effort visual bump so the tap feels responsive
+        });
+        SoundManager.instance?.play('item_pick');
+        // Repaint just this cell so the button flips to 已领取 without
+        // a full list rebuild.
+        const list = this.authoredBadgePanelList;
+        if (list && list.isValid) {
+            for (const cell of list.children) {
+                if ((cell as any)._isBadgePanelCell) {
+                    // Cheap way to find the cell we changed: the
+                    // order matches groupIdx (0..n).
+                    const idx = Array.from(list.children).filter(c => (c as any)._isBadgePanelCell).indexOf(cell);
+                    if (idx === groupIdx) {
+                        const earnedCount = this._earnedBadgeCount(LevelProgress.maxClearedIdx);
+                        this._paintBadgePanelCell(cell, groupIdx, groupIdx < earnedCount);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
     /** Enter-button callback wired to LevelSelectStage3D. Plays the
      *  scatter animation on the level-select tower (every cube flies
      *  outward and fades out), then hands off to the game: hides the
@@ -2507,15 +2662,22 @@ export class MenuController extends Component {
         this._refreshDevButtonsVisibility();
         subscribeSettings(() => this._refreshDevButtonsVisibility());
         // Badge-collection button (top-right of the level-select
-        // stage). Panel is TODO — the click currently logs a marker
-        // so it's easy to spot in analytics that the entry point is
-        // being used before the panel ships.
+        // stage) → opens the badge panel.
         if (this.authoredBadgeCollectionButton) {
             this.authoredBadgeCollectionButton.node.off('click');
             this.authoredBadgeCollectionButton.node.on('click', () => {
-                log('[MenuController] badge collection button clicked — panel not yet implemented');
+                this.showBadgePanel();
             }, this);
         }
+        if (this.authoredBadgePanelCloseButton) {
+            this.authoredBadgePanelCloseButton.node.off('click');
+            this.authoredBadgePanelCloseButton.node.on('click', () => {
+                this.hideBadgePanel();
+            }, this);
+        }
+        // Panel starts hidden — script-managed, so it never leaks
+        // onto other screens.
+        if (this.authoredBadgePanelRoot) this.authoredBadgePanelRoot.active = false;
         // Initial paint of lock state — showModeSelect will refresh on
         // subsequent shows as progress changes.
         this._loadEndlessBestFromStorage();

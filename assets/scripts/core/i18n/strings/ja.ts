@@ -230,6 +230,8 @@ export const JA: Record<string, string> = {
     'settings.haptic':       'バイブレーション',
     'settings.hideDev':      'DEV ボタンを隠す',
     'badges.earned':        '獲得バッジ {n}',
+    'badges.claim':         '受け取る +1💎',
+    'badges.claimed':       '受取済',
     'settings.controls':       '操作方法',
     'controls.title':          '操作方法を選択',
     'controls.legacy':         'クラシック（スワイプ+長押し）',

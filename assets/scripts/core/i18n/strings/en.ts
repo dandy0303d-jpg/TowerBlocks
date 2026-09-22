@@ -229,6 +229,8 @@ export const EN: Record<string, string> = {
     'settings.haptic':       'Vibration',
     'settings.hideDev':      'Hide DEV buttons',
     'badges.earned':        'Badges earned: {n}',
+    'badges.claim':         'Claim +1💎',
+    'badges.claimed':       'Claimed',
     'settings.controls':       'Controls',
     'controls.title':          'Choose control scheme',
     'controls.legacy':         'Classic (swipe + hold)',

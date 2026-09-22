@@ -227,6 +227,8 @@ export const KO: Record<string, string> = {
     'settings.haptic':       '진동',
     'settings.hideDev':      'DEV 버튼 숨기기',
     'badges.earned':        '획득 배지 {n}개',
+    'badges.claim':         '받기 +1💎',
+    'badges.claimed':       '받음',
     'settings.controls':       '조작 방식',
     'controls.title':          '조작 방식 선택',
     'controls.legacy':         '클래식 (스와이프 + 길게 누르기)',
