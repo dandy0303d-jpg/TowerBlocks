@@ -21,6 +21,7 @@ import {
     native,
     game,
     instantiate,
+    Canvas,
 } from 'cc';
 import { GameController } from './GameController';
 import { HudController } from './HudController';
