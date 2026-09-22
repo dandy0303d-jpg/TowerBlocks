@@ -20,6 +20,7 @@ import {
     sys,
     native,
     game,
+    instantiate,
 } from 'cc';
 import { GameController } from './GameController';
 import { HudController } from './HudController';
@@ -77,6 +78,11 @@ const REVIVE_COUNTDOWN_SEC = 10;
  *  this stay on the classic 1-second preview so the early curve isn't
  *  cluttered with prop decisions. */
 const EMBED_MIN_LEVEL_ORDER = 16;
+
+/** Every N consecutive levels share the same 本命方块. Bumping this
+ *  in tandem with the level-JSON generator keeps the progress bar +
+ *  badge accounting in sync. */
+const LEVELS_PER_FATE_PIECE = 9;
 import { fetchConsentStatus } from '../core/ConsentApi';
 import { ConsentModal } from './ConsentModal';
 import { GoogleWebOAuth } from '../channels/google/GoogleWebOAuth';
@@ -130,6 +136,36 @@ export class MenuController extends Component {
      *  blank to fall back to the old UI. */
     @property(LevelSelectStage3D)
     levelStage3D: LevelSelectStage3D | null = null;
+
+    // ================================================================
+    //  Fate-piece progress bar + badge case
+    //
+    //  Every 9 consecutive levels share the same 本命 shape. The
+    //  progress row shows how many of those 9 the player has cleared;
+    //  finishing all 9 grants a persistent 徽章 (badge). Badges from
+    //  every fate piece the player has completed pile up in the badge
+    //  case below the progress row.
+    //
+    //  Progress is derived from LevelProgress.maxClearedIdx — no new
+    //  persistence is needed (level clears are strictly linear, so a
+    //  group is complete iff its last level index is ≤ maxClearedIdx).
+    //
+    //  Every field here is optional — leaving them unwired means the
+    //  scene simply has no progress bar / badge case. The refresh
+    //  method silently no-ops on missing pieces.
+    // ================================================================
+
+    @property({ type: [Node], tooltip: '本命方块 9 关进度条的 9 个"已通关指示"节点。索引 0-8 对应组内第 1-9 关。脚本会在已通关关卡对应的节点上 setActive(true)，未通关的 setActive(false)。可空。' })
+    authoredFatePieceProgressSlots: Node[] = [];
+
+    @property({ type: Node, tooltip: '徽章容器 Node — 完成一整组本命方块 9 关就添加一枚徽章。建议挂 Layout 组件让徽章自动排列。留空时徽章功能整体禁用。' })
+    authoredBadgesRoot: Node | null = null;
+
+    @property({ type: Node, tooltip: '徽章模板 Node（必须是 authoredBadgesRoot 的子节点或独立预制的原型）。首次 refresh 时会被脚本置为 inactive；每张徽章都是它的克隆。含一个 Sprite 组件用来贴徽章图。可空。' })
+    authoredBadgeTemplate: Node | null = null;
+
+    @property({ type: [SpriteFrame], tooltip: '徽章图标数组 — 索引 i 对应第 i 组本命方块（第 i*9+1..i*9+9 关）的徽章。留空或长度不够时，落后位置会 fallback 到模板自带的 Sprite。可空。' })
+    authoredBadgeIcons: SpriteFrame[] = [];
 
     /** Main gameplay camera. Toggled off while the 3D level-select
      *  stage's own camera is rendering, so the two don't fight over
@@ -1210,6 +1246,80 @@ export class MenuController extends Component {
             (idx: number) => this.enterLevelFromStage3D(idx),
             () => this.showModeSelect(),
         );
+        // Refresh the 9-slot progress bar + earned-badge case above the
+        // stage so the player sees "3 / 9 of this fate piece done" and
+        // the trophies from every fully-completed piece.
+        this.refreshFatePieceProgressUi(LevelProgress.currentIdx);
+    }
+
+    /** Data helpers — pure functions of `LevelProgress.maxClearedIdx`.
+     *  Group index N owns levels [N*9 .. N*9+8].
+     *  Progress within a group = how many of its 9 levels are already
+     *  cleared (0..9). Badge count = number of groups where all 9
+     *  levels are cleared. */
+    private _fatePieceGroupIdx(levelIdx: number): number {
+        return Math.floor(Math.max(0, levelIdx) / LEVELS_PER_FATE_PIECE);
+    }
+    private _fatePieceProgressInGroup(maxClearedIdx: number, groupIdx: number): number {
+        const groupStart = groupIdx * LEVELS_PER_FATE_PIECE;
+        const clearedInGroup = maxClearedIdx - groupStart + 1;
+        return Math.max(0, Math.min(LEVELS_PER_FATE_PIECE, clearedInGroup));
+    }
+    private _earnedBadgeCount(maxClearedIdx: number): number {
+        return Math.floor((maxClearedIdx + 1) / LEVELS_PER_FATE_PIECE);
+    }
+
+    /** Repaint the progress bar (9 slots — filled = cleared) and the
+     *  badge case (one badge per fully-completed fate piece).
+     *  Called after every `showForLevel` and after a successful level
+     *  clear so the UI stays in sync with LevelProgress. */
+    public refreshFatePieceProgressUi(currentIdx: number): void {
+        const maxCleared = LevelProgress.maxClearedIdx;
+        const groupIdx   = this._fatePieceGroupIdx(currentIdx);
+        const progress   = this._fatePieceProgressInGroup(maxCleared, groupIdx);
+
+        // ---- Progress bar: 9 slots ----
+        for (let i = 0; i < this.authoredFatePieceProgressSlots.length; i++) {
+            const slot = this.authoredFatePieceProgressSlots[i];
+            if (!slot || !slot.isValid) continue;
+            const on = i < progress;
+            if (slot.active !== on) slot.active = on;
+        }
+
+        // ---- Badges ----
+        if (!this.authoredBadgesRoot || !this.authoredBadgesRoot.isValid) return;
+        const root = this.authoredBadgesRoot;
+        // Hide the template on its first paint so it doesn't leak
+        // through as a "phantom badge" the player didn't earn.
+        if (this.authoredBadgeTemplate && this.authoredBadgeTemplate.isValid) {
+            this.authoredBadgeTemplate.active = false;
+        }
+        // Wipe every child EXCEPT the template — badges are recreated
+        // each refresh from a clean slate (cheap: at most 220 nodes).
+        const template = this.authoredBadgeTemplate;
+        const toDestroy: Node[] = [];
+        for (const child of root.children) {
+            if (child === template) continue;
+            if ((child as any)._isMenuBadge) toDestroy.push(child);
+        }
+        for (const c of toDestroy) if (c.isValid) c.destroy();
+
+        const badgeCount = this._earnedBadgeCount(maxCleared);
+        for (let i = 0; i < badgeCount; i++) {
+            const badge = template && template.isValid
+                ? instantiate(template)
+                : new Node(`Badge_${i}`);
+            (badge as any)._isMenuBadge = true;
+            badge.active = true;
+            badge.parent = root;
+            // Assign per-piece icon if the author supplied one; fall
+            // back to whatever the template's Sprite already carries.
+            const icon = this.authoredBadgeIcons[i];
+            if (icon) {
+                const spr = badge.getComponent(Sprite) ?? badge.getComponentInChildren(Sprite);
+                if (spr) spr.spriteFrame = icon;
+            }
+        }
     }
 
     /** Enter-button callback wired to LevelSelectStage3D. Plays the
