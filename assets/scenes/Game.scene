@@ -4947,8 +4947,8 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": -310,
-      "y": 592,
+      "x": 300,
+      "y": -602,
       "z": 0
     },
     "_lrot": {
@@ -5100,12 +5100,12 @@
     },
     "_enabled": true,
     "__prefab": null,
-    "_alignFlags": 9,
+    "_alignFlags": 36,
     "_target": null,
     "_left": 20,
-    "_right": 0,
+    "_right": 30,
     "_top": 30,
-    "_bottom": 0,
+    "_bottom": 20,
     "_horizontalCenter": -245,
     "_verticalCenter": 0,
     "_isAbsLeft": true,

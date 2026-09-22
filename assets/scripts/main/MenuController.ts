@@ -1269,7 +1269,16 @@ export class MenuController extends Component {
         // Reveal the 2D UI overlay (back / progress bar / badges).
         // Kept off by default in the scene so it doesn't leak onto the
         // mode-select screen or into gameplay; script-managed here.
+        // Also re-activate the individual authored pieces — the
+        // gameplay-entry defense in `setGameplayVisible(true)` may
+        // have set them false last time (belt-and-suspenders); flip
+        // them back so this fresh open renders them.
         if (this.authoredLevelSelectOverlay) this.authoredLevelSelectOverlay.active = true;
+        if (this.authoredFatePieceProgressFill)  this.authoredFatePieceProgressFill.node.active  = true;
+        if (this.authoredFatePieceProgressLabel) this.authoredFatePieceProgressLabel.node.active = true;
+        if (this.authoredBadgesRoot)             this.authoredBadgesRoot.active                  = true;
+        if (this.authoredBadgeCountLabel)        this.authoredBadgeCountLabel.node.active        = true;
+        if (this.authoredBadgeCollectionButton)  this.authoredBadgeCollectionButton.node.active  = true;
         // Refresh the 9-slot progress bar + earned-badge case above the
         // stage so the player sees "3 / 9 of this fate piece done" and
         // the trophies from every fully-completed piece.
@@ -2477,7 +2486,20 @@ export class MenuController extends Component {
         // off on the mode-select screen so it doesn't leak in behind
         // the main menu. Only ever ON while the 3D level-select stage
         // is showing (see showLevelSelectStage which re-enables it).
-        if (on && this.authoredLevelSelectOverlay) this.authoredLevelSelectOverlay.active = false;
+        //
+        // Belt-and-suspenders — hide BOTH the container (preferred,
+        // covers the whole overlay at once) AND every individual
+        // authored piece (rescues the case where the author didn't
+        // wire `authoredLevelSelectOverlay` yet). Every leaf setter is
+        // guarded against null so unwired fields silently no-op.
+        if (on) {
+            if (this.authoredLevelSelectOverlay) this.authoredLevelSelectOverlay.active = false;
+            if (this.authoredFatePieceProgressFill)  this.authoredFatePieceProgressFill.node.active  = false;
+            if (this.authoredFatePieceProgressLabel) this.authoredFatePieceProgressLabel.node.active = false;
+            if (this.authoredBadgesRoot)             this.authoredBadgesRoot.active                  = false;
+            if (this.authoredBadgeCountLabel)        this.authoredBadgeCountLabel.node.active        = false;
+            if (this.authoredBadgeCollectionButton)  this.authoredBadgeCollectionButton.node.active  = false;
+        }
         // Sync the on-screen action buttons (rotate L/R / hard-drop /
         // rotate-piece) with gameplay visibility — they should never
         // show on the level-select or main-menu screens.
