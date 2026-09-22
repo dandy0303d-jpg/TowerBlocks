@@ -916,10 +916,12 @@ export class HudController extends Component {
         // so we can't find them by name — toggle each wired @property
         // node directly.
         if (this.authoredPauseButton) this.authoredPauseButton.node.active = on;
-        // Debug win button follows HUD visibility, but only if this is
-        // a dev build. Release builds keep it forever-hidden.
+        // Debug win button follows HUD visibility, but only in dev
+        // builds AND when the "隐藏 DEV 按钮" settings toggle is off.
+        // Release builds keep it forever-hidden.
         if (this.authoredDebugWinButton) {
-            this.authoredDebugWinButton.node.active = on && IS_DEV_BUILD;
+            this.authoredDebugWinButton.node.active =
+                on && IS_DEV_BUILD && !getHideDevButtons();
         }
         // Score container — respect the endless-only rule. When on=true,
         // only show if we're in endless mode; otherwise keep hidden so
