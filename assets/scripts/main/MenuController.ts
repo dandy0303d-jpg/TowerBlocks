@@ -1316,6 +1316,20 @@ export class MenuController extends Component {
             this.authoredFatePieceProgressLabel.string = `${progress}/${LEVELS_PER_FATE_PIECE}`;
         }
 
+        // ---- Top-right collection button: preview of the badge the
+        // player is CURRENTLY working toward. Pulls the icon at the
+        // current group's index from `authoredBadgeIcons`. Falls back
+        // to whatever sprite the button already carries when the
+        // author didn't supply an icon for that group. ----
+        if (this.authoredBadgeCollectionButton) {
+            const nextIcon = this.authoredBadgeIcons[groupIdx];
+            if (nextIcon) {
+                const btnNode = this.authoredBadgeCollectionButton.node;
+                const spr = btnNode.getComponent(Sprite) ?? btnNode.getComponentInChildren(Sprite);
+                if (spr) spr.spriteFrame = nextIcon;
+            }
+        }
+
         // ---- Badges ----
         const badgeCount = this._earnedBadgeCount(maxCleared);
         if (this.authoredBadgeCountLabel) {
