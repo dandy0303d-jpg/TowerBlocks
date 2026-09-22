@@ -228,6 +228,7 @@ export const JA: Record<string, string> = {
     'settings.bgm':          'BGM',
     'settings.sfx':          '効果音',
     'settings.haptic':       'バイブレーション',
+    'settings.hideDev':      'DEV ボタンを隠す',
     'settings.controls':       '操作方法',
     'controls.title':          '操作方法を選択',
     'controls.legacy':         'クラシック（スワイプ+長押し）',

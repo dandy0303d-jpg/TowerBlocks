@@ -24,6 +24,7 @@ const STORAGE_KEY_BGM_VOL   = 'tetritower.bgmVolume';
 const STORAGE_KEY_SFX_VOL   = 'tetritower.sfxVolume';
 const STORAGE_KEY_HAPTIC    = 'tetritower.hapticMode';
 const STORAGE_KEY_CONTROL   = 'tetritower.controlMode';
+const STORAGE_KEY_HIDE_DEV  = 'tetritower.hideDevButtons';
 
 /** The five volume steps the settings cycle exposes: mute + four
  *  levels. 0 is the "off" position (mode also flips to 'off'). */
@@ -277,4 +278,32 @@ export function setControlMode(mode: ControlMode): void {
     controlMode = mode;
     try { localStorage?.setItem(STORAGE_KEY_CONTROL, mode); } catch (_) { /* ignore */ }
     notify();
+}
+
+// ---------- hideDevButtons ----------
+// Develop-branch-only convenience: hide the three DEV entry points
+// (加速 in-game button, 数据重置 + 解锁所有 buttons on the main menu)
+// so a developer can screenshot / record clean UI without an extra
+// build. Value is persisted so the choice survives reload.
+//
+// Only exposed by the settings panel when `IS_DEV_BUILD` is true —
+// in release builds those buttons are hidden unconditionally, so
+// the setting has no effect regardless of value.
+function loadHideDev(): boolean {
+    try {
+        const v = localStorage?.getItem(STORAGE_KEY_HIDE_DEV);
+        return v === '1' || v === 'true';
+    } catch (_) { return false; }
+}
+let hideDevButtons: boolean = loadHideDev();
+export function getHideDevButtons(): boolean { return hideDevButtons; }
+export function setHideDevButtons(on: boolean): void {
+    if (on === hideDevButtons) return;
+    hideDevButtons = on;
+    try { localStorage?.setItem(STORAGE_KEY_HIDE_DEV, on ? '1' : '0'); } catch (_) { /* ignore */ }
+    notify();
+}
+export function toggleHideDevButtons(): boolean {
+    setHideDevButtons(!hideDevButtons);
+    return hideDevButtons;
 }

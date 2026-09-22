@@ -203,6 +203,7 @@ export const RU: Record<string, string> = {
     'settings.bgm':          'Музыка',
     'settings.sfx':          'Звук',
     'settings.haptic':       'Вибрация',
+    'settings.hideDev':      'Скрыть DEV-кнопки',
     'settings.controls':       'Управление',
     'controls.title':          'Выбор управления',
     'controls.legacy':         'Классика (свайп + удержание)',

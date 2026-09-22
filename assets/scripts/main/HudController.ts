@@ -36,7 +36,7 @@ import { BackKeyManager } from './BackKeyManager';
 import { ITEM_KEYS, ITEM_BASE_PROBS, MagicItemKey, ENERGY_FULL_THRESHOLD, COLORS, SHAPES, PieceType, CellValue, COLS, Rarity, rarityForKey } from '../core/Constants';
 import { FATE_SHAPES, fateIndexOfShape, pickFateIndex, pickFateIndex4Connected, FATE_SHAPES_4CONNECTED_INDICES, fateShapeAsCustomPiece } from '../core/FateShapes';
 import { CustomPieceDef, EmbedProp, LevelData } from '../core/Types';
-import { getKeysMode, subscribe as subscribeSettings } from '../core/Settings';
+import { getKeysMode, getHideDevButtons, subscribe as subscribeSettings } from '../core/Settings';
 import { AnalyticsApi } from '../core/AnalyticsApi';
 import { BgmManager } from '../audio/BgmManager';
 import { FontManager } from '../core/FontManager';
@@ -916,10 +916,12 @@ export class HudController extends Component {
         // so we can't find them by name — toggle each wired @property
         // node directly.
         if (this.authoredPauseButton) this.authoredPauseButton.node.active = on;
-        // Debug win button follows HUD visibility, but only if this is
-        // a dev build. Release builds keep it forever-hidden.
+        // Debug win button follows HUD visibility, but only in dev
+        // builds AND when the "隐藏 DEV 按钮" settings toggle is off.
+        // Release builds keep it forever-hidden.
         if (this.authoredDebugWinButton) {
-            this.authoredDebugWinButton.node.active = on && IS_DEV_BUILD;
+            this.authoredDebugWinButton.node.active =
+                on && IS_DEV_BUILD && !getHideDevButtons();
         }
         // Score container — respect the endless-only rule. When on=true,
         // only show if we're in endless mode; otherwise keep hidden so
@@ -1283,7 +1285,10 @@ export class HudController extends Component {
         // which reads debugWinButtonNode.
         // Also DEV-only overall: hidden in release builds so players
         // can't skip levels with a tap. IS_DEV_BUILD is set per branch
-        // (assets/scripts/core/BuildConfig.ts).
+        // (assets/scripts/core/BuildConfig.ts). Additionally, the
+        // "隐藏 DEV 按钮" settings toggle (develop-only) can hide it
+        // in-session for clean recordings — see `_syncDebugWinButton`
+        // which is called on wire + on every settings subscribe fire.
         if (this.authoredDebugWinButton) {
             if (!IS_DEV_BUILD) {
                 this.authoredDebugWinButton.node.active = false;
@@ -1293,6 +1298,10 @@ export class HudController extends Component {
                 this.debugWinButtonNode = this.authoredDebugWinButton.node;
                 const lab = this.authoredDebugWinButton.getComponentInChildren(Label);
                 if (lab) this.trackI18nLabel(lab, 'debug.forceWin');
+                // React to the settings toggle: hide when
+                // `getHideDevButtons()` is true, show otherwise.
+                this._syncDebugWinButton();
+                subscribeSettings(() => this._syncDebugWinButton());
             }
         } else {
             log('[HudController] authoredDebugWinButton not wired');
@@ -5256,10 +5265,27 @@ export class HudController extends Component {
         this.refreshDebugSpeedLabel();
     }
 
+    /** Debug win ("一键通关") button visibility. Hidden in release
+     *  builds by construction (wire block skips setup); on dev, also
+     *  hides while the "隐藏 DEV 按钮" settings toggle is on. Called
+     *  at wire time and on every Settings subscribe fire. */
+    private _syncDebugWinButton(): void {
+        if (!this.debugWinButtonNode) return;
+        const on = IS_DEV_BUILD && !getHideDevButtons();
+        if (this.debugWinButtonNode.active !== on) {
+            this.debugWinButtonNode.active = on;
+        }
+    }
+
     /** Compute effective speed multiplier and gate button visibility. */
     private syncDebugSpeedButton(g: any): void {
         if (!this.debugSpeedButtonNode) return;
-        const showable = IS_DEV_BUILD && (g.mode === 'endless' || g.mode === 'blind');
+        // Hidden in release builds unconditionally. In dev builds the
+        // player can also hide it via Settings ("隐藏 DEV 按钮"), so a
+        // developer can record clean footage without a rebuild.
+        const showable = IS_DEV_BUILD
+                      && !getHideDevButtons()
+                      && (g.mode === 'endless' || g.mode === 'blind');
         if (this.debugSpeedButtonNode.active !== showable) {
             this.debugSpeedButtonNode.active = showable;
         }

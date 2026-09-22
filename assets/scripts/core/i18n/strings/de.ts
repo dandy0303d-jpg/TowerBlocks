@@ -204,6 +204,7 @@ export const DE: Record<string, string> = {
     'settings.bgm':          'Musik',
     'settings.sfx':          'Sound',
     'settings.haptic':       'Vibration',
+    'settings.hideDev':      'DEV-Buttons ausblenden',
     'settings.controls':       'Steuerung',
     'controls.title':          'Steuerung wählen',
     'controls.legacy':         'Klassisch (Wischen + Halten)',
