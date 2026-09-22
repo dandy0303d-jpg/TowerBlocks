@@ -228,6 +228,8 @@ export const ZH_HANT: Record<string, string> = {
     'settings.haptic':       '手機震動',
     'settings.hideDev':      '隱藏 DEV 按鈕',
     'badges.earned':        '已獲得徽章 {n} 枚',
+    'badges.claim':         '領取 +1💎',
+    'badges.claimed':       '已領取',
     'settings.controls':       '操作方式',
     'controls.title':          '選擇操作方式',
     'controls.legacy':         '經典（滑動 + 長按）',

@@ -206,6 +206,8 @@ export const DE: Record<string, string> = {
     'settings.haptic':       'Vibration',
     'settings.hideDev':      'DEV-Buttons ausblenden',
     'badges.earned':        'Abzeichen: {n}',
+    'badges.claim':         'Einlösen +1💎',
+    'badges.claimed':       'Eingelöst',
     'settings.controls':       'Steuerung',
     'controls.title':          'Steuerung wählen',
     'controls.legacy':         'Klassisch (Wischen + Halten)',
