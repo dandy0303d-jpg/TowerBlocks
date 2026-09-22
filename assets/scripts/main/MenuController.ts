@@ -1845,6 +1845,19 @@ export class MenuController extends Component {
                     gs.modalPaused = false;
                 }
                 this._enteringLevel = false;
+                // Force-hide the level-clear celebration panel and
+                // cancel any pending fade-out timeouts. Without this
+                // the panel (which typically has a full-screen dim +
+                // BlockInputEvents component) can linger over the
+                // level-select stage and silently swallow every tap.
+                const hudAnyForCleanup = this.hudController as any;
+                if (hudAnyForCleanup) {
+                    if (typeof hudAnyForCleanup.resetLevelTimerPosition === 'function') {
+                        hudAnyForCleanup.resetLevelTimerPosition();
+                    }
+                    const panel = hudAnyForCleanup.authoredLevelClearPanel as Node | null | undefined;
+                    if (panel && panel.isValid) panel.active = false;
+                }
                 this.showLevelSelect();
                 this.setGameplayVisible(false);
                 // Badge-earned FX: wait a beat for the tower's own
@@ -1872,13 +1885,19 @@ export class MenuController extends Component {
                 if (this.hudController) this.hudController.setHudVisible(false);
             }
             // Scatter runs in parallel with the timer animation (same
-            // as between-level). No completion callback — the timer
-            // onComplete owns the goto-select trigger.
+            // as between-level). On scatter-complete, HIDE the whole
+            // 3D board root so the tower doesn't leak in behind the
+            // celebration panel during its ~2.3 s hold. Without this
+            // the cube pool sits at its final scattered positions and
+            // shows through the semi-transparent panel.
             if (this.gameController
                 && typeof this.gameController.playLevelScatter === 'function') {
-                const scatterCb = (finalHudAny && typeof finalHudAny.showLevelClearTime === 'function')
-                    ? () => { /* handled by showLevelClearTime.onComplete */ }
-                    : gotoSelect;
+                const scatterCb = () => {
+                    if (this.boardRoot3D) this.boardRoot3D.active = false;
+                    if (!(finalHudAny && typeof finalHudAny.showLevelClearTime === 'function')) {
+                        gotoSelect();
+                    }
+                };
                 this.gameController.playLevelScatter(this.exitLevelScatterSec, scatterCb);
             } else if (!(finalHudAny && typeof finalHudAny.showLevelClearTime === 'function')) {
                 gotoSelect();
