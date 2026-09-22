@@ -1824,6 +1824,14 @@ export class MenuController extends Component {
         // re-entry, and (for badge earns) the badge FX layers on top. ----
         if (!hasNext || justEarnedBadge) {
             const gotoSelect = () => {
+                // Stop the gameplay tick BEFORE hiding the HUD so no
+                // more pieces spawn / lock during the transition —
+                // without this the player still hears drop / lock
+                // SFX from the (now-invisible) tower while the badge
+                // FX plays on the level-select screen.
+                if (this.gameController?.gameState) {
+                    this.gameController.gameState.running = false;
+                }
                 this.showLevelSelect();
                 this.setGameplayVisible(false);
                 // Badge-earned FX: wait a beat for the tower's own
