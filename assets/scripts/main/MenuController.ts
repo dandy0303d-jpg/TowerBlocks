@@ -2457,6 +2457,13 @@ export class MenuController extends Component {
         // child nodes.
         if (this.hudController) this.hudController.setHudVisible(on);
         if (this.boardRoot3D)   this.boardRoot3D.active = on;
+        // Level-select 2D overlay (LevelMode container): back arrow /
+        // progress bar / badges. Must be off during gameplay so the
+        // stage-select chrome doesn't hang over the play field, and
+        // off on the mode-select screen so it doesn't leak in behind
+        // the main menu. Only ever ON while the 3D level-select stage
+        // is showing (see showLevelSelectStage which re-enables it).
+        if (on && this.authoredLevelSelectOverlay) this.authoredLevelSelectOverlay.active = false;
         // Sync the on-screen action buttons (rotate L/R / hard-drop /
         // rotate-piece) with gameplay visibility — they should never
         // show on the level-select or main-menu screens.
