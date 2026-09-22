@@ -1248,22 +1248,49 @@ export class MenuController extends Component {
         // showModeSelect) so back only fires the return when the
         // player is actually on level-select.
         BackKeyManager.push(this._levelSelectBack);
-        // Feed the stage the actual per-level customPiece shapes so
-        // each tower cube displays the level's real fate piece
-        // (LevelSelectStage3D used to fall back to GAME_FATE_SHAPES
-        // [idx % 99], which for level 100+ or any level whose custom
-        // piece isn't in the 99-shape pool would show the wrong shape).
+        // The tower now indexes by FATE-PIECE GROUP (not by level) —
+        // one row per unique 本命方块 rather than 9 identical rows
+        // per group. Deduplicate the per-level customPiece.shape list
+        // into a per-group list before handing it to the stage.
+        //
+        // `LevelSelectStage3D.currentIdx` becomes "current group idx";
+        // the Enter callback translates back to the actual next-to-
+        // play level (first uncleared level within the tapped group).
         const flat = (this.gameController as any)?.flatLevels as Array<any> | undefined;
+        const groupCount = flat
+            ? Math.ceil(flat.length / LEVELS_PER_FATE_PIECE)
+            : 0;
         if (flat && typeof this.levelStage3D.setLevelShapes === 'function') {
-            this.levelStage3D.setLevelShapes(
-                flat.map(l => (l && l.customPiece && Array.isArray(l.customPiece.shape))
-                    ? l.customPiece.shape
-                    : null),
-            );
+            const groupShapes: Array<number[][] | null> = [];
+            for (let g = 0; g < groupCount; g++) {
+                const firstLevelInGroup = flat[g * LEVELS_PER_FATE_PIECE];
+                const shape = firstLevelInGroup?.customPiece?.shape;
+                groupShapes.push(shape && Array.isArray(shape) ? shape as number[][] : null);
+            }
+            this.levelStage3D.setLevelShapes(groupShapes);
         }
+        if (groupCount > 0) {
+            // Bring the stage's `totalLevels` in line so tower height,
+            // "剩余关卡" counter, and clamp bounds all reflect the
+            // group-indexed universe.
+            this.levelStage3D.totalLevels = groupCount;
+        }
+        const currentGroupIdx = Math.floor(LevelProgress.currentIdx / LEVELS_PER_FATE_PIECE);
         this.levelStage3D.showForLevel(
-            LevelProgress.currentIdx,
-            (idx: number) => this.enterLevelFromStage3D(idx),
+            currentGroupIdx,
+            (groupIdx: number) => {
+                // Enter the next-to-play level within the tapped group.
+                // "Next" = max(groupStart, first uncleared level in the
+                // group). If the whole group is already cleared, fall
+                // back to the group's first level (replay).
+                const groupStart = groupIdx * LEVELS_PER_FATE_PIECE;
+                const groupEnd   = groupStart + LEVELS_PER_FATE_PIECE - 1;
+                const nextLevel  = Math.min(
+                    groupEnd,
+                    Math.max(groupStart, LevelProgress.currentIdx),
+                );
+                this.enterLevelFromStage3D(nextLevel);
+            },
             () => this.showModeSelect(),
         );
         // Reveal the 2D UI overlay (back / progress bar / badges).
