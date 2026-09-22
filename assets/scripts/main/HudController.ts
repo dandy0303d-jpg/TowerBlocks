@@ -1283,7 +1283,10 @@ export class HudController extends Component {
         // which reads debugWinButtonNode.
         // Also DEV-only overall: hidden in release builds so players
         // can't skip levels with a tap. IS_DEV_BUILD is set per branch
-        // (assets/scripts/core/BuildConfig.ts).
+        // (assets/scripts/core/BuildConfig.ts). Additionally, the
+        // "隐藏 DEV 按钮" settings toggle (develop-only) can hide it
+        // in-session for clean recordings — see `_syncDebugWinButton`
+        // which is called on wire + on every settings subscribe fire.
         if (this.authoredDebugWinButton) {
             if (!IS_DEV_BUILD) {
                 this.authoredDebugWinButton.node.active = false;
@@ -1293,6 +1296,10 @@ export class HudController extends Component {
                 this.debugWinButtonNode = this.authoredDebugWinButton.node;
                 const lab = this.authoredDebugWinButton.getComponentInChildren(Label);
                 if (lab) this.trackI18nLabel(lab, 'debug.forceWin');
+                // React to the settings toggle: hide when
+                // `getHideDevButtons()` is true, show otherwise.
+                this._syncDebugWinButton();
+                subscribeSettings(() => this._syncDebugWinButton());
             }
         } else {
             log('[HudController] authoredDebugWinButton not wired');
@@ -5254,6 +5261,18 @@ export class HudController extends Component {
             gs.dropInterval = 800 / next;    // BASE_DROP_INTERVAL_MS
         }
         this.refreshDebugSpeedLabel();
+    }
+
+    /** Debug win ("一键通关") button visibility. Hidden in release
+     *  builds by construction (wire block skips setup); on dev, also
+     *  hides while the "隐藏 DEV 按钮" settings toggle is on. Called
+     *  at wire time and on every Settings subscribe fire. */
+    private _syncDebugWinButton(): void {
+        if (!this.debugWinButtonNode) return;
+        const on = IS_DEV_BUILD && !getHideDevButtons();
+        if (this.debugWinButtonNode.active !== on) {
+            this.debugWinButtonNode.active = on;
+        }
     }
 
     /** Compute effective speed multiplier and gate button visibility. */
