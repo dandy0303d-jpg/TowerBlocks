@@ -4448,7 +4448,7 @@
     "_lpos": {
       "__type__": "cc.Vec3",
       "x": 245,
-      "y": 597.82,
+      "y": 469.27600000000007,
       "z": 0
     },
     "_lrot": {
@@ -4599,7 +4599,7 @@
     "_target": null,
     "_left": 896,
     "_right": 30,
-    "_top": 8.17999999999995,
+    "_top": 136.72399999999993,
     "_bottom": 0,
     "_horizontalCenter": 245,
     "_verticalCenter": 0,
@@ -4641,7 +4641,7 @@
     "_lpos": {
       "__type__": "cc.Vec3",
       "x": 0,
-      "y": 637,
+      "y": 444.94,
       "z": 0
     },
     "_lrot": {
@@ -4810,7 +4810,7 @@
     "_lpos": {
       "__type__": "cc.Vec3",
       "x": 0,
-      "y": 584.743,
+      "y": 495.518,
       "z": 0
     },
     "_lrot": {
@@ -4947,8 +4947,8 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": -245,
-      "y": 608.66,
+      "x": -310,
+      "y": 592,
       "z": 0
     },
     "_lrot": {
@@ -5100,17 +5100,17 @@
     },
     "_enabled": true,
     "__prefab": null,
-    "_alignFlags": 17,
+    "_alignFlags": 9,
     "_target": null,
-    "_left": 10,
+    "_left": 20,
     "_right": 0,
-    "_top": 0.01,
+    "_top": 30,
     "_bottom": 0,
     "_horizontalCenter": -245,
     "_verticalCenter": 0,
     "_isAbsLeft": true,
     "_isAbsRight": true,
-    "_isAbsTop": false,
+    "_isAbsTop": true,
     "_isAbsBottom": true,
     "_isAbsHorizontalCenter": true,
     "_isAbsVerticalCenter": true,
@@ -5480,7 +5480,7 @@
     "__prefab": null,
     "_contentSize": {
       "__type__": "cc.Size",
-      "width": 1024,
+      "width": 750,
       "height": 1334
     },
     "_anchorPoint": {
@@ -5502,8 +5502,8 @@
     "__prefab": null,
     "_alignFlags": 45,
     "_target": null,
-    "_left": -137,
-    "_right": -137,
+    "_left": 0,
+    "_right": 0,
     "_top": 0,
     "_bottom": 0,
     "_horizontalCenter": 0,
@@ -72276,6 +72276,7 @@
     "totalLevels": 99,
     "rowHeight": 1,
     "cameraLookOffsetY": 42,
+    "frameShiftY": 4,
     "cameraDistance": 20,
     "cameraPitchDeg": -42,
     "autoPreview": false,
