@@ -1829,9 +1829,22 @@ export class MenuController extends Component {
                 // without this the player still hears drop / lock
                 // SFX from the (now-invisible) tower while the badge
                 // FX plays on the level-select screen.
-                if (this.gameController?.gameState) {
-                    this.gameController.gameState.running = false;
+                //
+                // Also clear the input-guard latches so the freshly-
+                // shown level-select's Enter/Back respond on first
+                // tap: `_enteringLevel` (set to true when the player
+                // last hit Enter) is normally cleared by doEnterLevel's
+                // onGameplayReady chain, but any early exit through
+                // the badge-earn path can leave modalPaused/paused
+                // stale on the game state and _enteringLevel latched
+                // here, which silently swallows the first Enter tap.
+                const gs = this.gameController?.gameState;
+                if (gs) {
+                    gs.running = false;
+                    gs.paused = false;
+                    gs.modalPaused = false;
                 }
+                this._enteringLevel = false;
                 this.showLevelSelect();
                 this.setGameplayVisible(false);
                 // Badge-earned FX: wait a beat for the tower's own
