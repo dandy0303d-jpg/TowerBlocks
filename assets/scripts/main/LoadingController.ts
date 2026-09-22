@@ -298,25 +298,30 @@ export class LoadingController extends Component {
             try {
                 if (this.levelStage3D) {
                     this.levelStage3D.node.active = true;
-                    const startIdx = LevelProgress.currentIdx ?? 0;
-                    // Feed the stage the actual per-level customPiece
-                    // shapes BEFORE prebuild — otherwise the tower is
-                    // built with GAME_FATE_SHAPES[idx % 99] fallback
-                    // and each cube shows the wrong piece. Same as
-                    // MenuController.showLevelSelect does, but has to
-                    // happen here too so the cached tower the cached-
-                    // path in showForLevel reuses is correct from the
-                    // start.
+                    // Tower is now group-indexed (one row per unique
+                    // 本命方块, not one row per level). Dedupe shapes
+                    // + convert level idx → group idx + set totalLevels
+                    // in lockstep so the prebuilt tower matches what
+                    // MenuController.showLevelSelect will later show.
+                    const LEVELS_PER_FATE_PIECE = 9;
                     const flat = (this.gameController as any)?.flatLevels as Array<any> | undefined;
+                    const groupCount = flat
+                        ? Math.ceil(flat.length / LEVELS_PER_FATE_PIECE)
+                        : 0;
                     if (flat && typeof this.levelStage3D.setLevelShapes === 'function') {
-                        this.levelStage3D.setLevelShapes(
-                            flat.map(l => (l && l.customPiece && Array.isArray(l.customPiece.shape))
-                                ? l.customPiece.shape
-                                : null),
-                        );
+                        const groupShapes: Array<number[][] | null> = [];
+                        for (let g = 0; g < groupCount; g++) {
+                            const firstLevelInGroup = flat[g * LEVELS_PER_FATE_PIECE];
+                            const shape = firstLevelInGroup?.customPiece?.shape;
+                            groupShapes.push(shape && Array.isArray(shape) ? shape as number[][] : null);
+                        }
+                        this.levelStage3D.setLevelShapes(groupShapes);
                     }
-                    this.levelStage3D.prebuild(startIdx);
-                    console.log(`[Loading] levelStage3D prebuild done (idx=${startIdx})`);
+                    if (groupCount > 0) this.levelStage3D.totalLevels = groupCount;
+                    const startLevelIdx = LevelProgress.currentIdx ?? 0;
+                    const startGroupIdx = Math.floor(startLevelIdx / LEVELS_PER_FATE_PIECE);
+                    this.levelStage3D.prebuild(startGroupIdx);
+                    console.log(`[Loading] levelStage3D prebuild done (groupIdx=${startGroupIdx}, from levelIdx=${startLevelIdx})`);
                 } else {
                     console.warn('[Loading] levelStage3D is null — skipping tower prebuild');
                 }
