@@ -1379,13 +1379,21 @@ export class MenuController extends Component {
                 ? instantiate(template)
                 : new Node(`Badge_${i}`);
             (badge as any)._isMenuBadge = true;
-            badge.active = true;
             badge.parent = root;
+            // Set active AFTER parenting so onEnable fires with the
+            // node in the scene tree — some Cocos components (Layout,
+            // Widget) only lay out active-in-hierarchy children.
+            badge.active = true;
             const icon = this.authoredBadgeIcons[i];
             if (icon) {
                 const spr = badge.getComponent(Sprite) ?? badge.getComponentInChildren(Sprite);
                 if (spr) spr.spriteFrame = icon;
             }
+            // Diagnostic — surfaces "why can't I see my badge?" cases
+            // (template unwired, sprite frame missing, size zero).
+            const sprCheck = badge.getComponent(Sprite) ?? badge.getComponentInChildren(Sprite);
+            const ut = badge.getComponent(UITransform);
+            log(`[Badge ${i}] active=${badge.active} pos=(${badge.position.x.toFixed(0)},${badge.position.y.toFixed(0)}) size=(${ut?.width ?? '?'}x${ut?.height ?? '?'}) sprite=${!!sprCheck} spriteFrame=${!!sprCheck?.spriteFrame} parentActive=${root.active} parentActiveInHierarchy=${root.activeInHierarchy}`);
         }
     }
 
