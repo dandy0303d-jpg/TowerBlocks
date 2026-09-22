@@ -1274,11 +1274,18 @@ export class MenuController extends Component {
         // have set them false last time (belt-and-suspenders); flip
         // them back so this fresh open renders them.
         if (this.authoredLevelSelectOverlay) this.authoredLevelSelectOverlay.active = true;
-        if (this.authoredFatePieceProgressFill)  this.authoredFatePieceProgressFill.node.active  = true;
-        if (this.authoredFatePieceProgressLabel) this.authoredFatePieceProgressLabel.node.active = true;
-        if (this.authoredBadgesRoot)             this.authoredBadgesRoot.active                  = true;
-        if (this.authoredBadgeCountLabel)        this.authoredBadgeCountLabel.node.active        = true;
-        if (this.authoredBadgeCollectionButton)  this.authoredBadgeCollectionButton.node.active  = true;
+        // Also re-activate leaf AND its immediate parent — the leaf
+        // alone doesn't cover progress-bar background containers.
+        const showNodeAndParent = (n: Node | null | undefined) => {
+            if (!n || !n.isValid) return;
+            if (n.parent && n.parent.isValid) n.parent.active = true;
+            n.active = true;
+        };
+        if (this.authoredFatePieceProgressFill)  showNodeAndParent(this.authoredFatePieceProgressFill.node);
+        if (this.authoredFatePieceProgressLabel) showNodeAndParent(this.authoredFatePieceProgressLabel.node);
+        if (this.authoredBadgesRoot)             showNodeAndParent(this.authoredBadgesRoot);
+        if (this.authoredBadgeCountLabel)        showNodeAndParent(this.authoredBadgeCountLabel.node);
+        if (this.authoredBadgeCollectionButton)  showNodeAndParent(this.authoredBadgeCollectionButton.node);
         // Refresh the 9-slot progress bar + earned-badge case above the
         // stage so the player sees "3 / 9 of this fate piece done" and
         // the trophies from every fully-completed piece.
@@ -2494,11 +2501,19 @@ export class MenuController extends Component {
         // guarded against null so unwired fields silently no-op.
         if (on) {
             if (this.authoredLevelSelectOverlay) this.authoredLevelSelectOverlay.active = false;
-            if (this.authoredFatePieceProgressFill)  this.authoredFatePieceProgressFill.node.active  = false;
-            if (this.authoredFatePieceProgressLabel) this.authoredFatePieceProgressLabel.node.active = false;
-            if (this.authoredBadgesRoot)             this.authoredBadgesRoot.active                  = false;
-            if (this.authoredBadgeCountLabel)        this.authoredBadgeCountLabel.node.active        = false;
-            if (this.authoredBadgeCollectionButton)  this.authoredBadgeCollectionButton.node.active  = false;
+            // Also hide each authored leaf AND its immediate parent —
+            // the parent is typically the progress-bar background /
+            // frame container, which the leaf alone doesn't cover.
+            const hideNodeAndParent = (n: Node | null | undefined) => {
+                if (!n || !n.isValid) return;
+                n.active = false;
+                if (n.parent && n.parent.isValid) n.parent.active = false;
+            };
+            if (this.authoredFatePieceProgressFill)  hideNodeAndParent(this.authoredFatePieceProgressFill.node);
+            if (this.authoredFatePieceProgressLabel) hideNodeAndParent(this.authoredFatePieceProgressLabel.node);
+            if (this.authoredBadgesRoot)             hideNodeAndParent(this.authoredBadgesRoot);
+            if (this.authoredBadgeCountLabel)        hideNodeAndParent(this.authoredBadgeCountLabel.node);
+            if (this.authoredBadgeCollectionButton)  hideNodeAndParent(this.authoredBadgeCollectionButton.node);
         }
         // Sync the on-screen action buttons (rotate L/R / hard-drop /
         // rotate-piece) with gameplay visibility — they should never
