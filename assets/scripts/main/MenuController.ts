@@ -1365,14 +1365,16 @@ export class MenuController extends Component {
         const collectionBtn = this.authoredBadgeCollectionButton;
         const caseRoot = this.authoredBadgesRoot;
         if (!icon || !collectionBtn || !caseRoot) {
-            // FX pipeline unwired — still refresh so the new badge
-            // shows up statically in the case at least.
+            // FX pipeline unwired — still show the new badge statically
+            // so the case at least reflects the earn.
+            this._suppressLatestBadge = false;
             this.refreshFatePieceProgressUi(LevelProgress.currentIdx);
             return;
         }
         const canvasNode = director.getScene()?.getComponentInChildren(Canvas)?.node;
         const canvasUT = canvasNode?.getComponent(UITransform);
         if (!canvasNode || !canvasUT) {
+            this._suppressLatestBadge = false;
             this.refreshFatePieceProgressUi(LevelProgress.currentIdx);
             return;
         }
@@ -1407,13 +1409,21 @@ export class MenuController extends Component {
             .to(0.35, { position: endPos, scale: new Vec3(1, 1, 1) }, { easing: 'quadIn' })
             .call(() => {
                 if (fx && fx.isValid) fx.destroy();
-                // Repaint — the newly-earned badge is now included
-                // in `_earnedBadgeCount(maxClearedIdx)`, so
-                // refresh will add it as a child of the case root.
+                // Landing — allow the new badge to render on the
+                // next refresh so it "appears" at the case exactly
+                // when the flying icon lands.
+                this._suppressLatestBadge = false;
                 this.refreshFatePieceProgressUi(LevelProgress.currentIdx);
             })
             .start();
     }
+
+    /** When true, `refreshFatePieceProgressUi` hides the newest earned
+     *  badge from the case (renders one fewer). Set true during the
+     *  badge-earned fly-in FX so the "landing" reveal actually adds
+     *  the badge — cleared as the FX completes and the final
+     *  refresh call is made. */
+    private _suppressLatestBadge: boolean = false;
 
     public refreshFatePieceProgressUi(currentIdx: number): void {
         const maxCleared = LevelProgress.maxClearedIdx;
@@ -1443,7 +1453,13 @@ export class MenuController extends Component {
         }
 
         // ---- Badges ----
-        const badgeCount = this._earnedBadgeCount(maxCleared);
+        // `_suppressLatestBadge` is on while the earn-fly FX is in
+        // flight — we render badgeCount - 1 badges so the newest one
+        // "materialises" when the flying icon lands on the case.
+        const rawBadgeCount = this._earnedBadgeCount(maxCleared);
+        const badgeCount = this._suppressLatestBadge && rawBadgeCount > 0
+            ? rawBadgeCount - 1
+            : rawBadgeCount;
         if (this.authoredBadgeCountLabel) {
             this.authoredBadgeCountLabel.string = t('badges.earned', { n: badgeCount });
         }
@@ -1846,6 +1862,9 @@ export class MenuController extends Component {
                     gs.modalPaused = false;
                 }
                 this._enteringLevel = false;
+                // For the badge-earn path, hide the freshly-earned
+                // badge from the case until the fly-in FX lands.
+                if (justEarnedBadge) this._suppressLatestBadge = true;
                 // Force-hide the level-clear celebration panel and
                 // cancel any pending fade-out timeouts. Without this
                 // the panel (which typically has a full-screen dim +
