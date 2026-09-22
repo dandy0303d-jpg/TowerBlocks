@@ -205,6 +205,7 @@ export const DE: Record<string, string> = {
     'settings.sfx':          'Sound',
     'settings.haptic':       'Vibration',
     'settings.hideDev':      'DEV-Buttons ausblenden',
+    'badges.earned':        'Abzeichen: {n}',
     'settings.controls':       'Steuerung',
     'controls.title':          'Steuerung wählen',
     'controls.legacy':         'Klassisch (Wischen + Halten)',

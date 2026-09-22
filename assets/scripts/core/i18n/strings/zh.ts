@@ -234,6 +234,7 @@ export const ZH: Record<string, string> = {
     'settings.sfx':          '音效',
     'settings.haptic':       '手机震动',
     'settings.hideDev':      '隐藏 DEV 按钮',
+    'badges.earned':        '已获得徽章 {n} 枚',
     'settings.controls':       '操作方式',
     'controls.title':          '选择操作方式',
     'controls.legacy':         '经典（滑动 + 长按）',

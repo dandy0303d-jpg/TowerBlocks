@@ -203,6 +203,7 @@ export const FR: Record<string, string> = {
     'settings.sfx':          'Effets',
     'settings.haptic':       'Vibration',
     'settings.hideDev':      'Masquer boutons DEV',
+    'badges.earned':        'Badges obtenus : {n}',
     'settings.controls':       'Contrôles',
     'controls.title':          'Choisir les commandes',
     'controls.legacy':         'Classique (glisser + maintenir)',

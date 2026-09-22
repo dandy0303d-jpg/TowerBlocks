@@ -226,6 +226,7 @@ export const KO: Record<string, string> = {
     'settings.sfx':          '효과음',
     'settings.haptic':       '진동',
     'settings.hideDev':      'DEV 버튼 숨기기',
+    'badges.earned':        '획득 배지 {n}개',
     'settings.controls':       '조작 방식',
     'controls.title':          '조작 방식 선택',
     'controls.legacy':         '클래식 (스와이프 + 길게 누르기)',

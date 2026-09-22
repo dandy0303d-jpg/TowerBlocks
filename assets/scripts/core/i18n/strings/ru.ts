@@ -204,6 +204,7 @@ export const RU: Record<string, string> = {
     'settings.sfx':          'Звук',
     'settings.haptic':       'Вибрация',
     'settings.hideDev':      'Скрыть DEV-кнопки',
+    'badges.earned':        'Значков: {n}',
     'settings.controls':       'Управление',
     'controls.title':          'Выбор управления',
     'controls.legacy':         'Классика (свайп + удержание)',
