@@ -3991,7 +3991,7 @@
         "__id__": 121
       }
     ],
-    "_active": false,
+    "_active": true,
     "_components": [
       {
         "__id__": 130
@@ -4447,8 +4447,8 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 262.143,
-      "y": 573.623,
+      "x": 245,
+      "y": 597.82,
       "z": 0
     },
     "_lrot": {
@@ -4597,11 +4597,11 @@
     "__prefab": null,
     "_alignFlags": 17,
     "_target": null,
-    "_left": 0,
-    "_right": 0,
-    "_top": 32.37699999999995,
+    "_left": 896,
+    "_right": 30,
+    "_top": 8.17999999999995,
     "_bottom": 0,
-    "_horizontalCenter": 262.143,
+    "_horizontalCenter": 245,
     "_verticalCenter": 0,
     "_isAbsLeft": true,
     "_isAbsRight": true,
@@ -4609,7 +4609,7 @@
     "_isAbsBottom": true,
     "_isAbsHorizontalCenter": true,
     "_isAbsVerticalCenter": true,
-    "_originalWidth": 0,
+    "_originalWidth": 98,
     "_originalHeight": 0,
     "_alignMode": 2,
     "_lockFlags": 0,
@@ -4947,7 +4947,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": -304.04,
+      "x": -245,
       "y": 608.66,
       "z": 0
     },
@@ -5080,18 +5080,9 @@
       "__uuid__": "73f3f3fa-8a80-4bb0-a6c0-48963bdcd4a9@f9941",
       "__expectedType__": "cc.SpriteFrame"
     },
-    "_hoverSprite": {
-      "__uuid__": "20835ba4-6145-4fbc-a58a-051ce700aa3e@f9941",
-      "__expectedType__": "cc.SpriteFrame"
-    },
-    "_pressedSprite": {
-      "__uuid__": "544e49d6-3f05-4fa8-9a9e-091f98fc2ce8@f9941",
-      "__expectedType__": "cc.SpriteFrame"
-    },
-    "_disabledSprite": {
-      "__uuid__": "951249e0-9f16-456d-8b85-a6ca954da16b@f9941",
-      "__expectedType__": "cc.SpriteFrame"
-    },
+    "_hoverSprite": null,
+    "_pressedSprite": null,
+    "_disabledSprite": null,
     "_duration": 0.1,
     "_zoomScale": 1.2,
     "_target": {
@@ -5115,7 +5106,7 @@
     "_right": 0,
     "_top": 0.01,
     "_bottom": 0,
-    "_horizontalCenter": -304.04,
+    "_horizontalCenter": -245,
     "_verticalCenter": 0,
     "_isAbsLeft": true,
     "_isAbsRight": true,
@@ -5306,7 +5297,7 @@
       "a": 255
     },
     "_outlineWidth": 2,
-    "_enableShadow": false,
+    "_enableShadow": true,
     "_shadowColor": {
       "__type__": "cc.Color",
       "r": 0,
@@ -71491,6 +71482,7 @@
     "levelStage3D": {
       "__id__": 1783
     },
+    "authoredLevelSelectOverlay": null,
     "authoredFatePieceProgressFill": {
       "__id__": 96
     },
