@@ -51,6 +51,7 @@ import {
     getSfxVolume,   setSfxVolume,   cycleSfxVolume,
     getHapticMode,  setHapticMode,
     getControlMode, setControlMode, ControlMode,
+    getHideDevButtons, toggleHideDevButtons, subscribe as subscribeSettings,
 } from '../core/Settings';
 import { SoundManager } from '../audio/SoundManager';
 import { HapticsManager } from '../audio/HapticsManager';
@@ -405,6 +406,16 @@ export class MenuController extends Component {
 
     @property({ type: Label, tooltip: '震动行左侧的"手机震动" i18n 标签（走 settings.haptic）— 可空' })
     authoredSettingsHapticLabel: Label | null = null;
+
+    // ---- 隐藏 DEV 按钮开关（仅 develop 分支可见）----
+    @property({ type: Toggle, tooltip: '"隐藏 DEV 按钮"开关（仅 develop 分支生效；isChecked = 隐藏加速/重置/解锁三个 DEV 按钮）。行整行会在非-DEV 构建中自动 setActive(false)。可空。' })
+    authoredSettingsHideDevToggle: Toggle | null = null;
+
+    @property({ type: Label, tooltip: '"隐藏 DEV 按钮"行左侧的 i18n 标签（走 settings.hideDev）— 可空' })
+    authoredSettingsHideDevLabel: Label | null = null;
+
+    @property({ type: Node, tooltip: '"隐藏 DEV 按钮"整行容器 Node（脚本在非-DEV 构建里 setActive(false) 让玩家看不到）— 可空，未拖时脚本只能通过 Toggle/Label 各自 setActive' })
+    authoredSettingsHideDevRow: Node | null = null;
 
     // ---- 新版设置界面的其它 i18n 标签 ----
     @property({ type: Label, tooltip: '设置面板主标题 Label（走 settings.title）— 可空' })
@@ -2009,6 +2020,18 @@ export class MenuController extends Component {
      *     BLIND_UNLOCK_ENDLESS_LAYERS so Blind + Leaderboard unlock).
      *  Persists both to localStorage and repaints the lock overlays
      *  so the change is visible immediately. */
+    /** Show / hide the two DEV entry buttons on the main menu based
+     *  on `IS_DEV_BUILD` and the persisted `hideDevButtons` setting.
+     *  Called from `wireModeButtons` (initial paint), from the
+     *  Settings subscribe (fires when the settings toggle flips), and
+     *  from the toggle click handler (immediate paint on same frame).
+     *  A release-build call is still safe — both buttons stay off. */
+    private _refreshDevButtonsVisibility(): void {
+        const on = IS_DEV_BUILD && !getHideDevButtons();
+        if (this.modeBtnResetProgress)  this.modeBtnResetProgress.node.active  = on;
+        if (this.modeBtnDebugUnlockAll) this.modeBtnDebugUnlockAll.node.active = on;
+    }
+
     private _debugUnlockAllModes(): void {
         // Nudge level progress up to at least 10 clears (idx = 9).
         const targetIdx = MenuController.ENDLESS_UNLOCK_LEVEL_COUNT - 1;
@@ -2082,17 +2105,21 @@ export class MenuController extends Component {
             this.modeBtnBackpack.node.off('click');
             this.modeBtnBackpack.node.on('click', () => this.onBackpackClicked(), this);
         }
-        // Reset progress button: DEV-only. Hidden in release builds so
-        // players can't nuke their own save by accident (and to keep
-        // the main menu clean). IS_DEV_BUILD is set per branch — see
+        // Reset progress button + Unlock-all button: DEV-only. Hidden
+        // in release builds so players can't nuke their own save by
+        // accident. IS_DEV_BUILD is set per branch — see
         // assets/scripts/core/BuildConfig.ts.
+        //
+        // Even on dev, a settings toggle ("隐藏 DEV 按钮") lets the
+        // developer temporarily hide them for screenshots / recordings.
+        // Wired via `_refreshDevButtonsVisibility` + a Settings
+        // subscribe so a settings-panel toggle repaints immediately.
         if (IS_DEV_BUILD) {
             bindBtn(this.modeBtnResetProgress, 'menu.reset',   () => this.onResetProgressClicked());
             bindBtn(this.modeBtnDebugUnlockAll, 'menu.unlockAll', () => this._debugUnlockAllModes());
-        } else {
-            if (this.modeBtnResetProgress)  this.modeBtnResetProgress.node.active  = false;
-            if (this.modeBtnDebugUnlockAll) this.modeBtnDebugUnlockAll.node.active = false;
         }
+        this._refreshDevButtonsVisibility();
+        subscribeSettings(() => this._refreshDevButtonsVisibility());
         // Initial paint of lock state — showModeSelect will refresh on
         // subsequent shows as progress changes.
         this._loadEndlessBestFromStorage();
@@ -2807,6 +2834,40 @@ export class MenuController extends Component {
                 setHapticMode(ht.isChecked ? 'on' : 'off');
                 log(`[Settings] haptic → ${ht.isChecked ? 'on' : 'off'}`);
                 if (ht.isChecked) HapticsManager.impact('medium');
+            }, this);
+        }
+
+        // ---- 隐藏 DEV 按钮 (develop-only) ----
+        // Hide-in-release: whole row is set inactive when not on dev
+        // so channel builds don't show the checkbox at all. On dev,
+        // toggling the checkbox persists via Settings + broadcasts to
+        // MenuController (main-menu buttons) and HudController (speed
+        // button) which re-check `getHideDevButtons()` on their next
+        // paint cycle.
+        if (this.authoredSettingsHideDevRow) {
+            this.authoredSettingsHideDevRow.active = IS_DEV_BUILD;
+        } else {
+            // No row-container wired — try to hide the label + toggle
+            // individually so the release build stays clean.
+            if (!IS_DEV_BUILD) {
+                if (this.authoredSettingsHideDevToggle) this.authoredSettingsHideDevToggle.node.active = false;
+                if (this.authoredSettingsHideDevLabel)  this.authoredSettingsHideDevLabel.node.active  = false;
+            }
+        }
+        if (this.authoredSettingsHideDevLabel) {
+            this.trackI18nLabel(this.authoredSettingsHideDevLabel, 'settings.hideDev');
+        }
+        if (IS_DEV_BUILD && this.authoredSettingsHideDevToggle) {
+            const dt = this.authoredSettingsHideDevToggle;
+            dt.isChecked = getHideDevButtons();
+            dt.node.off('toggle');
+            dt.node.on('toggle', () => {
+                toggleHideDevButtons();
+                log(`[Settings] hideDev → ${getHideDevButtons()}`);
+                // Immediate paint — the Settings subscribe wired in
+                // wireModeButtons() also fires, but calling here means
+                // the buttons hide on the SAME frame as the click.
+                this._refreshDevButtonsVisibility();
             }, this);
         }
 
@@ -3808,6 +3869,12 @@ export class MenuController extends Component {
         }
         if (this.authoredSettingsHapticLabel) {
             this.trackI18nLabel(this.authoredSettingsHapticLabel, 'settings.haptic');
+        }
+        // Hide-DEV row: only paints in DEV builds (row Node was set
+        // inactive at wire time on release). Sync the toggle to the
+        // persisted setting so a fresh open reflects current state.
+        if (IS_DEV_BUILD && this.authoredSettingsHideDevToggle) {
+            this.authoredSettingsHideDevToggle.isChecked = getHideDevButtons();
         }
         // Avatar Sprite — repaint from PlayerProfile in case the player
         // picked a new one since the last open.

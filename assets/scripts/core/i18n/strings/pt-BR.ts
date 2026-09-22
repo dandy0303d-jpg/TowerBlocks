@@ -208,6 +208,7 @@ export const PT_BR: Record<string, string> = {
     'settings.bgm':          'Música',
     'settings.sfx':          'Efeitos',
     'settings.haptic':       'Vibração',
+    'settings.hideDev':      'Ocultar botões DEV',
     'settings.controls':       'Controles',
     'controls.title':          'Escolher esquema de controle',
     'controls.legacy':         'Clássico (deslizar + segurar)',

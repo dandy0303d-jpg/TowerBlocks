@@ -226,6 +226,7 @@ export const ZH_HANT: Record<string, string> = {
     'settings.bgm':          '背景音樂',
     'settings.sfx':          '音效',
     'settings.haptic':       '手機震動',
+    'settings.hideDev':      '隱藏 DEV 按鈕',
     'settings.controls':       '操作方式',
     'controls.title':          '選擇操作方式',
     'controls.legacy':         '經典（滑動 + 長按）',

@@ -412,7 +412,7 @@
     },
     "levels": [
       {
-        "__uuid__": "1f0fe73c-5125-431d-9cca-3a8ea860c5e2",
+        "__uuid__": "3d501b25-f82c-42b3-84dc-f7acbc86900b",
         "__expectedType__": "cc.JsonAsset"
       }
     ],
@@ -69836,6 +69836,9 @@
     },
     "authoredEmbedStartLabel": {
       "__id__": 689
+    },
+    "authoredEmbedHintLabel": {
+      "__id__": 692
     },
     "authoredPauseOverlay": {
       "__id__": 746

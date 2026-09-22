@@ -227,6 +227,7 @@ export const EN: Record<string, string> = {
     'settings.bgm':          'Music',
     'settings.sfx':          'Sound FX',
     'settings.haptic':       'Vibration',
+    'settings.hideDev':      'Hide DEV buttons',
     'settings.controls':       'Controls',
     'controls.title':          'Choose control scheme',
     'controls.legacy':         'Classic (swipe + hold)',

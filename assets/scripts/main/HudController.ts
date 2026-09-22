@@ -36,7 +36,7 @@ import { BackKeyManager } from './BackKeyManager';
 import { ITEM_KEYS, ITEM_BASE_PROBS, MagicItemKey, ENERGY_FULL_THRESHOLD, COLORS, SHAPES, PieceType, CellValue, COLS, Rarity, rarityForKey } from '../core/Constants';
 import { FATE_SHAPES, fateIndexOfShape, pickFateIndex, pickFateIndex4Connected, FATE_SHAPES_4CONNECTED_INDICES, fateShapeAsCustomPiece } from '../core/FateShapes';
 import { CustomPieceDef, EmbedProp, LevelData } from '../core/Types';
-import { getKeysMode, subscribe as subscribeSettings } from '../core/Settings';
+import { getKeysMode, getHideDevButtons, subscribe as subscribeSettings } from '../core/Settings';
 import { AnalyticsApi } from '../core/AnalyticsApi';
 import { BgmManager } from '../audio/BgmManager';
 import { FontManager } from '../core/FontManager';
@@ -5259,7 +5259,12 @@ export class HudController extends Component {
     /** Compute effective speed multiplier and gate button visibility. */
     private syncDebugSpeedButton(g: any): void {
         if (!this.debugSpeedButtonNode) return;
-        const showable = IS_DEV_BUILD && (g.mode === 'endless' || g.mode === 'blind');
+        // Hidden in release builds unconditionally. In dev builds the
+        // player can also hide it via Settings ("隐藏 DEV 按钮"), so a
+        // developer can record clean footage without a rebuild.
+        const showable = IS_DEV_BUILD
+                      && !getHideDevButtons()
+                      && (g.mode === 'endless' || g.mode === 'blind');
         if (this.debugSpeedButtonNode.active !== showable) {
             this.debugSpeedButtonNode.active = showable;
         }
