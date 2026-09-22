@@ -155,6 +155,9 @@ export class MenuController extends Component {
     //  method silently no-ops on missing pieces.
     // ================================================================
 
+    @property({ type: Node, tooltip: '关卡选择界面的整个 2D UI 容器 Node（含 back 箭头、9 关进度条、徽章横排、徽章图鉴按钮）。脚本会在进入 level-select 时 setActive(true)、离开时 setActive(false)。留空表示不由脚本控制显隐。' })
+    authoredLevelSelectOverlay: Node | null = null;
+
     @property({ type: Sprite, tooltip: '本命方块 9 关进度条的填充 Sprite（组件 Type = FILLED, FillType = HORIZONTAL, FillStart = 0）。脚本会写 fillRange = clearedInGroup / 9。可空。' })
     authoredFatePieceProgressFill: Sprite | null = null;
 
@@ -1071,6 +1074,11 @@ export class MenuController extends Component {
             // because it only resets tracking state, not cube nodes.
             this.levelStage3D.resetShownState();
         }
+        // Hide the 2D UI overlay that lives above the level-select
+        // tower (back arrow / progress bar / badges / etc). Kept
+        // together with the 3D stage's visibility so they behave as
+        // a single "screen".
+        if (this.authoredLevelSelectOverlay) this.authoredLevelSelectOverlay.active = false;
         if (this.mainCamera3D) this.mainCamera3D.active = true;
         this.setGameplayVisible(false);
         // Twinkle stars are level-select-only decor — hide here.
@@ -1258,6 +1266,10 @@ export class MenuController extends Component {
             (idx: number) => this.enterLevelFromStage3D(idx),
             () => this.showModeSelect(),
         );
+        // Reveal the 2D UI overlay (back / progress bar / badges).
+        // Kept off by default in the scene so it doesn't leak onto the
+        // mode-select screen or into gameplay; script-managed here.
+        if (this.authoredLevelSelectOverlay) this.authoredLevelSelectOverlay.active = true;
         // Refresh the 9-slot progress bar + earned-badge case above the
         // stage so the player sees "3 / 9 of this fate piece done" and
         // the trophies from every fully-completed piece.
@@ -1362,6 +1374,9 @@ export class MenuController extends Component {
         // (exit-confirm at main menu). If we want in-game back to
         // pause / return-to-menu instead, do it in GameController.
         BackKeyManager.pop(this._levelSelectBack);
+        // Hide the level-select 2D overlay (back arrow, progress bar,
+        // badges) — the gameplay HUD takes over on the next frame.
+        if (this.authoredLevelSelectOverlay) this.authoredLevelSelectOverlay.active = false;
 
         const releaseGuard = () => { this._enteringLevel = false; };
 
