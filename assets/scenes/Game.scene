@@ -4061,7 +4061,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 0,
+      "x": -63.426,
       "y": 537.608,
       "z": 0
     },
@@ -4406,7 +4406,7 @@
     "_right": 0,
     "_top": 108.39200000000005,
     "_bottom": 0,
-    "_horizontalCenter": 0,
+    "_horizontalCenter": -63.426,
     "_verticalCenter": 0,
     "_isAbsLeft": true,
     "_isAbsRight": true,
@@ -4447,7 +4447,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 245,
+      "x": 206.945,
       "y": 531.28,
       "z": 0
     },
@@ -4601,7 +4601,7 @@
     "_right": 30,
     "_top": 74.72000000000008,
     "_bottom": 0,
-    "_horizontalCenter": 245,
+    "_horizontalCenter": 206.945,
     "_verticalCenter": 0,
     "_isAbsLeft": true,
     "_isAbsRight": true,
@@ -4848,7 +4848,7 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 0,
+      "x": -63.426,
       "y": 495.518,
       "z": 0
     },

@@ -1880,13 +1880,14 @@ export class MenuController extends Component {
                 }
                 this.showLevelSelect();
                 this.setGameplayVisible(false);
-                // Badge-earned FX: wait a beat for the tower's own
-                // collapse-rebuild animation (playCollapseThenRebuild)
-                // to settle, then fly the badge from the top-right
+                // Badge-earned FX: fly the badge from the top-right
                 // preview slot → screen centre (scale 1.5×, 0.5 s) →
                 // pause 0.5 s → slam into the badge case (0.35 s).
+                // Short pre-delay (0.6 s) so it lands while the tower
+                // collapse-rebuild is still visible — the two beats
+                // overlap instead of playing back-to-back.
                 if (justEarnedBadge) {
-                    this.scheduleOnce(() => this._playBadgeEarnedFx(earnedGroupIdx), 1.5);
+                    this.scheduleOnce(() => this._playBadgeEarnedFx(earnedGroupIdx), 0.6);
                 }
             };
             SoundManager.instance?.play('level_win');
@@ -1894,15 +1895,26 @@ export class MenuController extends Component {
             const finalGs = (this.gameController as any)?.gameState;
             const finalElapsedSec = finalGs?.levelElapsedSec ?? 0;
             if (finalHudAny && typeof finalHudAny.showLevelClearTime === 'function') {
+                // Fire the celebration panel, but hand it a no-op
+                // callback — we run `gotoSelect` on our OWN shorter
+                // timer so the level-select tower starts rebuilding
+                // BEHIND the fading panel instead of waiting for it
+                // to fully vanish. This shaves ~250ms + hides the
+                // visible dead-air that made the return feel slow.
                 finalHudAny.showLevelClearTime(finalElapsedSec, () => {
                     // Only hide the HUD AFTER the celebration completes,
                     // so the centered "通关时间：MM:SS" isn't yanked off
                     // screen mid-animation.
                     if (this.hudController) this.hudController.setHudVisible(false);
-                    gotoSelect();
                 });
+                // Kick gotoSelect the moment the panel STARTS fading
+                // out (not when it finishes). Cocos's scheduleOnce
+                // takes seconds, not ms.
+                const gotoDelaySec = 2.3;
+                this.scheduleOnce(() => gotoSelect(), gotoDelaySec);
             } else {
                 if (this.hudController) this.hudController.setHudVisible(false);
+                gotoSelect();
             }
             // Scatter runs in parallel with the timer animation (same
             // as between-level). On scatter-complete, HIDE the whole
