@@ -1603,13 +1603,26 @@ export class MenuController extends Component {
         }
     }
 
-    /** Set a single cell's visual state based on
-     *    - `earned`: from LevelProgress (colored vs greyscale)
-     *    - `BadgeClaims.isClaimed(g)`: claim button visible / hidden
-     *  Also wires the claim button's click handler. */
+    /** Set a single cell's visual state.
+     *
+     *  Authored cell structure (BadgePanelCellTemplate):
+     *      Cell (Node + Button + Sprite[badge icon])
+     *        └─ ClaimButton (Node with 💎 icon + Label showing "1")
+     *
+     *  Rules:
+     *    • Badge icon = the Sprite on the CELL itself (not any
+     *      descendant — that would grab the ClaimButton's 💎 sprite).
+     *      Coloured when the group's earned, dark-grey tint when
+     *      still locked.
+     *    • Whole cell is the claim button — clicking it fires the
+     *      reward for that group. Its interactable state gates
+     *      whether the tap actually claims.
+     *    • ClaimButton child (looked up by name, else first child) is
+     *      just a decorative badge showing "+1💎". Hidden on
+     *      already-claimed cells so the player sees "no reward left". */
     private _paintBadgePanelCell(cell: Node, groupIdx: number, earned: boolean): void {
-        // 1) Icon — colored when earned, greyscale tint when locked.
-        const iconSpr = cell.getComponentInChildren(Sprite);
+        // 1) Badge icon on the cell itself.
+        const iconSpr = cell.getComponent(Sprite);
         if (iconSpr) {
             const icon = this.authoredBadgeIcons[groupIdx];
             if (icon) iconSpr.spriteFrame = icon;
@@ -1618,26 +1631,22 @@ export class MenuController extends Component {
                 : new Color(80, 80, 80, 255);
         }
 
-        // 2) Claim button + "已领取" state.
-        // Convention: the cell's Button component (if any) is the
-        // claim button. Alternatively the author can nest a
-        // dedicated `ClaimButton` named child.
-        const claimBtn = cell.getComponentInChildren(Button);
+        // 2) ClaimButton decorative child — the diamond + count. Show
+        // only when the badge is earned AND the reward hasn't been
+        // claimed yet.
         const claimed = BadgeClaims.isClaimed(groupIdx);
         const canClaim = earned && !claimed;
-        if (claimBtn) {
-            claimBtn.node.active = earned;                 // hidden on locked
-            claimBtn.interactable = canClaim;
-            claimBtn.node.off('click');
-            if (canClaim) {
-                claimBtn.node.on('click', () => this._onClaimBadgeReward(groupIdx), this);
-            }
-            const lab = claimBtn.getComponentInChildren(Label);
-            if (lab) {
-                lab.string = claimed
-                    ? t('badges.claimed')
-                    : t('badges.claim');
-            }
+        const claimIndicator = cell.getChildByName('ClaimButton')
+                            ?? (cell.children.length > 0 ? cell.children[0] : null);
+        if (claimIndicator) claimIndicator.active = canClaim;
+
+        // 3) The cell IS the button — click to claim. Interactable
+        // only when there's actually a reward to grab.
+        const cellBtn = cell.getComponent(Button);
+        cell.off('click');
+        if (cellBtn) cellBtn.interactable = canClaim;
+        if (canClaim) {
+            cell.on('click', () => this._onClaimBadgeReward(groupIdx), this);
         }
     }
 
