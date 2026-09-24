@@ -74127,7 +74127,7 @@
     "totalLevels": 99,
     "rowHeight": 1,
     "cameraLookOffsetY": 42,
-    "frameShiftY": 4,
+    "frameShiftY": 0,
     "cameraDistance": 20,
     "cameraPitchDeg": -42,
     "autoPreview": false,
