@@ -240,6 +240,7 @@ export const DE: Record<string, string> = {
     'settings.nickname.rejected':    'Ungültiger Nickname',
     'settings.nickname.noCard':      'Du brauchst 1 Umbenennungskarte, um deinen Nickname zu ändern — hol dir eine im Rucksack',
     'settings.nickname.cooldown':    'Noch {n} Tag(e) bis zur nächsten Änderung',
+    'settings.nickname.renameCards': 'Umbenennungskarten: {n}',
     'settings.nickname.cooldownReady':'Jetzt änderbar (danach 7 Tage Sperre)',
     'settings.nickname.title':       'Nickname ändern',
     'settings.nickname.placeholder': 'Neuer Nickname',

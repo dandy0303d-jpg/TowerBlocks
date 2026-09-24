@@ -264,6 +264,7 @@ export const JA: Record<string, string> = {
     'settings.nickname.rejected':    '無効なニックネームです',
     'settings.nickname.noCard':      'ニックネームの変更には改名カードが 1 枚必要です — バックパックで入手してください',
     'settings.nickname.cooldown':    '次回変更まであと {n} 日',
+    'settings.nickname.renameCards': '改名カード：{n} 枚',
     'settings.nickname.cooldownReady':'今すぐ変更可能（次回は 7 日待機）',
     'settings.nickname.title':       'ニックネーム変更',
     'settings.nickname.placeholder': '新しいニックネームを入力',

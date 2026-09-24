@@ -45,6 +45,7 @@ import type { EmbedProp } from '../core/Types';
 import { setBannedHandler, getBannedState, setBearerToken, type BannedState } from '../core/Http';
 import { fetchWallet, subscribeBalance, emitBalance } from '../core/WalletApi';
 import { BadgeClaims } from '../core/BadgeClaims';
+import { fetchBackpack, getCachedBackpack } from '../core/BackpackApi';
 import { BACKEND_BASE_URL } from '../core/BackendConfig';
 import { TutorialProgress } from '../core/TutorialProgress';
 import { TutorialController } from './TutorialController';
@@ -3851,28 +3852,42 @@ export class MenuController extends Component {
         this.showSettingsToast(t(key), 'error');
     }
 
-    /** Paint the nickname-cooldown status Label. Shows one of:
-     *    - "距下次可修改还有 N 天" (cooldown active, N > 0)
-     *    - "现在可以修改（下次修改需等 7 天）" (cooldown elapsed / never renamed)
-     *    - hidden (server hasn't reported yet — no misleading "0 days")
-     *  Called from refreshAuthoredSettingsValues on panel open, and again
-     *  after every successful setName so the countdown flips instantly.
-     *  Silent no-op when the authored slot isn't wired. */
+    /** Paint the "剩余更名卡 N 张" status Label under the nickname
+     *  row. Rename cards are the only gate on renaming now (the old
+     *  7-day cooldown was retired). Count comes from the server-side
+     *  backpack (item id `rename_card`).
+     *
+     *  Called from `refreshAuthoredSettingsValues` on panel open, and
+     *  again after every successful setName so the count flips
+     *  instantly. Silent no-op when the authored slot isn't wired.
+     *
+     *  Cache-first: shows the last known backpack count synchronously
+     *  so the label doesn't flash blank; kicks off a network refresh
+     *  in the background that repaints when the response lands. */
     private paintNicknameCooldownLabel(): void {
         const lab = this.authoredSettingsNicknameCooldownLabel;
         if (!lab) return;
-        const days = PlayerProfile.nicknameCooldownDaysRemaining();
-        if (days === null) {
-            // Server hasn't reported yet — hide rather than lie.
-            lab.node.active = false;
-            return;
-        }
-        lab.node.active = true;
-        if (days > 0) {
-            lab.string = t('settings.nickname.cooldown', { n: days });
-        } else {
-            lab.string = t('settings.nickname.cooldownReady');
-        }
+        const paint = (items: ReadonlyArray<{ id: string; count: number }> | null) => {
+            if (!lab || !lab.isValid) return;
+            if (items === null) {
+                // No data at all yet — hide rather than say "0".
+                lab.node.active = false;
+                return;
+            }
+            let count = 0;
+            for (const it of items) {
+                if (it.id === 'rename_card') { count = it.count; break; }
+            }
+            lab.node.active = true;
+            lab.string = t('settings.nickname.renameCards', { n: count });
+        };
+        const cached = getCachedBackpack();
+        paint(cached ? cached.items : null);
+        fetchBackpack()
+            .then((r) => paint(r.items))
+            .catch((err) => {
+                console.warn('[Settings] backpack fetch for rename-card count failed:', err?.message || err);
+            });
     }
 
     /** Pull `retryAt` out of an HTTP error message and convert to
