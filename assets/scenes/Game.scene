@@ -967,8 +967,8 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": -80,
-      "y": -581.8,
+      "x": -60,
+      "y": -541.8,
       "z": 0
     },
     "_lrot": {
@@ -1266,8 +1266,8 @@
     "_left": 237.755,
     "_right": 0,
     "_top": 0,
-    "_bottom": 30,
-    "_horizontalCenter": -80,
+    "_bottom": 70,
+    "_horizontalCenter": -60,
     "_verticalCenter": -597.619,
     "_isAbsLeft": true,
     "_isAbsRight": true,
@@ -1312,8 +1312,8 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 80,
-      "y": -581.8,
+      "x": 60,
+      "y": -541.8,
       "z": 0
     },
     "_lrot": {
@@ -1611,8 +1611,8 @@
     "_left": 172.747,
     "_right": 0,
     "_top": 0,
-    "_bottom": 30,
-    "_horizontalCenter": 80,
+    "_bottom": 70,
+    "_horizontalCenter": 60,
     "_verticalCenter": -572,
     "_isAbsLeft": true,
     "_isAbsRight": true,
@@ -1657,8 +1657,8 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": -227.312,
-      "y": -581.8,
+      "x": -180,
+      "y": -541.8,
       "z": 0
     },
     "_lrot": {
@@ -1944,8 +1944,8 @@
     "_left": 172.747,
     "_right": 0,
     "_top": 0,
-    "_bottom": 30,
-    "_horizontalCenter": -227.312,
+    "_bottom": 70,
+    "_horizontalCenter": -180,
     "_verticalCenter": -572,
     "_isAbsLeft": true,
     "_isAbsRight": true,
@@ -1990,8 +1990,8 @@
     "_prefab": null,
     "_lpos": {
       "__type__": "cc.Vec3",
-      "x": 223.807,
-      "y": -581.8,
+      "x": 180,
+      "y": -541.8,
       "z": 0
     },
     "_lrot": {
@@ -2277,8 +2277,8 @@
     "_left": 172.747,
     "_right": 0,
     "_top": 0,
-    "_bottom": 30,
-    "_horizontalCenter": 223.807,
+    "_bottom": 70,
+    "_horizontalCenter": 180,
     "_verticalCenter": -572,
     "_isAbsLeft": true,
     "_isAbsRight": true,
@@ -3994,7 +3994,7 @@
         "__id__": 131
       }
     ],
-    "_active": true,
+    "_active": false,
     "_components": [
       {
         "__id__": 169
@@ -5339,7 +5339,7 @@
       "a": 255
     },
     "_outlineWidth": 2,
-    "_enableShadow": true,
+    "_enableShadow": false,
     "_shadowColor": {
       "__type__": "cc.Color",
       "r": 0,

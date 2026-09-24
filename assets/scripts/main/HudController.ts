@@ -5596,6 +5596,13 @@ export class HudController extends Component {
         { bomb_block: 0, mini_block: 0, dryer: 0, gravity_press: 0 };
     /** Prevents double-tap racing while a consume is in flight. */
     private _backpackConsuming: boolean = false;
+    /** Shared cooldown across ALL backpack quick-use items. Using ANY
+     *  item locks all four buttons for `_BACKPACK_COOLDOWN_MS`. Value
+     *  is the `Date.now()` timestamp when the cooldown lifts; 0 = no
+     *  cooldown active. Polled by `_pollBackpackButtonState` (every
+     *  frame) so buttons repaint (dim / re-enable) as time elapses. */
+    private _backpackCooldownUntilMs: number = 0;
+    private static readonly _BACKPACK_COOLDOWN_MS = 10_000;
     /** One-shot flag — the buttons stay wired for the component's
      *  lifetime, so we only bind click listeners once. */
     private _backpackButtonsWired: boolean = false;
@@ -5619,13 +5626,27 @@ export class HudController extends Component {
     private _pollBackpackButtonState(): void {
         const gs = this.gameController?.gameState;
         const inGame = !!(gs && gs.running && !gs.gameOver);
-        if (inGame === this._backpackLastInGame) return;   // no change
-        this._backpackLastInGame = inGame;
-        // Off → on: refetch so a fresh grant / chestdrop from the
-        // previous session shows up. On → off: just repaint (buttons
-        // hide immediately, no network needed).
-        if (inGame) this._refreshBackpackQuickCounts();
-        else        this._paintBackpackQuickButtons();
+        const stateChanged = inGame !== this._backpackLastInGame;
+        if (stateChanged) {
+            this._backpackLastInGame = inGame;
+            // Off → on: refetch so a fresh grant / chestdrop from the
+            // previous session shows up. On → off: just repaint.
+            if (inGame) this._refreshBackpackQuickCounts();
+            else        this._paintBackpackQuickButtons();
+        }
+        // Cooldown tick: while a cooldown is active, repaint every
+        // frame so the disabled → enabled flip happens the instant
+        // the timer elapses (without an extra tap). Clears the field
+        // when the deadline passes and does a final repaint so the
+        // buttons come back to interactable.
+        if (inGame && this._backpackCooldownUntilMs > 0) {
+            if (Date.now() >= this._backpackCooldownUntilMs) {
+                this._backpackCooldownUntilMs = 0;
+                this._paintBackpackQuickButtons();
+            } else {
+                this._paintBackpackQuickButtons();
+            }
+        }
     }
 
     /** Bind click handlers on the bomb_block / mini_block buttons.
@@ -5745,25 +5766,48 @@ export class HudController extends Component {
         // player learns that the slot exists even when empty.
         const gs = this.gameController?.gameState;
         const inGame = !!(gs && gs.running && !gs.gameOver);
+        const cooling = this._backpackCooldownActive();
         if (btn) {
             btn.node.active = inGame;
-            btn.interactable = inGame && count > 0 && !this._backpackConsuming;
+            btn.interactable = inGame && count > 0 && !this._backpackConsuming && !cooling;
             // 无卡态：中灰 tint 视觉近似脱色（Sprite.color 是乘法混
             // 色，RGB 通道压到相同值就会显得饱和度低）。有卡时恢复
-            // 白色 = 原纹理色。
-            const tint = count > 0
-                ? new Color(255, 255, 255, 255)
-                : new Color(120, 120, 120, 255);
+            // 白色 = 原纹理色。冷却中同样压色以示"暂不可用"。
+            const dim = count === 0 || cooling;
+            const tint = dim
+                ? new Color(120, 120, 120, 255)
+                : new Color(255, 255, 255, 255);
             const sprites = btn.node.getComponentsInChildren(Sprite);
             for (const spr of sprites) spr.color = tint;
         }
         if (countLab) {
-            countLab.string = String(count);
+            // While a cooldown is active, show the remaining seconds
+            // in-place of the count so the player has a clear countdown.
+            if (cooling) {
+                const remaining = Math.max(0, Math.ceil((this._backpackCooldownUntilMs - Date.now()) / 1000));
+                countLab.string = `${remaining}s`;
+            } else {
+                countLab.string = String(count);
+            }
             countLab.node.active = inGame;
-            countLab.color = count > 0
+            countLab.color = (count > 0 && !cooling)
                 ? new Color(255, 255, 255, 255)
                 : new Color(150, 150, 150, 255);
         }
+    }
+
+    /** True while the shared backpack cooldown timer hasn't elapsed. */
+    private _backpackCooldownActive(): boolean {
+        return this._backpackCooldownUntilMs > 0
+            && Date.now() < this._backpackCooldownUntilMs;
+    }
+
+    /** Kick off (or refresh) the shared 10 s cooldown. Called on
+     *  every successful `consumeBackpackItem`, whether the item was
+     *  a NEXT-piece modifier (bomb/mini) or an immediate-effect
+     *  world FX (dryer/gravity_press). */
+    private _startBackpackCooldown(): void {
+        this._backpackCooldownUntilMs = Date.now() + HudController._BACKPACK_COOLDOWN_MS;
     }
 
     /** Fly-to-NEXT animation for a backpack quick-use tap. Clones
@@ -5849,6 +5893,10 @@ export class HudController extends Component {
      *  reflects the transformation. */
     private _onBackpackQuickUse(id: 'bomb_block' | 'mini_block'): void {
         if (this._backpackConsuming) return;
+        if (this._backpackCooldownActive()) {
+            console.log(`[HUD] backpack quick-use ${id}: cooldown active, ignored`);
+            return;
+        }
         const gs = this.gameController?.gameState;
         if (!gs || !gs.running || gs.gameOver) {
             // Buttons should be inactive in this case anyway, but
@@ -5888,6 +5936,9 @@ export class HudController extends Component {
                 this._backpackConsuming = false;
                 // Trust the server's new count.
                 this._backpackCounts[id] = r.count;
+                // Start the shared cooldown — all four quick-use
+                // buttons stay disabled until this deadline passes.
+                this._startBackpackCooldown();
                 const mod = (id === 'mini_block' ? 'mini' : 'bomb') as 'mini' | 'bomb';
                 // Arm the modifier field now (game logic can react to
                 // the arm — currently just cleared by
@@ -5936,6 +5987,10 @@ export class HudController extends Component {
      *  */
     private _onBackpackImmediateUse(id: 'dryer' | 'gravity_press'): void {
         if (this._backpackConsuming) return;
+        if (this._backpackCooldownActive()) {
+            console.log(`[HUD] backpack immediate-use ${id}: cooldown active, ignored`);
+            return;
+        }
         const gc = this.gameController;
         const gs = gc?.gameState;
         if (!gc || !gs || !gs.running || gs.gameOver) {
@@ -5949,6 +6004,9 @@ export class HudController extends Component {
             .then((r) => {
                 this._backpackConsuming = false;
                 this._backpackCounts[id] = r.count;
+                // Start the shared 10 s cooldown so the player can't
+                // spam multiple items back-to-back.
+                this._startBackpackCooldown();
                 this._paintBackpackQuickButtons();
                 // Fire the actual world effect on GameController.
                 if (id === 'dryer' && typeof (gc as any).applyDryerFromBackpack === 'function') {
