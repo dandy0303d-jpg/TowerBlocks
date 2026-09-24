@@ -5625,7 +5625,10 @@ export class HudController extends Component {
      *  since the last game surfaces on this run. */
     private _pollBackpackButtonState(): void {
         const gs = this.gameController?.gameState;
-        const inGame = !!(gs && gs.running && !gs.gameOver);
+        // Match `_paintOneBackpackBtn`'s gate — tutorial hides the
+        // quick-use items too, so the transition fires (and buttons
+        // re-appear) the moment the tutorial ends.
+        const inGame = !!(gs && gs.running && !gs.gameOver && !gs.tutorialActive);
         const stateChanged = inGame !== this._backpackLastInGame;
         if (stateChanged) {
             this._backpackLastInGame = inGame;
@@ -5765,7 +5768,10 @@ export class HudController extends Component {
         // (greyed when count == 0 — see color tint below) so the
         // player learns that the slot exists even when empty.
         const gs = this.gameController?.gameState;
-        const inGame = !!(gs && gs.running && !gs.gameOver);
+        // Hide during tutorial — new players are learning the base
+        // mechanics; showing quick-use items on top of that adds
+        // buttons the tutorial doesn't mention and can trap them.
+        const inGame = !!(gs && gs.running && !gs.gameOver && !gs.tutorialActive);
         const cooling = this._backpackCooldownActive();
         if (btn) {
             btn.node.active = inGame;
