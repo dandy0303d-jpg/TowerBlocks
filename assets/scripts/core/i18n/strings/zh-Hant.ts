@@ -262,6 +262,7 @@ export const ZH_HANT: Record<string, string> = {
     'settings.nickname.rejected':    '暱稱不合法，請換一個',
     'settings.nickname.noCard':      '需要 1 張改名卡才能修改暱稱，請到背包獲取',
     'settings.nickname.cooldown':    '距下次可修改還有 {n} 天',
+    'settings.nickname.renameCards': '剩餘改名卡 {n} 張',
     'settings.nickname.cooldownReady':'現在可以修改（下次修改需等 7 天）',
     'settings.nickname.title':       '修改暱稱',
     'settings.nickname.placeholder': '輸入新暱稱',

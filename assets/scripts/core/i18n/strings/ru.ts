@@ -239,6 +239,7 @@ export const RU: Record<string, string> = {
     'settings.nickname.rejected':    'Недопустимый никнейм',
     'settings.nickname.noCard':      'Нужна 1 Карта смены имени, чтобы изменить никнейм — получите её в рюкзаке',
     'settings.nickname.cooldown':    'До следующей смены осталось {n} дн.',
+    'settings.nickname.renameCards': 'Карточек переименования: {n}',
     'settings.nickname.cooldownReady':'Можно сменить сейчас (потом 7 дней ожидания)',
     'settings.nickname.title':       'Изменить ник',
     'settings.nickname.placeholder': 'Новый ник',

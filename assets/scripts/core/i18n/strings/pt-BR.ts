@@ -244,6 +244,7 @@ export const PT_BR: Record<string, string> = {
     'settings.nickname.rejected':    'Apelido inválido, tente outro',
     'settings.nickname.noCard':      'Você precisa de 1 Cartão de Renomear para mudar o apelido — pegue um na mochila',
     'settings.nickname.cooldown':    'Faltam {n} dia(s) para o próximo troca',
+    'settings.nickname.renameCards': 'Cartões de renomear: {n}',
     'settings.nickname.cooldownReady':'Pode trocar agora (depois 7 dias de espera)',
     'settings.nickname.title':       'Editar nome',
     'settings.nickname.placeholder': 'Novo nome',

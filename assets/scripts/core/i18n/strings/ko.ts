@@ -261,6 +261,7 @@ export const KO: Record<string, string> = {
     'settings.nickname.rejected':    '유효하지 않은 닉네임입니다',
     'settings.nickname.noCard':      '닉네임 변경에는 개명 카드 1장이 필요합니다 — 배낭에서 획득하세요',
     'settings.nickname.cooldown':    '다음 변경까지 {n}일 남음',
+    'settings.nickname.renameCards': '이름 변경권: {n}장',
     'settings.nickname.cooldownReady':'지금 변경 가능 (다음엔 7일 대기)',
     'settings.nickname.title':       '닉네임 변경',
     'settings.nickname.placeholder': '새 닉네임 입력',

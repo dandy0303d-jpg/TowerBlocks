@@ -258,6 +258,7 @@ export const EN: Record<string, string> = {
     'settings.nickname.tooLong':     'Nickname must be at most {n} characters',
     'settings.nickname.title':       'Edit Nickname',
     'settings.nickname.cooldown':    '{n} day(s) until you can change again',
+    'settings.nickname.renameCards': 'Rename cards: {n}',
     'settings.nickname.cooldownReady':'You can change now (7-day cooldown after)',
     'settings.nickname.placeholder': 'Enter a new nickname',
     'settings.nickname.profanity':   'Nickname contains prohibited words',

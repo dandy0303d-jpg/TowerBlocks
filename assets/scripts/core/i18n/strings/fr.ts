@@ -238,6 +238,7 @@ export const FR: Record<string, string> = {
     'settings.nickname.rejected':    'Pseudo invalide, essayez un autre',
     'settings.nickname.noCard':      'Il vous faut 1 Carte de renommage pour changer de pseudo — récupérez-en une dans le sac',
     'settings.nickname.cooldown':    'Encore {n} jour(s) avant la prochaine modification',
+    'settings.nickname.renameCards': 'Cartes de renommage : {n}',
     'settings.nickname.cooldownReady':"Modifiable maintenant (puis 7 jours d'attente)",
     'settings.nickname.title':       'Changer de pseudo',
     'settings.nickname.placeholder': 'Nouveau pseudo',

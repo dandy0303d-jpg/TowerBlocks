@@ -260,6 +260,7 @@ export const ES: Record<string, string> = {
     'settings.nickname.rejected':    'Apodo no válido, prueba otro',
     'settings.nickname.noCard':      'Necesitas 1 Tarjeta de cambio de nombre para cambiar tu apodo — consíguela en la mochila',
     'settings.nickname.cooldown':    'Faltan {n} día(s) para el próximo cambio',
+    'settings.nickname.renameCards': 'Tarjetas de renombrado: {n}',
     'settings.nickname.cooldownReady':'Puedes cambiar ahora (luego 7 días de espera)',
     'settings.nickname.title':       'Cambiar nombre',
     'settings.nickname.placeholder': 'Nuevo nombre',

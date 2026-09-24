@@ -265,6 +265,7 @@ export const ZH: Record<string, string> = {
     'settings.nickname.tooLong':     '昵称最多 {n} 个字符',
     'settings.nickname.title':       '修改昵称',
     'settings.nickname.cooldown':    '距下次可修改还有 {n} 天',
+    'settings.nickname.renameCards': '剩余更名卡 {n} 张',
     'settings.nickname.cooldownReady':'现在可以修改（下次修改需等 7 天）',
     'settings.nickname.placeholder': '输入新昵称',
     'settings.nickname.profanity':   '昵称含违禁词，请换一个',
