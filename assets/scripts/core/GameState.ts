@@ -2938,22 +2938,51 @@ export class GameState {
     }
 
     private triggerWreckerFromBoard(triggerR: number, triggerC: number): void {
-        // Two-phase wrecker firing: PHASE 1 picks the cells but doesn't
-        // touch the board, so the renderer can play a pre-pulse flash on
-        // the picks while they're still visible. PHASE 2 (commit) runs
-        // from `commitPendingWreckerPlans` after the renderer's pulse
-        // window elapses. The combo cache lookups are done here in
-        // phase 1 because the wrecker × boom / wrecker × directional-bomb
-        // snapshots were captured BEFORE the bomb/boom pipeline fired.
+        // THREE-phase wrecker firing:
+        //   PHASE 0 (this method) — capture the trigger + combo cache
+        //       snapshot and queue a MICROTASK that does the actual
+        //       pick. We defer because this method is called from
+        //       INSIDE detonateBombs / row-clear pipelines: at trigger
+        //       time other cells in the same detonation chain haven't
+        //       been nulled yet, so `pickWreckerPlan` would happily
+        //       pick cells that are about to disappear. The microtask
+        //       runs the instant the current synchronous call stack
+        //       unwinds — after every bomb / boom / row-splice in
+        //       this lock pipeline has settled — so the pick pool
+        //       reflects the REAL surviving state.
+        //   PHASE 1 (deferred pick) — pick cells + fire pre-pulse so
+        //       the renderer can flash the picks.
+        //   PHASE 2 (commit) — runs from `commitPendingWreckerPlans`
+        //       after the pre-pulse window elapses (Wrecker.ts's
+        //       filter+backfill catches any last-instant deaths).
         const key = `${triggerR}-${triggerC}`;
         const cachedBoomLevel = this.wreckerBoomComboCache.get(key) ?? 0;
         const cachedBombAxis  = this.wreckerBombComboCache.get(key) ?? null;
-        // Wrecker×wrecker adjacency combo: leader picks 2×/3×/…, passives
-        // pick 0. Fallback to the default single-wrecker pool when this
-        // wrecker had no wrecker neighbour at snapshot time.
         const pickCount = this.wreckerAdjacencyPickCountCache.has(key)
             ? this.wreckerAdjacencyPickCountCache.get(key)!
             : WRECKER_TARGETS;
+        // Defer the pick — see PHASE 0 doc above. queueMicrotask fires
+        // after the current sync call stack (including whatever
+        // detonateBombs / row-clear loop we're nested in), but before
+        // the next Cocos tick / drainWreckerPulse call, so the
+        // renderer still gets its pre-pulse frame before commit.
+        queueMicrotask(() => this._doDeferredWreckerPick(
+            triggerR, triggerC, cachedBoomLevel, cachedBombAxis, pickCount,
+        ));
+    }
+
+    /** PHASE 1 of the three-phase wrecker fire (see triggerWreckerFromBoard).
+     *  Runs on a microtask after the triggering detonation chain has
+     *  fully settled, so `pickWreckerPlan`'s pool reflects the true
+     *  post-detonation board — no picks land on cells that another
+     *  prop was about to clear in the same chain. */
+    private _doDeferredWreckerPick(
+        triggerR: number,
+        triggerC: number,
+        cachedBoomLevel: 0 | BoomLevel,
+        cachedBombAxis: 'row' | 'col' | null,
+        pickCount: number,
+    ): void {
         const plan = pickWreckerPlan(
             this.state, this.rng, triggerR, triggerC,
             cachedBoomLevel, cachedBombAxis, pickCount,
