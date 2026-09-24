@@ -63,6 +63,14 @@ public class AppActivity extends CocosActivity {
         // DISABLED until TS side flips it on via AnalyticsApi
         // .setEnabled(true) — see consent scheme A in AnalyticsApi.ts.
         com.cocos.game.FirebaseBridge.install(this);
+
+        // Clipboard bridge — the only path that actually reaches
+        // Android's system clipboard from Cocos native. Called from
+        // TS by MenuController.copyPlayerIdentity via
+        // native.reflection.callStaticMethod. Without install(),
+        // copyToClipboard returns false and the player sees
+        // "复制失败".
+        com.cocos.game.ClipboardBridge.install(this);
     }
 
     @Override
