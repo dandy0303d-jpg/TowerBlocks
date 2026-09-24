@@ -938,7 +938,7 @@
   },
   {
     "__type__": "cc.Node",
-    "_name": "Bomb Block Button",
+    "_name": "BombBlockButton",
     "_objFlags": 0,
     "__editorExtras__": {},
     "_parent": {
@@ -3994,7 +3994,7 @@
         "__id__": 131
       }
     ],
-    "_active": false,
+    "_active": true,
     "_components": [
       {
         "__id__": 169
@@ -5194,7 +5194,7 @@
     "_lpos": {
       "__type__": "cc.Vec3",
       "x": 0,
-      "y": -507,
+      "y": -534.165,
       "z": 0
     },
     "_lrot": {
@@ -5339,7 +5339,7 @@
       "a": 255
     },
     "_outlineWidth": 2,
-    "_enableShadow": false,
+    "_enableShadow": true,
     "_shadowColor": {
       "__type__": "cc.Color",
       "r": 0,
@@ -5495,7 +5495,7 @@
     "_left": 0,
     "_right": 0,
     "_top": -31.5,
-    "_bottom": 115,
+    "_bottom": 87.83500000000004,
     "_horizontalCenter": 0,
     "_verticalCenter": 0,
     "_isAbsLeft": true,
