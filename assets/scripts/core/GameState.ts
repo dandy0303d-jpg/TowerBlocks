@@ -711,8 +711,15 @@ export class GameState {
         const booms = this.state.boardBooms;
         if (!bombs || !booms) return;   // level state always has both, guard is TypeScript-belt
 
-        const clean: Array<{ r: number; c: number }> = [];
-        const anyColored: Array<{ r: number; c: number }> = [];
+        // Row-grouped pools. Stratified pick — random ROW first, then
+        // random CELL within that row — so a level with wildly varying
+        // per-row cell counts doesn't bias toward the densest rows.
+        // Previously used a flat "shuffle every cell" pool; rows with
+        // more colored cells (typically the bottom of a task zone
+        // once gaps are added) statistically won the pick, which
+        // read as "always lands on the bottom row".
+        const cleanByRow:      Map<number, number[]> = new Map();
+        const anyColoredByRow: Map<number, number[]> = new Map();
         const stones    = this.state.boardStones;
         const chests    = this.state.boardChests;
         const meteors   = this.state.boardMeteors;
@@ -733,7 +740,8 @@ export class GameState {
                 // guard anyway: treat only proper colored letters as
                 // valid hosts.
                 if (v === 'X') continue;
-                anyColored.push({ r, c });
+                if (!anyColoredByRow.has(r)) anyColoredByRow.set(r, []);
+                anyColoredByRow.get(r)!.push(c);
                 const dirty =
                        (bombs[r]?.[c] != null)
                     || (booms[r]?.[c] != null)
@@ -745,17 +753,26 @@ export class GameState {
                     || (hails?.[r]?.[c] != null)
                     || (rockets?.[r]?.[c] != null)
                     || (gatlings?.[r]?.[c] != null);
-                if (!dirty) clean.push({ r, c });
+                if (!dirty) {
+                    if (!cleanByRow.has(r)) cleanByRow.set(r, []);
+                    cleanByRow.get(r)!.push(c);
+                }
             }
         }
-        const pool = clean.length > 0 ? clean : anyColored;
-        if (pool.length === 0) return;
-        const pick = pool[Math.floor(Math.random() * pool.length)];
+        const byRow = cleanByRow.size > 0 ? cleanByRow : anyColoredByRow;
+        if (byRow.size === 0) return;
+        // Pick a random row from the eligible-row set, THEN a random
+        // column within that row. Each row gets equal weight — a row
+        // with 20 cells doesn't outvote a row with 5.
+        const rows = Array.from(byRow.keys());
+        const pickR = rows[Math.floor(Math.random() * rows.length)];
+        const cols  = byRow.get(pickR)!;
+        const pickC = cols[Math.floor(Math.random() * cols.length)];
         // Deferred commit — the cell stays a plain colored cube until
         // GameController's post-assembly FX calls `commitPendingEmbedProp`
         // at orb impact, so the reveal reads as "orb → prop forms here".
-        this.lastEmbedInjection = { r: pick.r, c: pick.c, kind: embed };
-        console.log(`[EmbedProp] queued ${embed} at r=${pick.r} c=${pick.c} (clean=${clean.length}/${anyColored.length})`);
+        this.lastEmbedInjection = { r: pickR, c: pickC, kind: embed };
+        console.log(`[EmbedProp] queued ${embed} at r=${pickR} c=${pickC} (eligibleRows=${rows.length} rowRange=[${Math.min(...rows)}..${Math.max(...rows)}])`);
     }
 
     /** Write the picker's pending embed prop into the board's prop
