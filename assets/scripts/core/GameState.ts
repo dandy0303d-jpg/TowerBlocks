@@ -1952,31 +1952,29 @@ export class GameState {
             processClearedBooms(this.state, { onBoomActivated: fire });
         }
 
-        // Fire every wrecker that the pre-boom scan marked. The cache
-        // lookups inside `triggerWreckerFromBoard` resolve to the
-        // pre-detonate boom level / bomb axis, so every pick still
-        // gets the combo blast even though the neighbour prop has
-        // since been wiped.
-        //
-        // NOTE: this MUST run BEFORE the boom-side gravity below —
-        // gravity moves the wrecker prop layer along with its host
-        // cell, so a wrecker whose host got cleared by the boom's
-        // diamond ends up at a NEW (r, c) after gravity. Firing here
-        // uses the original coordinates captured in `adjWreckers`.
+        // Snapshot wrecker triggers + null their prop cells NOW, so
+        // downstream steps (boom gravity, seeds detonate) see the
+        // wrecker prop layer as cleared and don't re-trigger. But
+        // DEFER the actual pick until after the seed detonateBombs
+        // below — otherwise a row/col bomb queued in `seeds` would
+        // clear cells that the wrecker just picked, and the wrecker
+        // pre-pulse would flash on cells that are about to vanish.
+        // Coordinates for the pick come from this snapshot; we've
+        // already cached combo info in `wrecker*ComboCache`.
+        const wreckerFireQueue: Array<{ r: number; c: number }> = [];
         for (const { r, c } of adjWreckers) {
             const stillThere = this.state.boardWreckers
                 && this.state.boardWreckers[r] && this.state.boardWreckers[r][c];
             if (!stillThere) continue;
             this.state.boardWreckers![r][c] = null;
-            this.triggerWreckerFromBoard(r, c);
+            wreckerFireQueue.push({ r, c });
         }
 
         if (adjBooms.length) {
-            // Apply gravity NOW that wreckers have finished firing.
-            // Cubes above the just-cleared boom diamond fall down;
-            // without this the downstream clearLines /
-            // convertCompleteRowsToGray path skips gravity whenever
-            // there are no full rows.
+            // Apply gravity NOW after boom clears. Cubes above the
+            // just-cleared boom diamond fall down; without this the
+            // downstream clearLines / convertCompleteRowsToGray path
+            // skips gravity whenever there are no full rows.
             //
             // Pass state.board.length instead of the real reservedTop
             // so falling cells drop THROUGH any holes the boom
@@ -1989,6 +1987,15 @@ export class GameState {
 
         if (seeds.length) {
             detonateBombs(this.state, seeds, this.computeReservedTop(), this.makeDetonateHooks());
+        }
+
+        // Drain the wrecker fire queue AFTER the seeds detonateBombs
+        // above. The pick pool now reflects the true post-detonation
+        // board — row/col bombs have already cleared their lines,
+        // booms have applied gravity, so any cell still standing is
+        // fair game and the pre-pulse won't flash on dead cells.
+        for (const { r, c } of wreckerFireQueue) {
+            this.triggerWreckerFromBoard(r, c);
         }
 
         // Collect-mode pre-snapshot: capture per-goal colour counts BEFORE
@@ -2697,15 +2704,18 @@ export class GameState {
             }
             processClearedBooms(this.state, { onBoomActivated: fire });
         }
-        // Wreckers BEFORE gravity — see comment in lockAndNext for the
-        // rationale (gravity shifts the wrecker prop layer along with
-        // its host cell, so post-gravity (r, c) coords go stale).
+        // Snapshot wrecker triggers + null their prop cells now; defer
+        // the actual pick until after the seed detonateBombs below,
+        // so wrecker picks land on the true post-detonation board
+        // (row/col bombs already cleared their lines). Mirror of the
+        // lockAndNext path.
+        const wreckerFireQueueMortar: Array<{ r: number; c: number }> = [];
         for (const { r, c } of adjWreckersMortar) {
             const stillThere = this.state.boardWreckers
                 && this.state.boardWreckers[r] && this.state.boardWreckers[r][c];
             if (!stillThere) continue;
             this.state.boardWreckers![r][c] = null;
-            this.triggerWreckerFromBoard(r, c);
+            wreckerFireQueueMortar.push({ r, c });
         }
         if (adjBooms.length) {
             // Now apply gravity — pull cells above the boom diamond
@@ -2715,6 +2725,9 @@ export class GameState {
         }
         if (seeds.length) {
             detonateBombs(this.state, seeds, this.computeReservedTop(), this.makeDetonateHooks());
+        }
+        for (const { r, c } of wreckerFireQueueMortar) {
+            this.triggerWreckerFromBoard(r, c);
         }
         if (this.mode === 'level' || this.mode === 'collect') {
             clearLines(this.state, this.computeReservedTop(), this.makeClearHooks());
