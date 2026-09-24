@@ -178,7 +178,71 @@ export function applyWreckerPlan(
     hooks: DetonateHooks = {},
     reservedTop: number = state.board.length,
 ): boolean {
-    const { picks, comboBoomLevel, comboBombAxis } = plan;
+    const { comboBoomLevel, comboBombAxis } = plan;
+    // Prune picks whose host cell was cleared BETWEEN the pick
+    // (`pickWreckerPlan`, fires at trigger time) and this commit call
+    // (`applyWreckerPlan`, fires after the renderer's pre-pulse
+    // window elapses — typically 200-400 ms later). Any other prop
+    // that ran in the same detonation chain (row/col bomb, boom,
+    // rocket, gatling, another wrecker) may have nulled those
+    // cells in the meantime, and firing shatter on a null cell is
+    // both visually silent AND wastes the wrecker's "N cells"
+    // budget on nothing.
+    //
+    // Once we've dropped the dead picks, backfill from cells that
+    // are STILL alive right now, up to the original pick count.
+    // Skip cells that survive but are already in the pick list.
+    let picks = plan.picks.filter(p => {
+        const row = state.board[p.r];
+        return row && row[p.c] != null;
+    });
+    const missing = plan.picks.length - picks.length;
+    if (missing > 0) {
+        const taken = new Set<number>();
+        for (const p of picks) taken.add(p.r * COLS + p.c);
+        const coloredPool: Array<{ r: number; c: number }> = [];
+        const grayPool:    Array<{ r: number; c: number }> = [];
+        for (let r = 0; r < state.board.length; r++) {
+            const row = state.board[r];
+            if (!row) continue;
+            for (let c = 0; c < COLS; c++) {
+                if (taken.has(r * COLS + c)) continue;
+                const v = row[c];
+                const isColored = isColoredCell(v);
+                const isGray    = v === 'X';
+                if (!isColored && !isGray) continue;
+                // Same skip-list as `pickWreckerPlan` — don't backfill
+                // onto prop-hosting cells since the wrecker sweep is
+                // meant to eat plain cubes only.
+                if (state.boardBombs?.[r]?.[c])     continue;
+                if (state.boardBooms?.[r]?.[c])     continue;
+                if (state.boardChests?.[r]?.[c])    continue;
+                if (state.boardMeteors?.[r]?.[c])   continue;
+                if (state.boardBlizzards?.[r]?.[c]) continue;
+                if (state.boardWreckers?.[r]?.[c])  continue;
+                if (state.boardHails?.[r]?.[c])     continue;
+                if (state.boardRockets?.[r]?.[c])   continue;
+                if (state.boardGatlings?.[r]?.[c])  continue;
+                (isColored ? coloredPool : grayPool).push({ r, c });
+            }
+        }
+        // Fisher-Yates shuffle each pool so backfill order is random.
+        const shuffle = (arr: Array<{ r: number; c: number }>) => {
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+        };
+        shuffle(coloredPool);
+        shuffle(grayPool);
+        const backfill = coloredPool.slice(0, missing);
+        if (backfill.length < missing) {
+            backfill.push(...grayPool.slice(0, missing - backfill.length));
+        }
+        for (const { r, c } of backfill) {
+            picks.push({ r, c, color: state.board[r][c] as CellValue });
+        }
+    }
     if (!picks.length) return true;
     // FX dispatch — three routes depending on the combo:
     //   • directional bomb   → skip wrecker FX, `detonateBombs` plays
