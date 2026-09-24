@@ -188,7 +188,7 @@ export class LevelSelectStage3D extends Component {
      *  AFTER `cameraLookOffsetY` so the two knobs stay independent
      *  (offset = focus tuning; shift = layout tuning). */
     @property({ range: [-10, 20, 0.5], slide: true, tooltip: '塔在画面里的整体下移量（世界单位）。数值越大 → 相机越高 → 塔在屏幕上越靠下。用来给顶部 UI（back / 进度条 / 徽章）留出空间。' })
-    frameShiftY: number = 9;
+    frameShiftY: number = 6;
 
     /** Distance from tower axis for camera framing. */
     @property
