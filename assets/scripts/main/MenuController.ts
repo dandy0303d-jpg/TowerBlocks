@@ -180,7 +180,7 @@ export class MenuController extends Component {
     authoredBadgeCountLabel: Label | null = null;
 
     @property({ type: Number, tooltip: '徽章横排最多显示几枚（超出后要看全部就点右上角的徽章图鉴入口）。默认 5；改成 0 表示不限制。' })
-    authoredBadgeInlineMax: number = 5;
+    authoredBadgeInlineMax: number = 8;
 
     @property({ type: Button, tooltip: '右上角"徽章图鉴"按钮（点击 → 打开完整徽章面板）。' })
     authoredBadgeCollectionButton: Button | null = null;
@@ -1495,23 +1495,28 @@ export class MenuController extends Component {
         }
         for (const c of toDestroy) if (c.isValid) c.destroy();
 
-        // Inline cap — anything past the max lives in the collection
-        // panel behind the top-right button.
+        // Inline cap — show the LATEST N badges (idx badgeCount-N ..
+        // badgeCount-1), not the first N. Newest earn belongs on the
+        // right end so the player's most recent progress reads front
+        // and centre; anything older lives in the full collection
+        // behind the top-right badge button.
         const inlineMax = this.authoredBadgeInlineMax > 0
             ? this.authoredBadgeInlineMax
             : badgeCount;
         const showCount = Math.min(badgeCount, inlineMax);
+        const firstIdx  = badgeCount - showCount;
         for (let i = 0; i < showCount; i++) {
+            const groupIdx = firstIdx + i;
             const badge = template && template.isValid
                 ? instantiate(template)
-                : new Node(`Badge_${i}`);
+                : new Node(`Badge_${groupIdx}`);
             (badge as any)._isMenuBadge = true;
             badge.parent = root;
             // Set active AFTER parenting so onEnable fires with the
             // node in the scene tree — some Cocos components (Layout,
             // Widget) only lay out active-in-hierarchy children.
             badge.active = true;
-            const icon = this.authoredBadgeIcons[i];
+            const icon = this.authoredBadgeIcons[groupIdx];
             if (icon) {
                 // If the template didn't carry a Sprite component, add
                 // one so the icon has somewhere to render. Playing it
