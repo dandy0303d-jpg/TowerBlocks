@@ -4534,8 +4534,11 @@ export class MenuController extends Component {
      *    4. document.execCommand('copy') — old-browser fallback via <textarea>
      */
     private async copyPlayerIdentity(): Promise<void> {
+        // Use the short "nickname" label here, not the "modify nickname"
+        // button title — the copied text is a summary card, not an
+        // action label.
         const text =
-            `${t('settings.nickname.title')}: ${PlayerProfile.name}\n` +
+            `${t('settings.nickname.label')}: ${PlayerProfile.name}\n` +
             `UserID: ${PlayerProfile.uuid}`;
         let copied = false;
         let method = 'none';

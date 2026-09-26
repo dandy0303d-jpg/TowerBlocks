@@ -264,6 +264,7 @@ export const ZH: Record<string, string> = {
     'settings.account.copyFailed':  '复制失败',
     'settings.nickname.tooLong':     '昵称最多 {n} 个字符',
     'settings.nickname.title':       '修改昵称',
+    'settings.nickname.label':       '昵称',
     'settings.nickname.cooldown':    '距下次可修改还有 {n} 天',
     'settings.nickname.renameCards': '剩余更名卡 {n} 张',
     'settings.nickname.cooldownReady':'现在可以修改（下次修改需等 7 天）',

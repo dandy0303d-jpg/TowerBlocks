@@ -267,6 +267,7 @@ export const JA: Record<string, string> = {
     'settings.nickname.renameCards': '改名カード：{n} 枚',
     'settings.nickname.cooldownReady':'今すぐ変更可能（次回は 7 日待機）',
     'settings.nickname.title':       'ニックネーム変更',
+    'settings.nickname.label':       'ニックネーム',
     'settings.nickname.placeholder': '新しいニックネームを入力',
 
     // ---------- Common modal buttons ----------

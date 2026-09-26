@@ -243,6 +243,7 @@ export const DE: Record<string, string> = {
     'settings.nickname.renameCards': 'Umbenennungskarten: {n}',
     'settings.nickname.cooldownReady':'Jetzt änderbar (danach 7 Tage Sperre)',
     'settings.nickname.title':       'Nickname ändern',
+    'settings.nickname.label':       'Nickname',
     'settings.nickname.placeholder': 'Neuer Nickname',
 
     'common.confirm':    'Bestätigen',

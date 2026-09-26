@@ -265,6 +265,7 @@ export const ZH_HANT: Record<string, string> = {
     'settings.nickname.renameCards': '剩餘改名卡 {n} 張',
     'settings.nickname.cooldownReady':'現在可以修改（下次修改需等 7 天）',
     'settings.nickname.title':       '修改暱稱',
+    'settings.nickname.label':       '暱稱',
     'settings.nickname.placeholder': '輸入新暱稱',
 
     // ---------- Common modal buttons ----------

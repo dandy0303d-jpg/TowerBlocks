@@ -263,6 +263,7 @@ export const ES: Record<string, string> = {
     'settings.nickname.renameCards': 'Tarjetas de renombrado: {n}',
     'settings.nickname.cooldownReady':'Puedes cambiar ahora (luego 7 días de espera)',
     'settings.nickname.title':       'Cambiar nombre',
+    'settings.nickname.label':       'Apodo',
     'settings.nickname.placeholder': 'Nuevo nombre',
 
     'common.confirm':    'Confirmar',
