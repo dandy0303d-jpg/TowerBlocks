@@ -1269,12 +1269,14 @@ export class GameState {
         // Hail/rocket/gatling/mortar storms freeze normal piece movement.
         if (this.hail.mode || this.rocket.mode || this.gatling.mode || this.mortar.mode) {
             if (this.hail.mode)    this.hail.tick(dt, this.state, this.makeStormHooks());
-            // Endless / blind: preserve the gray foundation from
-            // magic-item storm damage. Rocket + gatling both pass
-            // through 'X' cells without stopping or clearing them
-            // in these modes. Level / collect keep the existing
-            // "storms chew through gray" behaviour.
-            const preserveGray = isEndlessLike(this.mode);
+            // Preserve the gray foundation from magic-item storm
+            // damage across ALL modes. Rocket + gatling both pass
+            // through 'X' cells without stopping or clearing them.
+            // Only the mortar prop (灰泥所) is allowed to affect the
+            // gray reserved zone; every other magic/embed prop leaves
+            // it intact. `isEndlessLike` retained above for readers but
+            // no longer gates this — level + collect now preserve too.
+            const preserveGray = true;
             if (this.rocket.mode)  this.rocket.tick(dt, this.state, this.computeReservedTop(), {
                 ...this.makeStormHooks(),
                 onHit:  (r, c, color) => this.hooks.onRocketHit?.([{ r, c, color }]),
@@ -1977,16 +1979,20 @@ export class GameState {
             const fire = (r: number, c: number, level: 1 | 2 | 3,
                           cleared: Array<{ r: number; c: number }>) =>
                 this.hooks.onBoomTriggered?.(r, c, level, cleared);
+            // Pass reservedTop so booms (embed prop `boom1`) don't
+            // chew through the gray reserved zone — only mortar is
+            // allowed to affect it.
+            const reservedTopBoom = this.computeReservedTop();
             for (const { r, c, level } of adjBooms) {
                 // Re-check — chain activations may have already wiped this.
                 const stillThere = this.state.boardBooms
                     && this.state.boardBooms[r] && this.state.boardBooms[r][c];
                 if (!stillThere) continue;
                 this.state.boardBooms![r][c] = null;
-                const cleared = activateBoom(this.state, r, c, level);
+                const cleared = activateBoom(this.state, r, c, level, reservedTopBoom);
                 fire(r, c, level, cleared);
             }
-            processClearedBooms(this.state, { onBoomActivated: fire });
+            processClearedBooms(this.state, { onBoomActivated: fire }, reservedTopBoom);
         }
 
         // Snapshot wrecker triggers + null their prop cells NOW, so
@@ -3004,6 +3010,7 @@ export class GameState {
         const plan = pickWreckerPlan(
             this.state, this.rng, triggerR, triggerC,
             cachedBoomLevel, cachedBombAxis, pickCount,
+            this.computeReservedTop(),
         );
         if (!plan) {
             this.hooks.onWreckerActivated?.();

@@ -316,10 +316,10 @@ export function detonateBombs(
     // Fire any props (chest/meteor/blizzard/wrecker/hail/rocket/gatling)
     // sitting in the box cells. Uses the same per-cell null pattern as
     // fireRowProps but scoped to arbitrary (r, c) pairs.
-    fireCellProps(state, boxCellCoords, hooks);
+    fireCellProps(state, boxCellCoords, hooks, reservedTop);
 
     // Trigger props sitting in soon-to-be-spliced rows.
-    fireRowProps(state, splicedRowsDesc, hooks);
+    fireRowProps(state, splicedRowsDesc, hooks, reservedTop);
 
     // Splice the row-bomb rows (this is identical to clearLines' splice
     // path). The returned moves cover "everything above the spliced row
@@ -349,7 +349,12 @@ export function detonateBombs(
 }
 
 /** Local copy of ClearLines.fireRowProps so Detonate's splice-path matches. */
-function fireRowProps(state: BoardState, rows: number[], hooks: ClearLinesHooks): void {
+function fireRowProps(
+    state: BoardState,
+    rows: number[],
+    hooks: ClearLinesHooks,
+    reservedTop: number = state.board.length,
+): void {
     if (state.boardChests) {
         for (const r of rows) {
             for (let c = 0; c < COLS; c++) {
@@ -428,7 +433,7 @@ function fireRowProps(state: BoardState, rows: number[], hooks: ClearLinesHooks)
                 const lvl = state.boardBooms[r] && state.boardBooms[r][c];
                 if (lvl) {
                     state.boardBooms[r][c] = null;
-                    const cleared = activateBoom(state, r, c, lvl);
+                    const cleared = activateBoom(state, r, c, lvl, reservedTop);
                     hooks.onBoomTriggered?.(r, c, lvl, cleared);
                 }
             }
@@ -447,6 +452,7 @@ function fireCellProps(
     state: BoardState,
     cells: ReadonlyArray<{ r: number; c: number }>,
     hooks: ClearLinesHooks,
+    reservedTop: number = state.board.length,
 ): void {
     const H = state.board.length;
     for (const { r, c } of cells) {
@@ -482,7 +488,7 @@ function fireCellProps(
         if (state.boardBooms?.[r]?.[c]) {
             const lvl = state.boardBooms[r][c]!;
             state.boardBooms[r][c] = null;
-            const cleared = activateBoom(state, r, c, lvl);
+            const cleared = activateBoom(state, r, c, lvl, reservedTop);
             hooks.onBoomTriggered?.(r, c, lvl, cleared);
         }
     }

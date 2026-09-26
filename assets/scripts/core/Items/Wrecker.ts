@@ -101,8 +101,14 @@ export function pickWreckerPlan(
     // Standalone wreckers use the default WRECKER_TARGETS. Pass a
     // custom count to override; pass 0 to skip picking entirely.
     pickCount: number = WRECKER_TARGETS,
+    // Reserved-zone guard: only rows < reservedTop are eligible.
+    // Wrecker is an embed prop, and per the "magic + embed props
+    // should not touch the gray foundation (except mortar)" rule we
+    // never pick or backfill into the reserved zone.
+    reservedTop: number = state.board.length,
 ): WreckerPlan | null {
     if (pickCount <= 0) return null;
+    const topRow = Math.min(reservedTop, state.board.length);
     // Split into two pools so the wrecker PREFERS colored (target) cells
     // and only starts eating into the gray tower cells when the colored
     // supply runs short. Rationale: gray cells are level-scaffold blocks
@@ -111,7 +117,7 @@ export function pickWreckerPlan(
     // felt bad ("拆迁队要优选选择彩色方块儿").
     const coloredCandidates: Array<{ r: number; c: number }> = [];
     const grayCandidates:    Array<{ r: number; c: number }> = [];
-    for (let r = 0; r < state.board.length; r++) {
+    for (let r = 0; r < topRow; r++) {
         for (let c = 0; c < COLS; c++) {
             const v = state.board[r][c];
             const isColored = isColoredCell(v);
@@ -192,7 +198,11 @@ export function applyWreckerPlan(
     // Once we've dropped the dead picks, backfill from cells that
     // are STILL alive right now, up to the original pick count.
     // Skip cells that survive but are already in the pick list.
+    // Reserved-zone guard: drop any pre-existing pick that landed in
+    // the gray foundation (the pickWreckerPlan pass now respects
+    // reservedTop, but be defensive in case an older plan is committed).
     let picks = plan.picks.filter(p => {
+        if (p.r >= reservedTop) return false;
         const row = state.board[p.r];
         return row && row[p.c] != null;
     });
@@ -202,7 +212,8 @@ export function applyWreckerPlan(
         for (const p of picks) taken.add(p.r * COLS + p.c);
         const coloredPool: Array<{ r: number; c: number }> = [];
         const grayPool:    Array<{ r: number; c: number }> = [];
-        for (let r = 0; r < state.board.length; r++) {
+        const backfillTop = Math.min(reservedTop, state.board.length);
+        for (let r = 0; r < backfillTop; r++) {
             const row = state.board[r];
             if (!row) continue;
             for (let c = 0; c < COLS; c++) {
@@ -301,7 +312,7 @@ export function applyWreckerPlan(
     // Demolish each cell.
     for (const { r, c } of picks) {
         if (comboBoomLevel) {
-            const cleared = activateBoom(state, r, c, comboBoomLevel);
+            const cleared = activateBoom(state, r, c, comboBoomLevel, reservedTop);
             hooks.onBoomTriggered?.(r, c, comboBoomLevel, cleared);
             continue;
         }

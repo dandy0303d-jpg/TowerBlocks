@@ -21,12 +21,18 @@ import { wrap } from '../Board';
  * Wipe a Manhattan-distance ≤ `level` diamond around (centerR, centerC).
  * Mutates `state` in place. Returns the list of cells that were actually
  * cleared (useful for renderer FX).
+ *
+ * `reservedTop` (optional) guards the gray foundation from magic +
+ * embedded props: any cell at row >= reservedTop is left alone. The
+ * mortar path is the sole exception — it omits `reservedTop` (or
+ * passes `state.board.length`) so its blasts still chew the gray zone.
  */
 export function activateBoom(
     state: BoardState,
     centerR: number,
     centerC: number,
     level: BoomLevel,
+    reservedTop: number = state.board.length,
 ): Array<{ r: number; c: number }> {
     const cleared: Array<{ r: number; c: number }> = [];
     const radius = Math.max(1, Math.min(3, level)) as BoomLevel;
@@ -35,12 +41,13 @@ export function activateBoom(
     for (let dr = -radius; dr <= radius; dr++) {
         const r = centerR + dr;
         if (r < 0 || r >= H) continue;
+        // Reserved-zone guard: magic + embedded props skip rows in the
+        // gray foundation. Mortar callers pass `state.board.length` to
+        // bypass this and clear reserved cells as before.
+        if (r >= reservedTop) continue;
         const w = radius - Math.abs(dr);
         for (let dc = -w; dc <= w; dc++) {
             const c = wrap(centerC + dc);
-            // Gray reserved cells are NO LONGER bomb-proof — the
-            // restriction was lifted so magic + embedded props can
-            // punch through the foundation like they do the task zone.
             // Stone HP decrement — surviving stones keep their host cell.
             const hp = state.boardStones && state.boardStones[r] ? state.boardStones[r][c] : null;
             if (hp !== null && hp > 0) {
@@ -69,7 +76,11 @@ export function activateBoom(
  * Chains via inner do-while loop (a boom's blast may clear other boom hosts,
  * which fire on the next pass).
  */
-export function processClearedBooms(state: BoardState, hooks?: BoomHooks): void {
+export function processClearedBooms(
+    state: BoardState,
+    hooks?: BoomHooks,
+    reservedTop: number = state.board.length,
+): void {
     if (!state.boardBooms) return;
     let progress = true;
     while (progress) {
@@ -80,7 +91,7 @@ export function processClearedBooms(state: BoardState, hooks?: BoomHooks): void 
                 const lvl = state.boardBooms[r][c];
                 if (lvl && state.board[r][c] === null) {
                     state.boardBooms[r][c] = null;
-                    const cleared = activateBoom(state, r, c, lvl);
+                    const cleared = activateBoom(state, r, c, lvl, reservedTop);
                     hooks?.onBoomActivated?.(r, c, lvl, cleared);
                     progress = true;
                 }
