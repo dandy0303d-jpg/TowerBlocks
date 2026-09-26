@@ -241,6 +241,7 @@ export const FR: Record<string, string> = {
     'settings.nickname.renameCards': 'Cartes de renommage : {n}',
     'settings.nickname.cooldownReady':"Modifiable maintenant (puis 7 jours d'attente)",
     'settings.nickname.title':       'Changer de pseudo',
+    'settings.nickname.label':       'Pseudo',
     'settings.nickname.placeholder': 'Nouveau pseudo',
 
     'common.confirm':    'Confirmer',

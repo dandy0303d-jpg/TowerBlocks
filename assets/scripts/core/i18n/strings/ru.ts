@@ -242,6 +242,7 @@ export const RU: Record<string, string> = {
     'settings.nickname.renameCards': 'Карточек переименования: {n}',
     'settings.nickname.cooldownReady':'Можно сменить сейчас (потом 7 дней ожидания)',
     'settings.nickname.title':       'Изменить ник',
+    'settings.nickname.label':       'Ник',
     'settings.nickname.placeholder': 'Новый ник',
 
     'common.confirm':    'Подтвердить',

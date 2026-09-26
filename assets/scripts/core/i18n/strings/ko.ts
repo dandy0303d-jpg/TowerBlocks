@@ -264,6 +264,7 @@ export const KO: Record<string, string> = {
     'settings.nickname.renameCards': '이름 변경권: {n}장',
     'settings.nickname.cooldownReady':'지금 변경 가능 (다음엔 7일 대기)',
     'settings.nickname.title':       '닉네임 변경',
+    'settings.nickname.label':       '닉네임',
     'settings.nickname.placeholder': '새 닉네임 입력',
 
     // ---------- Common modal buttons ----------
