@@ -115,15 +115,16 @@ export class GatlingState {
         const liveCol = ((Math.round(liveTargetCol) % COLS) + COLS) % COLS;
 
         // Find the topmost "solid" cell (colored OR gray 'X') in liveCol.
-        // preserveGray flips gray to "invisible" so bullets skip past
-        // it. -1 means no valid target; the bullet falls to the
-        // bottom and despawns.
+        // preserveGray no longer skips gray — bullets now STOP at the
+        // topmost gray 'X' and detonate visually (single-cell shatter
+        // FX via onHit) without clearing the gray cell. That gives the
+        // player feedback that the bullet was absorbed by the
+        // foundation, instead of it silently passing through.
         const H = state.board.length;
         let topRow = -1;
         for (let r = 0; r < H; r++) {
             const v = state.board[r][liveCol];
-            if (isColoredCell(v)) { topRow = r; break; }
-            if (v === 'X' && !preserveGray) { topRow = r; break; }
+            if (isColoredCell(v) || v === 'X') { topRow = r; break; }
         }
 
         this.spawnAccum += dt;
@@ -159,11 +160,22 @@ export class GatlingState {
                 // cell survives or vanishes.
                 bk.y = topRow;
                 const hitColor = state.board[topRow][liveCol];
+                // Gray-preserve mode: bullet is absorbed by the
+                // reserved foundation. Fire onHit so the renderer
+                // plays the single-cell shatter FX at the impact
+                // point, but leave the gray cell in place.
+                if (hitColor === 'X' && preserveGray) {
+                    this.falling.splice(i, 1);
+                    resolved++;
+                    hooks.onHit?.(topRow, liveCol, hitColor);
+                    // topRow doesn't change — the gray is still there,
+                    // so subsequent bullets this tick keep aiming at
+                    // the same row and get absorbed too.
+                    continue;
+                }
                 // 1:1 cancel: kill the topmost cube of liveCol AND the
-                // bullet at once. Applies to gray 'X' cells too — the
-                // gray-is-bomb-proof rule was lifted. Fire every prop
-                // sitting on this cell (chest grants item, boom
-                // detonates its diamond, etc.).
+                // bullet at once. Fire every prop sitting on this cell
+                // (chest grants item, boom detonates its diamond, etc.).
                 state.board[topRow][liveCol] = null;
                 triggerHitProps(state, topRow, liveCol, hooks, reservedTop);
                 this.falling.splice(i, 1);
@@ -174,8 +186,7 @@ export class GatlingState {
                 topRow = -1;
                 for (let r = 0; r < H; r++) {
                     const v = state.board[r][liveCol];
-                    if (isColoredCell(v)) { topRow = r; break; }
-                    if (v === 'X' && !preserveGray) { topRow = r; break; }
+                    if (isColoredCell(v) || v === 'X') { topRow = r; break; }
                 }
                 continue;
             }

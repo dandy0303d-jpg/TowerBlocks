@@ -183,12 +183,19 @@ export class RocketState {
             for (let r = scanFrom; r <= scanTo; r++) {
                 const v = state.board[r][rk.col];
                 if (v === null) continue;
-                // Gray-preserve mode (endless / blind): pass through
-                // 'X' cells like they weren't there — no clear, no
-                // rocket stop. Level modes still let rockets chew
-                // through gray so item combos can breach the reserved
-                // zone as intended.
-                if (v === 'X' && preserveGray) continue;
+                // Gray-preserve mode: rocket STOPS when it hits an
+                // 'X' cell (topmost gray in the reserved foundation)
+                // but does NOT clear it. Renderer still fires onHit
+                // so the single-cell shatter FX plays at the impact
+                // point, giving the player feedback that the rocket
+                // was consumed by the foundation.
+                if (v === 'X' && preserveGray) {
+                    this.falling.splice(i, 1);
+                    consumed = true;
+                    resolved++;
+                    hooks.onHit?.(r, rk.col, v);
+                    break;
+                }
                 if (isColoredCell(v) || v === 'X') {
                     state.board[r][rk.col] = null;
                     triggerHitProps(state, r, rk.col, hooks, reservedTop);
