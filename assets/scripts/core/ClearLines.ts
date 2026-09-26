@@ -120,7 +120,7 @@ export function clearLines(
     }
 
     // 4. Trigger props sitting in soon-to-be-spliced rows.
-    fireRowProps(state, rowsToSplice, hooks);
+    fireRowProps(state, rowsToSplice, hooks, reservedTop);
 
     // 4b. Shatter visuals for fully-cleared rows — same hook the renderer
     //     uses for partial clears, fired with the row's contents before
@@ -186,7 +186,12 @@ export function clearLines(
 
 /** Fire prop hooks for every prop sitting in the given rows. Nulls the prop
  *  AFTER calling the hook so the hook still sees the prop value if it cares. */
-function fireRowProps(state: BoardState, rows: number[], hooks: ItemTriggerHooks): void {
+function fireRowProps(
+    state: BoardState,
+    rows: number[],
+    hooks: ItemTriggerHooks,
+    reservedTop: number = state.board.length,
+): void {
     if (state.boardChests) {
         for (const r of rows) {
             for (let c = 0; c < COLS; c++) {
@@ -266,7 +271,7 @@ function fireRowProps(state: BoardState, rows: number[], hooks: ItemTriggerHooks
                 const lvl = state.boardBooms[r] && state.boardBooms[r][c];
                 if (lvl) {
                     state.boardBooms[r][c] = null;
-                    const cleared = activateBoom(state, r, c, lvl);
+                    const cleared = activateBoom(state, r, c, lvl, reservedTop);
                     hooks.onBoomTriggered?.(r, c, lvl, cleared);
                 }
             }

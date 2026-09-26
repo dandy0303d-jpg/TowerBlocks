@@ -94,7 +94,7 @@ export function triggerHitProps(
         const lvl = state.boardBooms[r][c];
         if (lvl) {
             state.boardBooms[r][c] = null;
-            const cleared = activateBoom(state, r, c, lvl as BoomLevel);
+            const cleared = activateBoom(state, r, c, lvl as BoomLevel, reservedTop);
             hooks.onBoomTriggered?.(r, c, lvl as BoomLevel, cleared);
             // Boom carved a diamond out of the tower — cells above
             // that hole would sit floating until the next lock's
