@@ -2533,7 +2533,15 @@ export class MenuController extends Component {
         if (this.backpackController) {
             // Wire the rename-card handoff on first open; harmless to
             // re-assign on later opens (same function reference).
-            this.backpackController.onRenameCardUsed = () => this.editNicknameViaPrompt();
+            // Open the Settings panel first, THEN raise the nickname
+            // prompt on top of it — otherwise dismissing the prompt
+            // drops the player back on the bare main menu with no
+            // obvious next step. openSettingsPanel is idempotent
+            // (early-outs if the panel already exists).
+            this.backpackController.onRenameCardUsed = () => {
+                this.openSettingsPanel();
+                this.editNicknameViaPrompt();
+            };
             this.backpackController.show();
         } else {
             console.log('[MenuController] Backpack tapped — controller not wired.');
