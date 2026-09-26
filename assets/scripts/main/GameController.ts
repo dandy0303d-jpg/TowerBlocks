@@ -4043,6 +4043,11 @@ export class GameController extends Component {
         if (!gs) return;
         gs.modalPaused = true;
         gs.applyGravityPress();
+        // One-shot screen shake right on release so the "slam" of
+        // every colored cell dropping onto the foundation reads as a
+        // heavy impact rather than a silent teleport. Reuses the same
+        // amplitude / duration as the tier-3 bomb / wrecker shake.
+        this._shakeBoardRoot(440, 0.075);
         // Half-second pause so the player registers the new packed
         // state, THEN the clear pass runs (with its own flash FX).
         this.scheduleOnce(() => {
