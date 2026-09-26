@@ -3952,15 +3952,22 @@ export class MenuController extends Component {
         if (trimmed === currentName) {
             return;   // unchanged, skip the setName round-trip
         }
-        // Optimistic repaint — PlayerProfile.setName has already updated
-        // the local name; the settings screen will show the new one
-        // immediately. If the server rejects, we roll back below.
-        this.refreshAuthoredSettingsValues();
+        // Optimistic repaint. Note: PlayerProfile.setName updates the
+        // local `_name` at the START of the async call (synchronously,
+        // before its await), so we can call it first and then repaint —
+        // the settings screen picks up the new name on this same tick.
+        // If the server later rejects, PlayerProfile rolls back and we
+        // repaint again in the catch block.
         try {
-            await PlayerProfile.setName(trimmed);
+            const pending = PlayerProfile.setName(trimmed);
+            this.refreshAuthoredSettingsValues();
+            await pending;
             // Refresh again post-success so the cooldown Label flips
             // from "现在可以修改" → "距下次可修改还有 7 天" (the new
-            // cooldown-end timestamp arrived in the setName response).
+            // cooldown-end timestamp arrived in the setName response),
+            // and so the nickname label reflects any server-side
+            // normalisation (e.g. trimmed whitespace).
+            this.refreshAuthoredSettingsValues();
             this.paintNicknameCooldownLabel();
             log(`[Settings] nickname saved via prompt: ${PlayerProfile.name}`);
         } catch (err: any) {
