@@ -914,7 +914,44 @@ export class GameState {
      *  before rows disappear. */
     applyGravityPress(): void {
         if (!this.state.board || this.state.board.length === 0) return;
-        applyColumnGravity(this.state, this.computeReservedTop());
+        const reservedTop = this.computeReservedTop();
+        // Snapshot pre-gravity cell positions per column so we can
+        // diff after applyColumnGravity and fire onCellsFell moves.
+        // Without this the renderer never re-syncs cube positions,
+        // and the second use of gravity_press looks like a no-op even
+        // though the board mutated — the first use "worked" only
+        // because rows happened to clear (clearLines fires its own FX),
+        // not because cell repositioning was rendered.
+        const COLS_LOCAL = this.state.board[0]?.length ?? 0;
+        const preCols: Array<Array<{ r: number; value: any }>> = [];
+        for (let c = 0; c < COLS_LOCAL; c++) {
+            const col: Array<{ r: number; value: any }> = [];
+            for (let r = 0; r < reservedTop; r++) {
+                const v = this.state.board[r][c];
+                if (v) col.push({ r, value: v });
+            }
+            preCols.push(col);
+        }
+        applyColumnGravity(this.state, reservedTop);
+        // Diff: for each column, the i-th non-null cell (top-down) in
+        // the pre-snapshot lands at the i-th non-null row (top-down)
+        // in the post-board. Emit a move only when the row changed.
+        const moves: Array<import('./ColumnGravity').CellFallMove> = [];
+        for (let c = 0; c < COLS_LOCAL; c++) {
+            const pre = preCols[c];
+            if (!pre.length) continue;
+            const postRows: number[] = [];
+            for (let r = 0; r < reservedTop; r++) {
+                if (this.state.board[r][c]) postRows.push(r);
+            }
+            const n = Math.min(pre.length, postRows.length);
+            for (let i = 0; i < n; i++) {
+                const fromR = pre[i].r;
+                const toR   = postRows[i];
+                if (fromR !== toR) moves.push({ fromR, toR, c });
+            }
+        }
+        if (moves.length) this.hooks.onCellsFell?.(moves);
     }
 
     /** Follow-up to `applyGravityPress` (called by GameController after
