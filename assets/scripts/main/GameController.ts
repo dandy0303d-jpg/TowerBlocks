@@ -4419,25 +4419,39 @@ export class GameController extends Component {
         if (this.orbitSelectEffect && this.boardRoot3D) {
             const marker = new Node('OrbitSelectTarget');
             marker.layer = this.boardRoot3D.layer;
-            // Parent to scene root so marker's world transform is
-            // whatever we set — independent of boardRoot3D's yaw
-            // changing mid-flight. Compute the target's WORLD position
-            // once (via a temporary parenting under boardRoot3D so
-            // localPos in cellToWorldPosition-space converts through
-            // the tower's current transform), then reparent to scene.
-            this.boardRoot3D.addChild(marker);
-            marker.setPosition(localPos.x, localPos.y, localPos.z);
-            const wp = marker.worldPosition.clone();
-            director.getScene()!.addChild(marker);   // reparent to root, world pos preserved by Cocos
-            marker.setWorldPosition(wp);             // belt: force-write in case Cocos reset it
+            // Parent to scene root, but scale the target position by
+            // boardRoot3D.worldScale so the marker sits at the same
+            // world coord as the actual pool cube (which is a
+            // descendant of boardRoot3D and inherits its 0.75 scale
+            // — TOWER_VIEW_SCALE). Without applying that scale here
+            // the marker lands at (localPos * 1.0) instead of
+            // (localPos * 0.75) → 33% too far out radially, so the
+            // orb + shell visibly overshoot the cube outward.
+            const ws = this.boardRoot3D.worldScale;
+            const wp = new Vec3(
+                localPos.x * ws.x,
+                localPos.y * ws.y + this.boardRoot3D.worldPosition.y,
+                localPos.z * ws.z,
+            );
+            director.getScene()!.addChild(marker);
+            marker.setWorldPosition(wp);
+            // DEBUG marker — small bright sphere so we can visually
+            // verify the target position matches the actual embed cube.
+            // Remove after verifying alignment.
+            const debugSphere = new Node('DebugSphere');
+            debugSphere.layer = this.boardRoot3D.layer;
+            marker.addChild(debugSphere);
+            const dmr = debugSphere.addComponent(MeshRenderer);
+            dmr.mesh = utils.MeshUtils.createMesh(primitives.sphere(0.25, { segments: 16 }));
+            if (this.cubeMaterial) dmr.setSharedMaterial(this.cubeMaterial, 0);
             const bp = this.boardRoot3D.worldPosition;
-            console.log(`[OrbitSelect] embed inject at r=${inj.r} c=${inj.c} kind=${inj.kind} localPos=(${localPos.x.toFixed(2)},${localPos.y.toFixed(2)},${localPos.z.toFixed(2)}) markerWorld=(${wp.x.toFixed(2)},${wp.y.toFixed(2)},${wp.z.toFixed(2)}) towerWorld=(${bp.x.toFixed(2)},${bp.y.toFixed(2)},${bp.z.toFixed(2)}) yaw=${this.boardRoot3D.eulerAngles.y.toFixed(1)}`);
+            console.log(`[OrbitSelect] embed inject at r=${inj.r} c=${inj.c} kind=${inj.kind} localPos=(${localPos.x.toFixed(2)},${localPos.y.toFixed(2)},${localPos.z.toFixed(2)}) markerWorld=(${wp.x.toFixed(2)},${wp.y.toFixed(2)},${wp.z.toFixed(2)}) towerWorld=(${bp.x.toFixed(2)},${bp.y.toFixed(2)},${bp.z.toFixed(2)}) yaw=${this.boardRoot3D.eulerAngles.y.toFixed(1)} scale=${ws.x.toFixed(2)}`);
             const fx = OrbitSelect.play({
                 tower: this.boardRoot3D,
                 target: marker,
                 effect: this.orbitSelectEffect,
-                towerHeight: (this.gameState?.state.board.length ?? VISIBLE_ROWS) * CELL_SIZE,
-                towerBottomY: Y_BOTTOM,
+                towerHeight: (this.gameState?.state.board.length ?? VISIBLE_ROWS) * CELL_SIZE * GameController.TOWER_VIEW_SCALE,
+                towerBottomY: Y_BOTTOM * GameController.TOWER_VIEW_SCALE,
                 // OrbitSelect adds `blockSize * 0.5` to the target
                 // radius so the orb lands on the cube's OUTER face
                 // (target is assumed to be centered at the cube).
@@ -4449,10 +4463,8 @@ export class GameController extends Component {
                 // smaller blockSize (0.3) so the orb lands closer to
                 // cube center; also shrinks the SHELL and PULSE ring
                 // sizes appropriately for the same reason.
-                blockSize: 0.3,
-                // 绕行半径比目标外侧面多 orbitMargin。默认 0.6，配合
-                // blockSize=0.3 让绕行圈在塔壁外一步距离。
-                orbitMargin: 0.5,
+                blockSize: CELL_SIZE * GameController.TOWER_VIEW_SCALE,
+                orbitMargin: 0.4,
                 keepSelected: false,
                 onSelect: () => { gs.commitPendingEmbedProp(); },
             });
