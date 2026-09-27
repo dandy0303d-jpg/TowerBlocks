@@ -4415,17 +4415,21 @@ export class GameController extends Component {
             onDone();
             return;
         }
-        // Force the tower yaw to match the camera-facing column NOW.
-        // playEmbedRevealFxIfPending is called before the first game
-        // update() tick (`_assembling` is still true → rotateCylinder
-        // is gated out), so boardRoot3D.yaw is still its default 0.
-        // Without this call the marker's world position is computed
-        // against yaw=0, and the visual "front" col (whatever col is
-        // at world +Z) does NOT match what the game will render as
-        // front once _assembling clears — so orb lands on what LOOKS
-        // like the back of the tower. rotateCylinder() writes yaw =
-        // -currentCenterCol * ANGLE_PER_COL, aligning the tower with
-        // the piece column right now.
+        // Snap the tower to its final resting transform NOW so the
+        // marker's world position matches where the actual cube will
+        // ultimately land. Two pieces:
+        //   • Y offset: `currentBoardYOffsetVal` is smoothly tweening
+        //     toward `targetBoardYOffset(totalRows)` (e.g. from the
+        //     menu-tower value 2.63 down to the level-mode fixed
+        //     offset -2.375). If the FX starts mid-tween, marker is
+        //     at one Y but by the time syncCubes paints the prop the
+        //     cube ends up at another Y → "first FX row miss, later
+        //     ones OK" behaviour reported.
+        //   • Yaw: `rotateCylinder` is gated out during _assembling,
+        //     so boardRoot3D.yaw stays at 0 while centerCol says the
+        //     piece is elsewhere. Force yaw to match centerCol.
+        const totalRowsForOffset = this.gameState?.state.board.length ?? 0;
+        this.currentBoardYOffsetVal = this.targetBoardYOffset(totalRowsForOffset);
         this.rotateCylinder();
         // Re-pick the injection cell now that a piece has spawned and
         // the camera-facing centre column is known.
