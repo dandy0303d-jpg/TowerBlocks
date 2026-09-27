@@ -4078,18 +4078,28 @@ export class GameController extends Component {
             return;
         }
         const node = new Node('GravityPressFx');
+        node.layer = host.layer;  // stay on host's layer so the Canvas camera renders it
         node.parent = host;
         const ut = node.addComponent(UITransform);
-        // Size to host so the FX fills the play area; PNGs are usually
-        // authored square with transparent margins, so this reads as a
-        // centred burst regardless of host aspect.
-        const hostUt = host.getComponent(UITransform);
-        if (hostUt) {
-            ut.setContentSize(hostUt.contentSize.width, hostUt.contentSize.height);
-        }
+        // Sit dead-centre of the host regardless of the host's own
+        // anchor / layout — the sprite's own anchor (0.5, 0.5) handles
+        // the rest. Explicit z=0 so the FX doesn't get pushed behind
+        // any 3D content the host might sit alongside.
+        node.setPosition(0, 0, 0);
         const spr = node.addComponent(Sprite);
-        spr.sizeMode = Sprite.SizeMode.CUSTOM;
+        // TRIMMED: size auto-matches the sprite frame's trimmed rect, so
+        // the FX renders at its native authored resolution without us
+        // having to know the host's size. Avoids the "sprite is 0×0
+        // because host has no UITransform" trap.
+        spr.sizeMode = Sprite.SizeMode.TRIMMED;
         spr.spriteFrame = frames[0];
+        // Force a UITransform update so the frame's native size lands
+        // on the node this same frame (some setters defer to the next
+        // tick otherwise).
+        if (frames[0] && frames[0].originalSize) {
+            ut.setContentSize(frames[0].originalSize.width, frames[0].originalSize.height);
+        }
+        console.log(`[GravityPressFx] spawn: host="${host.name}" hostUt=${!!host.getComponent(UITransform)} frames=${frames.length} firstSize=${frames[0]?.originalSize?.width}×${frames[0]?.originalSize?.height} nodeLayer=${node.layer}`);
         // Step the frames on a schedule. Using this.schedule (Cocos)
         // ties the interval to the game loop; when the game pauses
         // (modalPaused doesn't pause scheduler by default, so this
