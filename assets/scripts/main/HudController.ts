@@ -26,6 +26,7 @@ import {
     log,
 } from 'cc';
 import { ensureDimBackdrop } from './UiHelpers';
+import { LevelCompletePopup } from '../../effects/level-complete/LevelCompletePopup';
 import { GameController } from './GameController';
 import { ToastManager } from './ToastManager';
 import { BackKeyManager } from './BackKeyManager';
@@ -268,6 +269,14 @@ export class HudController extends Component {
 
     @property({ type: Node, tooltip: '通关庆祝面板 Node（内含 恭喜通关 + 通关时间 + 放射光 + 任何美术）。运行时强制 active=false 起手，通关时 scale 0.15→1 pop-in 300ms 弹入；hide 阶段 scale→0.5 淡出 200ms 后 active=false。可空——不拖则不显示。' })
     authoredLevelClearPanel: Node | null = null;
+
+    /** 通关庆祝新版弹窗（挂 LevelCompletePopup 的节点）。非空时用它
+     *  的完整入场动画（面板砸落 + 光晕 + 彩纸 + 计时滚动 + 扫光）
+     *  代替上面 `authoredLevelClearPanel` 的简单 scale-tween。留空则
+     *  fallback 到旧的 scale-tween 面板。show(seconds) 内部会 await
+     *  完成再走后续 hide 流程。 */
+    @property({ type: LevelCompletePopup, tooltip: '通关庆祝新版弹窗（挂 LevelCompletePopup 的节点）。留空则用旧的 scale-tween 面板。' })
+    authoredLevelCompletePopup: LevelCompletePopup | null = null;
 
     @property({ type: Label, tooltip: '通关庆祝面板里的"恭喜通关"标题 Label。showLevelClearTime 时会把它的 string 填成 t("level.congrats")（各语言已翻译）。可空——不拖则不设置标题（面板里静态字符串也行）。' })
     authoredLevelClearTitleLabel: Label | null = null;
@@ -3781,11 +3790,22 @@ export class HudController extends Component {
             this.authoredLevelClearTimeLabel.string = t('level.clearTime', { time: mmss });
         }
 
-        // 3) Pop the whole panel in — scale 0.15 → 1 over 300ms with
-        //    backOut for a tiny overshoot. Any spin / particles /
-        //    tween on children run under the panel node — HudController
-        //    doesn't touch them.
-        if (this.authoredLevelClearPanel && this.authoredLevelClearPanel.isValid) {
+        // 3) Pop the panel in.
+        //
+        //   Preferred path — new author-supplied `LevelCompletePopup`
+        //   (character bounce, panel slam, confetti burst, time roll,
+        //   idle breathing/shine). Its `show(seconds)` returns a
+        //   Promise resolved once the intro animation settles; we
+        //   let it own the whole intro + idle animation window, then
+        //   its own `hide()` fires when the caller's onComplete
+        //   fallback runs (at LEVEL_CLEAR_MOVE_MS + CENTER_HOLD_MS).
+        //
+        //   Fallback — the old scale-tween on `authoredLevelClearPanel`.
+        if (this.authoredLevelCompletePopup && this.authoredLevelCompletePopup.node.isValid) {
+            const popup = this.authoredLevelCompletePopup;
+            popup.node.active = true;
+            popup.show(elapsedSec);
+        } else if (this.authoredLevelClearPanel && this.authoredLevelClearPanel.isValid) {
             const sb = this.authoredLevelClearPanel;
             Tween.stopAllByTarget(sb);
             sb.active = true;
@@ -3805,7 +3825,12 @@ export class HudController extends Component {
         //    fate modal (caller-scheduled) opens on a clean screen.
         const hideAtMs = HudController.LEVEL_CLEAR_MOVE_MS + HudController.LEVEL_CLEAR_CENTER_HOLD_MS;
         const hideHandle = setTimeout(() => {
-            if (this.authoredLevelClearPanel && this.authoredLevelClearPanel.isValid) {
+            if (this.authoredLevelCompletePopup && this.authoredLevelCompletePopup.node.isValid) {
+                const popup = this.authoredLevelCompletePopup;
+                popup.hide().then(() => {
+                    if (popup.node && popup.node.isValid) popup.node.active = false;
+                });
+            } else if (this.authoredLevelClearPanel && this.authoredLevelClearPanel.isValid) {
                 const sb = this.authoredLevelClearPanel;
                 Tween.stopAllByTarget(sb);
                 tween(sb)
