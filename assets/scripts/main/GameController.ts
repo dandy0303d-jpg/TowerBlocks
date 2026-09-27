@@ -31,6 +31,7 @@ import {
 import { GravityPressEffect } from '../../effects/gravity/GravityPressEffect';
 import { SpinTowerEffect } from '../../effects/gravity/SpinTowerEffect';
 import { RocketTrail } from '../../effects/rocket-trail/RocketTrail';
+import { OrbitSelect } from '../../effects/orbit-select/OrbitSelect';
 import { COLS, COLORS, CellValue, ENDLESS_HEIGHT_LIMIT, ENDLESS_GRAY_CAP } from '../core/Constants';
 import { isColoredCell } from '../core/Board';
 import { SoundManager } from '../audio/SoundManager';
@@ -143,6 +144,13 @@ export class GameController extends Component {
      *  留空 fallback 到旧的 RocketTrailFX 3-strip 拖尾。 */
     @property({ type: EffectAsset, tooltip: '火箭弹拖尾 EffectAsset。留空则用旧的 RocketTrailFX。' })
     rocketTrailEffect: EffectAsset | null = null;
+
+    /** 局外魔法道具 → 塔中方块变为嵌入道具的「绕塔选中」FX
+     *  EffectAsset（`assets/effects/orbit-select/orbit-select.effect`）。
+     *  非空时嵌入道具揭示走 OrbitSelect（螺旋光带绕塔一圈 + 命中方块
+     *  外壳选中高亮）。留空 fallback 到旧的 EmbedRevealFX3D 弧线特效。 */
+    @property({ type: EffectAsset, tooltip: '绕塔选中特效 EffectAsset（orbit-select.effect）。留空则回退到旧的 EmbedRevealFX3D。' })
+    orbitSelectEffect: EffectAsset | null = null;
 
     /** Drag `cube-mat.mtl` here. This is the material every brick uses; the
      *  controller clones it per brick at runtime so `mainColor` can be
@@ -4382,14 +4390,55 @@ export class GameController extends Component {
             return;
         }
 
-        // Target cell in boardRoot3D LOCAL space. `EmbedRevealFX3D`
-        // parents itself under `boardRoot3D`, so LOCAL is exactly the
-        // space its own children live in — no worldMatrix conversion
-        // needed. If boardRoot3D scrolls after spawn, the FX scrolls
-        // with it because it's a descendant.
+        // Target cell in boardRoot3D LOCAL space. Both FX paths
+        // parent under boardRoot3D so LOCAL == the space their own
+        // children live in.
         const totalRows = gs.state.board.length;
         const localPos = this.cubeManager.cellToWorldPosition(inj.c, inj.r, totalRows);
 
+        // Preferred path — OrbitSelect (螺旋绕塔 + 方块选中高亮).
+        // Uses a real target Node so its shell + bounce can attach to
+        // a specific point in world space. We spawn an invisible marker
+        // Node at the target cell (child of boardRoot3D, LOCAL pos)
+        // and hand it to OrbitSelect; the marker gets destroyed by
+        // OrbitSelect.node.destroy() when the FX finishes. `onSelect`
+        // fires on impact — commit the prop there so syncCubes paints
+        // the overlay right at the shell flash.
+        if (this.orbitSelectEffect && this.boardRoot3D) {
+            const marker = new Node('OrbitSelectTarget');
+            marker.layer = this.boardRoot3D.layer;
+            this.boardRoot3D.addChild(marker);
+            marker.setPosition(localPos.x, localPos.y, localPos.z);
+            const fx = OrbitSelect.play({
+                tower: this.boardRoot3D,
+                target: marker,
+                effect: this.orbitSelectEffect,
+                towerHeight: (this.gameState?.state.board.length ?? VISIBLE_ROWS) * CELL_SIZE,
+                towerBottomY: Y_BOTTOM,
+                blockSize: CELL_SIZE,
+                keepSelected: false,
+                onSelect: () => { gs.commitPendingEmbedProp(); },
+            });
+            fx.arrived.then(() => {
+                // Fade window (OrbitSelect internally destroys itself
+                // ~0.8s after hit when keepSelected=false). Unpause
+                // gameplay AT arrival so the piece resumes falling on
+                // impact rather than after the fade; the target marker
+                // stays in-place until OrbitSelect destroys itself.
+                gs.modalPaused = false;
+                gs.lastEmbedInjection = null;
+                onDone();
+                // Clean up marker on FX destroy (fx.node holds our
+                // marker as a sibling — destroy explicitly since we
+                // parented it to boardRoot3D, not to fx.node).
+                this.scheduleOnce(() => {
+                    if (marker.isValid) marker.destroy();
+                }, 1.2);
+            });
+            return;
+        }
+
+        // Fallback — legacy EmbedRevealFX3D arc.
         EmbedRevealFX3D.spawn(
             this.boardRoot3D,
             localPos,
