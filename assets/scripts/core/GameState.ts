@@ -761,12 +761,37 @@ export class GameState {
         }
         const byRow = cleanByRow.size > 0 ? cleanByRow : anyColoredByRow;
         if (byRow.size === 0) return;
+        // Restrict picks to the 12 columns closest to the camera-facing
+        // centre (the front visible arc of the cylinder). Otherwise
+        // the embed prop can land on the back-facing half where the
+        // player can't see the orb impact, and the "trail hits the
+        // embed cell" beat reads as "trail flies past into nothing".
+        //
+        // Wrapped angular distance: `((c - centre) + COLS) % COLS`, then
+        // fold to [0, COLS/2] so cols 1 and (COLS-1) both count as
+        // dist 1. Keep only cols with dist ≤ FRONT_HALF. FRONT_HALF=6
+        // yields cols centre±6 = 13 cells; pruning the farthest-side
+        // extra gives exactly 12.
+        const FRONT_COUNT = 12;
+        const centreCol = ((this.lastSpawnCenterCol ?? 0) % COLS + COLS) % COLS;
+        const wrapDist = (c: number): number => {
+            const d = ((c - centreCol) % COLS + COLS) % COLS;
+            return d > COLS / 2 ? COLS - d : d;
+        };
+        const filteredByRow: Map<number, number[]> = new Map();
+        for (const [r, cols] of byRow) {
+            const front = cols.filter(c => wrapDist(c) < FRONT_COUNT / 2);
+            if (front.length) filteredByRow.set(r, front);
+        }
+        // Empty front-filtered set → fall back to unfiltered so the
+        // embed prop still spawns (rather than silently dropped).
+        const finalByRow = filteredByRow.size > 0 ? filteredByRow : byRow;
         // Pick a random row from the eligible-row set, THEN a random
         // column within that row. Each row gets equal weight — a row
         // with 20 cells doesn't outvote a row with 5.
-        const rows = Array.from(byRow.keys());
+        const rows = Array.from(finalByRow.keys());
         const pickR = rows[Math.floor(Math.random() * rows.length)];
-        const cols  = byRow.get(pickR)!;
+        const cols  = finalByRow.get(pickR)!;
         const pickC = cols[Math.floor(Math.random() * cols.length)];
         // Deferred commit — the cell stays a plain colored cube until
         // GameController's post-assembly FX calls `commitPendingEmbedProp`
