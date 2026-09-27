@@ -137,7 +137,7 @@ export class GameController extends Component {
      *  震屏窗口内播完，FX 与震屏同步收尾。序列帧张数变了以后按
      *  `frames.length / 0.44` 调整就好。 */
     @property({ tooltip: '重力压制序列帧的播放帧率（fps）。默认 89，让 39 帧刚好在 440ms 震屏内播完；换张数后按 帧数/0.44 重算。' })
-    authoredGravityPressFxFps: number = 89;
+    authoredGravityPressFxFps: number = 182;
 
     /** Drag `cube-mat.mtl` here. This is the material every brick uses; the
      *  controller clones it per brick at runtime so `mainColor` can be
