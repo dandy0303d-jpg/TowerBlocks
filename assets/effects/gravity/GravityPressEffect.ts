@@ -300,7 +300,11 @@ export class GravityPressEffect extends Component {
         tower.parent!.addChild(root);
 
         const cyl = buildMesh(primitives.cylinder(1, 1, 1, { radialSegments: 64, heightSegments: 1, capped: false } as any));
-        const plane = buildMesh(primitives.plane(1, 1, { widthSegments: 1, lengthSegments: 1 }));
+        // Cocos 3.8's `primitives.plane` takes ONLY an opts object —
+        // passing width/height as positional args (as the author-side
+        // sample did) makes Cocos treat `1` as opts and blow up with
+        // "Cannot create property 'includeNormal' on number '1'".
+        const plane = buildMesh(primitives.plane({ width: 1, length: 1, widthSegments: 1, lengthSegments: 1 } as any));
 
         this._shell = this.makePart('Shell', cyl, this.fieldEffect!, root);
         this._band = this.makePart('Band', cyl, this.fieldEffect!, root);
