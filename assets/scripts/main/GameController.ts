@@ -4419,11 +4419,19 @@ export class GameController extends Component {
         if (this.orbitSelectEffect && this.boardRoot3D) {
             const marker = new Node('OrbitSelectTarget');
             marker.layer = this.boardRoot3D.layer;
+            // Parent to scene root so marker's world transform is
+            // whatever we set — independent of boardRoot3D's yaw
+            // changing mid-flight. Compute the target's WORLD position
+            // once (via a temporary parenting under boardRoot3D so
+            // localPos in cellToWorldPosition-space converts through
+            // the tower's current transform), then reparent to scene.
             this.boardRoot3D.addChild(marker);
             marker.setPosition(localPos.x, localPos.y, localPos.z);
-            const wp = marker.worldPosition;
+            const wp = marker.worldPosition.clone();
+            director.getScene()!.addChild(marker);   // reparent to root, world pos preserved by Cocos
+            marker.setWorldPosition(wp);             // belt: force-write in case Cocos reset it
             const bp = this.boardRoot3D.worldPosition;
-            console.log(`[OrbitSelect] embed inject at r=${inj.r} c=${inj.c} kind=${inj.kind} localPos=(${localPos.x.toFixed(2)},${localPos.y.toFixed(2)},${localPos.z.toFixed(2)}) worldPos=(${wp.x.toFixed(2)},${wp.y.toFixed(2)},${wp.z.toFixed(2)}) towerWorld=(${bp.x.toFixed(2)},${bp.y.toFixed(2)},${bp.z.toFixed(2)}) yaw=${this.boardRoot3D.eulerAngles.y.toFixed(1)}`);
+            console.log(`[OrbitSelect] embed inject at r=${inj.r} c=${inj.c} kind=${inj.kind} localPos=(${localPos.x.toFixed(2)},${localPos.y.toFixed(2)},${localPos.z.toFixed(2)}) markerWorld=(${wp.x.toFixed(2)},${wp.y.toFixed(2)},${wp.z.toFixed(2)}) towerWorld=(${bp.x.toFixed(2)},${bp.y.toFixed(2)},${bp.z.toFixed(2)}) yaw=${this.boardRoot3D.eulerAngles.y.toFixed(1)}`);
             const fx = OrbitSelect.play({
                 tower: this.boardRoot3D,
                 target: marker,
