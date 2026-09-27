@@ -704,6 +704,76 @@ export class GameState {
      *  Called BEFORE `reset()` / hook events fire, so no repaint work
      *  is needed here — the first render of the new state already
      *  includes the injected prop. */
+    /** Called from GameController right before the reveal FX starts,
+     *  once the player's first piece has spawned so `currentCenterCol`
+     *  reflects what the camera actually faces. Overwrites the pending
+     *  `lastEmbedInjection` row+col with a fresh pick constrained to
+     *  the front 12 columns around `centerCol`. Necessary because the
+     *  original pick in `_injectEmbedProp` runs at level load, before
+     *  the first piece exists → `lastSpawnCenterCol` is null → the
+     *  front-filter defaults to col 0 which may be nowhere near what
+     *  the camera actually sees. Cheap: reuses the same eligibility
+     *  logic as the original pick. No-op if nothing is pending. */
+    public rePickEmbedInjectionForCamera(centerCol: number): void {
+        const inj = this.lastEmbedInjection;
+        if (!inj) return;
+        const board = this.state.board;
+        if (!board || board.length === 0) return;
+        const bombs = this.state.boardBombs;
+        const booms = this.state.boardBooms;
+        if (!bombs || !booms) return;
+        const stones    = this.state.boardStones;
+        const chests    = this.state.boardChests;
+        const meteors   = this.state.boardMeteors;
+        const blizzards = this.state.boardBlizzards;
+        const wreckers  = this.state.boardWreckers;
+        const hails     = this.state.boardHails;
+        const rockets   = this.state.boardRockets;
+        const gatlings  = this.state.boardGatlings;
+        const centre = ((centerCol % COLS) + COLS) % COLS;
+        const FRONT_COUNT = 12;
+        const wrapDist = (c: number): number => {
+            const d = ((c - centre) % COLS + COLS) % COLS;
+            return d > COLS / 2 ? COLS - d : d;
+        };
+        const cleanByRow:      Map<number, number[]> = new Map();
+        const anyColoredByRow: Map<number, number[]> = new Map();
+        for (let r = 0; r < board.length; r++) {
+            const row = board[r];
+            if (!row) continue;
+            for (let c = 0; c < row.length; c++) {
+                const v = row[c];
+                if (v == null || v === 'X') continue;
+                if (wrapDist(c) >= FRONT_COUNT / 2) continue;
+                if (!anyColoredByRow.has(r)) anyColoredByRow.set(r, []);
+                anyColoredByRow.get(r)!.push(c);
+                const dirty =
+                       (bombs[r]?.[c] != null)
+                    || (booms[r]?.[c] != null)
+                    || (stones?.[r]?.[c] != null)
+                    || (chests?.[r]?.[c] != null)
+                    || (meteors?.[r]?.[c] != null)
+                    || (blizzards?.[r]?.[c] != null)
+                    || (wreckers?.[r]?.[c] != null)
+                    || (hails?.[r]?.[c] != null)
+                    || (rockets?.[r]?.[c] != null)
+                    || (gatlings?.[r]?.[c] != null);
+                if (!dirty) {
+                    if (!cleanByRow.has(r)) cleanByRow.set(r, []);
+                    cleanByRow.get(r)!.push(c);
+                }
+            }
+        }
+        const byRow = cleanByRow.size > 0 ? cleanByRow : anyColoredByRow;
+        if (byRow.size === 0) return;
+        const rows = Array.from(byRow.keys());
+        const pickR = rows[Math.floor(Math.random() * rows.length)];
+        const cols  = byRow.get(pickR)!;
+        const pickC = cols[Math.floor(Math.random() * cols.length)];
+        this.lastEmbedInjection = { r: pickR, c: pickC, kind: inj.kind };
+        console.log(`[EmbedProp] repicked (camera-facing) ${inj.kind} at r=${pickR} c=${pickC} centre=${centre}`);
+    }
+
     private _injectEmbedProp(embed: EmbedProp): void {
         const board = this.state.board;
         if (!board || board.length === 0) return;
