@@ -4166,6 +4166,11 @@ export class GameController extends Component {
         // this node sits at (0,0) in host-local, so it lines up with
         // the host rect regardless of anchor.
         node.setPosition(0, 0, 0);
+        // FX is 2D — cancel any rotation inherited from a spinning
+        // parent (e.g. the tower yaw during 甩干机). Setting WORLD
+        // rotation to identity keeps the sprite axis-aligned to the
+        // screen regardless of how host got rotated.
+        node.setWorldRotationFromEuler(0, 0, 0);
         const ut = node.addComponent(UITransform);
         ut.setContentSize(w, h);
         ut.setAnchorPoint(hostUt.anchorPoint.x, hostUt.anchorPoint.y);
