@@ -32,6 +32,7 @@ CCProgram trail-vs %{
   precision highp float;
   #include <legacy/input>
   #include <builtin/uniforms/cc-global>
+  #include <legacy/decode-base>
   #include <legacy/local-batch>
 
   // a_texCoord / a_color / a_position all come from <legacy/input>;
@@ -61,10 +62,6 @@ CCProgram trail-fs %{
   precision highp float;
   #include <builtin/uniforms/cc-global>
   #include <legacy/output>
-
-  // Register the RIBBON define so Cocos generates variants for both
-  // states (RocketTrail.ts flips this in Material.initialize).
-  #pragma define-meta RIBBON
 
   in vec2 v_uv;
   in vec4 v_color;
