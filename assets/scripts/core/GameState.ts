@@ -730,12 +730,12 @@ export class GameState {
         const hails     = this.state.boardHails;
         const rockets   = this.state.boardRockets;
         const gatlings  = this.state.boardGatlings;
-        const centre = ((centerCol % COLS) + COLS) % COLS;
-        const FRONT_COUNT = 12;
-        const wrapDist = (c: number): number => {
-            const d = ((c - centre) % COLS + COLS) % COLS;
-            return d > COLS / 2 ? COLS - d : d;
-        };
+        // Restrict picks to the EXACT camera-facing column so the orb
+        // always lands on a single front-and-centre cube — reads as
+        // "the picker highlights the block right in front of you".
+        // centerCol can be fractional (3-wide pieces like T/S/Z land
+        // at piece.x + 1.5); round to nearest integer col.
+        const centre = ((Math.round(centerCol) % COLS) + COLS) % COLS;
         const cleanByRow:      Map<number, number[]> = new Map();
         const anyColoredByRow: Map<number, number[]> = new Map();
         for (let r = 0; r < board.length; r++) {
@@ -744,7 +744,7 @@ export class GameState {
             for (let c = 0; c < row.length; c++) {
                 const v = row[c];
                 if (v == null || v === 'X') continue;
-                if (wrapDist(c) >= FRONT_COUNT / 2) continue;
+                if (c !== centre) continue;
                 if (!anyColoredByRow.has(r)) anyColoredByRow.set(r, []);
                 anyColoredByRow.get(r)!.push(c);
                 const dirty =
@@ -764,12 +764,54 @@ export class GameState {
                 }
             }
         }
-        const byRow = cleanByRow.size > 0 ? cleanByRow : anyColoredByRow;
-        if (byRow.size === 0) return;
-        const rows = Array.from(byRow.keys());
-        const pickR = rows[Math.floor(Math.random() * rows.length)];
-        const cols  = byRow.get(pickR)!;
-        const pickC = cols[Math.floor(Math.random() * cols.length)];
+        // Widen search if the exact centre column has no coloured
+        // cells — try centre ±1, then ±2, ... until a colour is found.
+        // Keeps the front-facing feel while guaranteeing a valid pick.
+        const tryPick = (byRow: Map<number, number[]>): [number, number] | null => {
+            if (byRow.size === 0) return null;
+            const rows = Array.from(byRow.keys());
+            const pickR = rows[Math.floor(Math.random() * rows.length)];
+            const cols  = byRow.get(pickR)!;
+            const pickC = cols[Math.floor(Math.random() * cols.length)];
+            return [pickR, pickC];
+        };
+        let hit = tryPick(cleanByRow) ?? tryPick(anyColoredByRow);
+        if (!hit) {
+            // Widen: scan neighbouring columns outward.
+            for (let off = 1; off <= Math.floor(COLS / 2) && !hit; off++) {
+                const widerClean: Map<number, number[]> = new Map();
+                const widerAny:   Map<number, number[]> = new Map();
+                const candCols = [(centre - off + COLS) % COLS, (centre + off) % COLS];
+                for (let r = 0; r < board.length; r++) {
+                    const row = board[r];
+                    if (!row) continue;
+                    for (const c of candCols) {
+                        const v = row[c];
+                        if (v == null || v === 'X') continue;
+                        if (!widerAny.has(r)) widerAny.set(r, []);
+                        widerAny.get(r)!.push(c);
+                        const dirty =
+                               (bombs[r]?.[c] != null)
+                            || (booms[r]?.[c] != null)
+                            || (stones?.[r]?.[c] != null)
+                            || (chests?.[r]?.[c] != null)
+                            || (meteors?.[r]?.[c] != null)
+                            || (blizzards?.[r]?.[c] != null)
+                            || (wreckers?.[r]?.[c] != null)
+                            || (hails?.[r]?.[c] != null)
+                            || (rockets?.[r]?.[c] != null)
+                            || (gatlings?.[r]?.[c] != null);
+                        if (!dirty) {
+                            if (!widerClean.has(r)) widerClean.set(r, []);
+                            widerClean.get(r)!.push(c);
+                        }
+                    }
+                }
+                hit = tryPick(widerClean) ?? tryPick(widerAny);
+            }
+        }
+        if (!hit) return;
+        const [pickR, pickC] = hit;
         this.lastEmbedInjection = { r: pickR, c: pickC, kind: inj.kind };
         console.log(`[EmbedProp] repicked (camera-facing) ${inj.kind} at r=${pickR} c=${pickC} centre=${centre}`);
     }
