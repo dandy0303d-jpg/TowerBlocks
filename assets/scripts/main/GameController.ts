@@ -4158,18 +4158,27 @@ export class GameController extends Component {
         if (w <= 0 || h <= 0) {
             console.warn(`[${tag}] host "${host.name}" has zero UITransform size — set a Content Size in Inspector to control the FX display range.`);
         }
+        // Capture the host's WORLD transform BEFORE we choose a parent,
+        // so the FX can be pinned in screen space regardless of what
+        // the host's ancestors do (e.g. tower yaw during 甩干机 — if
+        // the FX parented directly under a spinning node, it would
+        // slide around the pivot even with rotation reset).
+        const hostWorldPos = host.getWorldPosition();
+        // Prefer parenting to a stable UI ancestor (Canvas). Walk up
+        // the tree looking for one; fall back to host if none found.
+        let anchor: Node = host;
+        let cur: Node | null = host;
+        while (cur) {
+            if (cur.getComponent('cc.Canvas' as any)) { anchor = cur; break; }
+            cur = cur.parent;
+        }
         const node = new Node(tag);
         node.layer = host.layer;  // Canvas camera renders by layer mask
-        node.parent = host;
-        // Fill the host rect exactly — sprite scales to host size.
-        // Host's own anchor + position places the rect in world space;
-        // this node sits at (0,0) in host-local, so it lines up with
-        // the host rect regardless of anchor.
-        node.setPosition(0, 0, 0);
-        // FX is 2D — cancel any rotation inherited from a spinning
-        // parent (e.g. the tower yaw during 甩干机). Setting WORLD
-        // rotation to identity keeps the sprite axis-aligned to the
-        // screen regardless of how host got rotated.
+        node.parent = anchor;
+        // Pin at the host's world position captured above; reset world
+        // rotation to identity so the sprite stays axis-aligned to the
+        // screen even if the host is spinning.
+        node.setWorldPosition(hostWorldPos);
         node.setWorldRotationFromEuler(0, 0, 0);
         const ut = node.addComponent(UITransform);
         ut.setContentSize(w, h);
