@@ -35,11 +35,9 @@ CCProgram trail-vs %{
   #include <legacy/decode-base>
   #include <legacy/local-batch>
 
-  // a_position comes from <legacy/input>. a_texCoord and a_color
-  // are NOT provided by the standard include — must be declared
-  // explicitly for effects that read them (matches Cocos's own
-  // sprite / particle effect conventions).
-  in vec2 a_texCoord;
+  // <legacy/input> provides a_position AND a_texCoord (redeclaring
+  // a_texCoord makes GLSL error "a_texCoord : redefinition"). a_color
+  // is NOT provided, so declare it explicitly.
   in vec4 a_color;
 
   out vec2 v_uv;
