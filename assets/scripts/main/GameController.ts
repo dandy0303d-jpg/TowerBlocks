@@ -139,6 +139,19 @@ export class GameController extends Component {
     @property({ tooltip: '重力压制序列帧的播放帧率（fps）。默认 89，让 39 帧刚好在 440ms 震屏内播完；换张数后按 帧数/0.44 重算。' })
     authoredGravityPressFxFps: number = 182;
 
+    /** 甩干机释放特效 —— 序列帧数组。留空则跳过 FX。 */
+    @property({ type: [SpriteFrame], tooltip: '甩干机释放时的序列帧特效（全选拖进来即可，按名字排序）。留空则不播放。' })
+    authoredDryerFxFrames: SpriteFrame[] = [];
+
+    /** 甩干机特效宿主节点。留空自动 fallback 到 Canvas。 */
+    @property({ type: Node, tooltip: '甩干机特效的宿主节点（UI 空间）；用它的 UITransform 控制显示位置与尺寸。留空时脚本自动找 Canvas。' })
+    authoredDryerFxRoot: Node | null = null;
+
+    /** 甩干机序列帧播放的帧率（帧/秒）。甩干机动作持续 1s，把这个
+     *  值设成 `帧数 / 1.0` 就能刚好在动作结束时收尾。 */
+    @property({ tooltip: '甩干机序列帧的播放帧率（fps）。动作持续 1s，帧率设成 帧数/1.0 就能同步收尾。默认 30。' })
+    authoredDryerFxFps: number = 30;
+
     /** Drag `cube-mat.mtl` here. This is the material every brick uses; the
      *  controller clones it per brick at runtime so `mainColor` can be
      *  unique per cell. */
@@ -3992,6 +4005,9 @@ export class GameController extends Component {
         if (!gs || !this.boardRoot3D) return;
         if (this._dryerYawOffsetDeg !== 0) return;   // already running
         gs.modalPaused = true;
+        // Sequence-frame FX (author-supplied). Runs in parallel with
+        // the tower spin; visual layer only, no gameplay coupling.
+        this._playDryerFx();
         // Tween the offset 0 → 360 over 1 s using a linear ease so the
         // spin speed reads as constant. On complete, reset to 0 so
         // rotateCylinder's normal yaw picks up cleanly.
@@ -4058,17 +4074,42 @@ export class GameController extends Component {
         }, 0.5);
     }
 
-    /** Play the author-supplied 序列帧 for the gravity-press release.
-     *  Spawns a temporary UI Sprite parented to `authoredGravityPressFxRoot`
-     *  (or the first Canvas found in this scene), steps through the
-     *  frames at `authoredGravityPressFxFps`, then destroys the node.
-     *  Silently no-ops when no frames are wired. */
+    /** Play the author-supplied 序列帧 for the gravity-press release. */
     private _playGravityPressFx(): void {
-        const frames = this.authoredGravityPressFxFrames;
+        this._playSpriteSequenceFx(
+            this.authoredGravityPressFxFrames,
+            this.authoredGravityPressFxRoot,
+            this.authoredGravityPressFxFps,
+            'GravityPressFx',
+        );
+    }
+
+    /** Play the author-supplied 序列帧 for the dryer release. */
+    private _playDryerFx(): void {
+        this._playSpriteSequenceFx(
+            this.authoredDryerFxFrames,
+            this.authoredDryerFxRoot,
+            this.authoredDryerFxFps,
+            'DryerFx',
+        );
+    }
+
+    /** Shared sequence-frame FX runner. Spawns a temporary UI Sprite
+     *  under `host` (or the first Canvas as fallback), sized to match
+     *  host's UITransform rect, and steps through `frames` at `fps`
+     *  (real-time index — high fps values honoured even when the game
+     *  loop only ticks at 60Hz). Node auto-destroys after the last
+     *  frame. No-op when frames is empty. */
+    private _playSpriteSequenceFx(
+        frames: SpriteFrame[],
+        rootOverride: Node | null,
+        fps: number,
+        tag: string,
+    ): void {
         if (!frames || frames.length === 0) return;
         // Resolve host: explicit @property first, else walk up to the
         // first UI Canvas. Bail if neither is available.
-        let host: Node | null = this.authoredGravityPressFxRoot;
+        let host: Node | null = rootOverride;
         if (!host || !host.isValid) {
             const scene = director.getScene();
             if (scene) {
@@ -4077,7 +4118,7 @@ export class GameController extends Component {
             }
         }
         if (!host || !host.isValid) {
-            console.warn('[GravityPressFx] no host node; skipping');
+            console.warn(`[${tag}] no host node; skipping`);
             return;
         }
         // Host defines the display rect. It MUST have a UITransform +
@@ -4091,9 +4132,9 @@ export class GameController extends Component {
         const w = hostUt.contentSize.width;
         const h = hostUt.contentSize.height;
         if (w <= 0 || h <= 0) {
-            console.warn(`[GravityPressFx] host "${host.name}" has zero UITransform size — set a Content Size in Inspector to control the FX display range.`);
+            console.warn(`[${tag}] host "${host.name}" has zero UITransform size — set a Content Size in Inspector to control the FX display range.`);
         }
-        const node = new Node('GravityPressFx');
+        const node = new Node(tag);
         node.layer = host.layer;  // Canvas camera renders by layer mask
         node.parent = host;
         // Fill the host rect exactly — sprite scales to host size.
@@ -4109,7 +4150,7 @@ export class GameController extends Component {
         // host rect); the sprite frame gets stretched into that box.
         spr.sizeMode = Sprite.SizeMode.CUSTOM;
         spr.spriteFrame = frames[0];
-        console.log(`[GravityPressFx] spawn: host="${host.name}" size=${w}×${h} anchor=(${hostUt.anchorPoint.x},${hostUt.anchorPoint.y}) frames=${frames.length} layer=${node.layer}`);
+        console.log(`[${tag}] spawn: host="${host.name}" size=${w}×${h} anchor=(${hostUt.anchorPoint.x},${hostUt.anchorPoint.y}) frames=${frames.length} fps=${fps} layer=${node.layer}`);
         // Step the frames on a per-tick basis. Cocos' scheduler fires
         // at most ONCE per game frame (~60 Hz), so setting interval =
         // 1/240 doesn't actually give us 240 fps — the callback still
@@ -4118,9 +4159,9 @@ export class GameController extends Component {
         // (interval 0) and compute how many source frames should have
         // elapsed based on real time, jumping forward multiple frames
         // per tick when necessary.
-        const fps = this.authoredGravityPressFxFps > 0 ? this.authoredGravityPressFxFps : 30;
+        const effectiveFps = fps > 0 ? fps : 30;
         const startMs = Date.now();
-        const totalMs = (frames.length / fps) * 1000;
+        const totalMs = (frames.length / effectiveFps) * 1000;
         let lastIdx = 0;
         const cb = () => {
             const elapsed = Date.now() - startMs;
