@@ -4181,6 +4181,23 @@ export class HudController extends Component {
         this._fateEmbedModeActive = true;
         this._embedConsuming = false;
         if (this.authoredEmbedPickerRoot) this.authoredEmbedPickerRoot.active = true;
+        // Fire the new author-supplied intro animation on top of the
+        // picker UI, when wired. Card-count roll animates from x0 to
+        // the cached backpack values. `fadeMask: false` — overlay dim
+        // is already up. (Level 16+ picker path — `showFateModal`
+        // path also wires this, so both entries get the animation.)
+        if (this.authoredDestinyBlockPopup && this.authoredDestinyBlockPopup.node.isValid) {
+            const popup = this.authoredDestinyBlockPopup;
+            const cachedEmbed = getCachedBackpack(60_000);
+            const readCount = (id: string) => {
+                if (!cachedEmbed) return 0;
+                const it = cachedEmbed.items.find(x => x.id === id);
+                return it ? it.count : 0;
+            };
+            const counts = [readCount('boom1'), readCount('row1'), readCount('wrecker')];
+            popup.node.active = true;
+            popup.show({ level: level.order ?? 0, counts, fadeMask: false });
+        }
         // Reset any transform mutations left by the previous open's
         // pick-to-centre animation. Layout will reposition on next
         // frame — we just have to restore scale/opacity/active state.
