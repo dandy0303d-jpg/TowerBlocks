@@ -28,6 +28,7 @@ import {
     Mesh,
 } from 'cc';
 import { GravityPressEffect } from '../../effects/gravity/GravityPressEffect';
+import { SpinTowerEffect } from '../../effects/gravity/SpinTowerEffect';
 import { COLS, COLORS, CellValue, ENDLESS_HEIGHT_LIMIT, ENDLESS_GRAY_CAP } from '../core/Constants';
 import { isColoredCell } from '../core/Board';
 import { SoundManager } from '../audio/SoundManager';
@@ -131,6 +132,13 @@ export class GameController extends Component {
      *  .effect、以及塔尺寸参数 —— 见 GravityPressEffect 的 Inspector。 */
     @property({ type: GravityPressEffect, tooltip: '重力压制 3D 特效控制器（挂 GravityPressEffect 的节点）。留空 fallback 到只震屏。' })
     gravityPressEffect: GravityPressEffect | null = null;
+
+    /** 甩干机 3D 特效控制器（塔快速旋转 + 螺旋气流罩）。挂了
+     *  `SpinTowerEffect` 组件的节点拖进来。留空 fallback 到旧的
+     *  `_dryerYawOffsetDeg` tween 逻辑。特效播放期间会接管塔的旋转
+     *  变换，所以 `rotateCylinder` 在这段时间不会写入 boardRoot3D。 */
+    @property({ type: SpinTowerEffect, tooltip: '甩干机 3D 特效控制器（挂 SpinTowerEffect 的节点）。留空 fallback 到旧的 yaw-tween 逻辑。' })
+    dryerEffect: SpinTowerEffect | null = null;
 
     /** Drag `cube-mat.mtl` here. This is the material every brick uses; the
      *  controller clones it per brick at runtime so `mainColor` can be
@@ -3966,6 +3974,10 @@ export class GameController extends Component {
      *  `updateBoardYOffset`). Also re-positions the warning ring. */
     private rotateCylinder(): void {
         if (!this.boardRoot3D) return;
+        // 甩干机 3D FX takes ownership of the tower's rotation +
+        // position while it plays — writing here on top of it would
+        // fight the FX frame-to-frame. Skip until the FX finishes.
+        if (this.dryerEffect && this.dryerEffect.isValid && this.dryerEffect.isPlaying) return;
         const centerCol = this.currentCenterCol();
         // `_dryerYawOffsetDeg` is normally 0; the 甩干机 backpack item
         // tweens it from 0 → 360 over 1 s for the "tower spins once"
@@ -4004,6 +4016,20 @@ export class GameController extends Component {
         if (!gs || !this.boardRoot3D) return;
         if (this._dryerYawOffsetDeg !== 0) return;   // already running
         gs.modalPaused = true;
+        // 3D FX path — hand rotation ownership to SpinTowerEffect.
+        // rotateCylinder is gated on isPlaying (see rotateCylinder),
+        // so the FX drives yaw uncontested. onPeak fires the
+        // row-compact mid-spin (matches the old "visibly reshuffles"
+        // feel); Promise resolves after the settle window.
+        if (this.dryerEffect && this.dryerEffect.isValid) {
+            this.dryerEffect.play(() => {
+                gs.applyDryerRowCompact();
+            }).then(() => {
+                gs.modalPaused = false;
+            });
+            return;
+        }
+        // Fallback (no FX wired): original yaw-tween.
         // Tween the offset 0 → 360 over 1 s using a linear ease so the
         // spin speed reads as constant. On complete, reset to 0 so
         // rotateCylinder's normal yaw picks up cleanly.
