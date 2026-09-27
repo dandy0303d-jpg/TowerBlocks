@@ -1,0 +1,102 @@
+// UI 扫光（2D Sprite 用）
+// Cocos Creator 3.8.x，基于内置 builtin-sprite 修改
+// 扫光位置按精灵的世界矩形计算（不用 uv），所以图集、九宫格都能正常扫。
+// 由 LevelCompletePopup.ts 自动创建材质并每帧写参数，不需要手动建材质。
+CCEffect %{
+  techniques:
+  - passes:
+    - vert: shine-vs:vert
+      frag: shine-fs:frag
+      depthStencilState:
+        depthTest: false
+        depthWrite: false
+      blendState:
+        targets:
+        - blend: true
+          blendSrc: src_alpha
+          blendDst: one_minus_src_alpha
+          blendDstAlpha: one_minus_src_alpha
+      rasterizerState:
+        cullMode: none
+      properties:
+        alphaThreshold: { value: 0.5 }
+        shineRect:   { value: [0, 0, 100, 100], editor: { tooltip: '精灵世界矩形 x, y, w, h（脚本写入）' } }
+        shineParams: { value: [-1, 0.12, 0.6, 0.5], editor: { tooltip: 'x=进度(-0.3~1.3) y=宽度 z=强度 w=倾斜' } }
+        shineColor:  { value: [1, 0.96, 0.85, 1], editor: { type: color } }
+}%
+
+CCProgram shine-vs %{
+  precision highp float;
+  #include <builtin/uniforms/cc-global>
+  #if USE_LOCAL
+    #include <builtin/uniforms/cc-local>
+  #endif
+
+  in vec3 a_position;
+  in vec2 a_texCoord;
+  in vec4 a_color;
+
+  uniform ShineRectBlock {
+    vec4 shineRect;
+  };
+
+  out vec4 color;
+  out vec2 uv0;
+  out vec2 v_norm;
+
+  vec4 vert () {
+    vec4 pos = vec4(a_position, 1);
+
+    #if USE_LOCAL
+      pos = cc_matWorld * pos;
+    #endif
+
+    // 在世界矩形中的归一化位置（0~1）
+    v_norm = (pos.xy - shineRect.xy) / max(shineRect.zw, vec2(1.0));
+
+    pos = cc_matViewProj * pos;
+
+    uv0 = a_texCoord;
+    color = a_color;
+    return pos;
+  }
+}%
+
+CCProgram shine-fs %{
+  precision highp float;
+  #include <builtin/internal/embedded-alpha>
+  #include <builtin/internal/alpha-test>
+
+  in vec4 color;
+  in vec2 v_norm;
+
+  #if USE_TEXTURE
+    in vec2 uv0;
+    #pragma builtin(local)
+    layout(set = 2, binding = 12) uniform sampler2D cc_spriteTexture;
+  #endif
+
+  uniform ShineBlock {
+    vec4 shineParams;
+    vec4 shineColor;
+  };
+
+  vec4 frag () {
+    vec4 o = vec4(1, 1, 1, 1);
+
+    #if USE_TEXTURE
+      o *= CCSampleWithAlphaSeparated(cc_spriteTexture, uv0);
+    #endif
+
+    o *= color;
+    ALPHA_TEST(o);
+
+    // 斜向扫光带
+    float d = v_norm.x + (v_norm.y - 0.5) * shineParams.w - shineParams.x;
+    float w = max(shineParams.y, 0.001);
+    float band = exp(-(d * d) / (w * w));
+    o.rgb += shineColor.rgb * band * shineParams.z * o.a;
+
+    return o;
+  }
+}%
