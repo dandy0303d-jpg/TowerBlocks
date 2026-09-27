@@ -4409,13 +4409,30 @@ export class GameController extends Component {
             marker.layer = this.boardRoot3D.layer;
             this.boardRoot3D.addChild(marker);
             marker.setPosition(localPos.x, localPos.y, localPos.z);
+            const wp = marker.worldPosition;
+            const bp = this.boardRoot3D.worldPosition;
+            console.log(`[OrbitSelect] embed inject at r=${inj.r} c=${inj.c} kind=${inj.kind} localPos=(${localPos.x.toFixed(2)},${localPos.y.toFixed(2)},${localPos.z.toFixed(2)}) worldPos=(${wp.x.toFixed(2)},${wp.y.toFixed(2)},${wp.z.toFixed(2)}) towerWorld=(${bp.x.toFixed(2)},${bp.y.toFixed(2)},${bp.z.toFixed(2)}) yaw=${this.boardRoot3D.eulerAngles.y.toFixed(1)}`);
             const fx = OrbitSelect.play({
                 tower: this.boardRoot3D,
                 target: marker,
                 effect: this.orbitSelectEffect,
                 towerHeight: (this.gameState?.state.board.length ?? VISIBLE_ROWS) * CELL_SIZE,
                 towerBottomY: Y_BOTTOM,
-                blockSize: CELL_SIZE,
+                // OrbitSelect adds `blockSize * 0.5` to the target
+                // radius so the orb lands on the cube's OUTER face
+                // (target is assumed to be centered at the cube).
+                // TetriTower cube centers ARE at RADIUS, and the outer
+                // face is close to RADIUS + a fraction of the visual
+                // cube size. Passing CELL_SIZE (=1) overshoots the
+                // actual cube outer face for prefabs that render
+                // smaller than one unit → orb visually misses. Use a
+                // smaller blockSize (0.3) so the orb lands closer to
+                // cube center; also shrinks the SHELL and PULSE ring
+                // sizes appropriately for the same reason.
+                blockSize: 0.3,
+                // 绕行半径比目标外侧面多 orbitMargin。默认 0.6，配合
+                // blockSize=0.3 让绕行圈在塔壁外一步距离。
+                orbitMargin: 0.5,
                 keepSelected: false,
                 onSelect: () => { gs.commitPendingEmbedProp(); },
             });
