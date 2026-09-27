@@ -1,0 +1,102 @@
+// 重力压制 - 能量罩 / 压制光带（加法混合、双面、不写深度）
+// Cocos Creator 3.8.x
+// 用于「半径 1、高 1、中心在原点」的开口圆柱体，大小由节点缩放控制（脚本会自动生成网格）。
+// 所有动画参数由 GravityPressEffect.ts 每帧写入，不依赖 cc_time，改变流速时不会跳帧。
+CCEffect %{
+  techniques:
+  - name: additive
+    passes:
+    - vert: field-vs:vert
+      frag: field-fs:frag
+      depthStencilState:
+        depthTest: true
+        depthWrite: false
+      blendState:
+        targets:
+        - blend: true
+          blendSrc: src_alpha
+          blendDst: one
+          blendSrcAlpha: zero
+          blendDstAlpha: one
+      rasterizerState:
+        cullMode: none
+      properties:
+        mainColor: { value: [0.3, 0.68, 1.0, 1.0], linear: true, editor: { type: color } }
+        params:    { value: [1.0, 0.0, 6.0, 0.8], editor: { tooltip: 'x=整体强度 y=流动相位(脚本驱动) z=条纹密度 w=条纹强度' } }
+        params2:   { value: [1.0, 1.2, 0.25, 0.35], editor: { tooltip: 'x=压制前沿高度0~1(<0关闭) y=前沿亮度 z=箭头弯折 w=边缘光强度' } }
+}%
+
+CCProgram field-vs %{
+  precision highp float;
+  #include <legacy/input>
+  #include <builtin/uniforms/cc-global>
+  #include <legacy/decode-base>
+  #include <legacy/local-batch>
+
+  out vec3 v_local;
+  out vec3 v_worldPos;
+  out vec3 v_worldNormal;
+
+  vec4 vert () {
+    vec4 position;
+    CCVertInput(position);
+
+    mat4 matWorld, matWorldIT;
+    CCGetWorldMatrixFull(matWorld, matWorldIT);
+
+    v_local = position.xyz;
+    vec4 worldPos = matWorld * position;
+    v_worldPos = worldPos.xyz;
+    v_worldNormal = normalize((matWorldIT * vec4(a_normal, 0.0)).xyz);
+    return cc_matProj * (cc_matView * worldPos);
+  }
+}%
+
+CCProgram field-fs %{
+  precision highp float;
+  #include <builtin/uniforms/cc-global>
+  #include <legacy/output>
+
+  in vec3 v_local;
+  in vec3 v_worldPos;
+  in vec3 v_worldNormal;
+
+  uniform FieldConstants {
+    vec4 mainColor;
+    vec4 params;
+    vec4 params2;
+  };
+
+  vec4 frag () {
+    float h   = v_local.y + 0.5;                                   // 0 = 底, 1 = 顶
+    float ang = atan(v_local.z, v_local.x) / 6.2831853 + 0.5;      // 0~1 环绕
+
+    // 边缘光（双面都亮）
+    vec3 V = normalize(cc_cameraPos.xyz - v_worldPos);
+    float ndv = abs(dot(normalize(v_worldNormal), V));
+    float rim = pow(1.0 - ndv, 2.0);
+
+    // 上下渐隐
+    float edge = smoothstep(0.0, 0.12, h) * (1.0 - smoothstep(0.75, 1.0, h));
+
+    // 向下流动的 V 形条纹：亮头在下，拖尾向上
+    float bend   = abs(fract(ang * 12.0) - 0.5) * params2.z;
+    float s      = fract(h * params.z + bend + params.y);
+    float stripe = pow(1.0 - s, 5.0) * params.w;
+
+    // 压制前沿：一条亮线 + 上方被压缩区域略亮
+    float front = params2.x;
+    float line  = 0.0;
+    float above = 0.0;
+    if (front >= 0.0) {
+      line  = exp(-abs(h - front) * 45.0) * params2.y;
+      above = smoothstep(front - 0.02, front + 0.06, h) * 0.25;
+    }
+
+    float a = (0.12 + rim * params2.w + stripe * (0.35 + rim) + above) * edge + line;
+    a = clamp(a * params.x, 0.0, 1.0);
+
+    vec3 col = mainColor.rgb * (1.0 + stripe * 0.4) + vec3(line * 0.6);
+    return CCFragOutput(vec4(col, a));
+  }
+}%

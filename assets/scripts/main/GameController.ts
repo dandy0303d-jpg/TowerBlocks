@@ -27,6 +27,7 @@ import {
     Button,
     Mesh,
 } from 'cc';
+import { GravityPressEffect } from '../../effects/gravity/GravityPressEffect';
 import { COLS, COLORS, CellValue, ENDLESS_HEIGHT_LIMIT, ENDLESS_GRAY_CAP } from '../core/Constants';
 import { isColoredCell } from '../core/Board';
 import { SoundManager } from '../audio/SoundManager';
@@ -118,6 +119,13 @@ export class GameController extends Component {
     /** Drag the `BoardRoot3D` scene node here. */
     @property(Node)
     boardRoot3D: Node | null = null;
+
+    /** 重力压制 3D 特效控制器。挂了 `GravityPressEffect` 组件的
+     *  节点拖进来即可。留空时脚本回退到只做屏幕抖动的旧逻辑。
+     *  组件内部需要另外配好 tower（BoardRoot3D）、cameraNode、两个
+     *  .effect、以及塔尺寸参数 —— 见 GravityPressEffect 的 Inspector。 */
+    @property({ type: GravityPressEffect, tooltip: '重力压制 3D 特效控制器（挂 GravityPressEffect 的节点）。留空 fallback 到只震屏。' })
+    gravityPressEffect: GravityPressEffect | null = null;
 
     /** Drag `cube-mat.mtl` here. This is the material every brick uses; the
      *  controller clones it per brick at runtime so `mainColor` can be
@@ -4018,18 +4026,36 @@ export class GameController extends Component {
         const gs = this.gameState;
         if (!gs) return;
         gs.modalPaused = true;
+        // Two paths:
+        //   ① `gravityPressEffect` wired → 3D FX runs its full timeline
+        //      (charge → press → impact → recover). The impact callback
+        //      is where we mutate the board + fire the row-clear sweep;
+        //      the FX's Promise resolves when recover finishes, at
+        //      which point we clear modalPaused and the piece drops
+        //      again. FX also owns its own camera shake, so we skip
+        //      the _shakeBoardRoot call in this path.
+        //   ② No FX wired → fall back to the plain settle + shake
+        //      + 0.5s pause + clear sweep + 0.3s tail we had before.
+        if (this.gravityPressEffect && this.gravityPressEffect.isValid) {
+            this.gravityPressEffect.play(() => {
+                gs.applyGravityPress();
+                // Small pause before row clear so the settled state
+                // registers, then the clear sweep flash fires.
+                this.scheduleOnce(() => {
+                    gs.applyGravityPressClearSweep();
+                }, 0.35);
+            }).then(() => {
+                // FX fully done (charge + press + recover) — small
+                // trailing beat, then unpause.
+                this.scheduleOnce(() => { gs.modalPaused = false; }, 0.2);
+            });
+            return;
+        }
+        // Fallback path — no 3D FX wired.
         gs.applyGravityPress();
-        // One-shot screen shake right on release so the "slam" of
-        // every colored cell dropping onto the foundation reads as a
-        // heavy impact rather than a silent teleport. Reuses the same
-        // amplitude / duration as the tier-3 bomb / wrecker shake.
         this._shakeBoardRoot(440, 0.075);
-        // Half-second pause so the player registers the new packed
-        // state, THEN the clear pass runs (with its own flash FX).
         this.scheduleOnce(() => {
             gs.applyGravityPressClearSweep();
-            // Small trailing window so the clear FX has a beat to
-            // read before the piece starts falling again.
             this.scheduleOnce(() => { gs.modalPaused = false; }, 0.3);
         }, 0.5);
     }
