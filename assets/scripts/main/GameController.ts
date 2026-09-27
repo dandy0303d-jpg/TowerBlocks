@@ -26,6 +26,9 @@ import {
     tween,
     Button,
     Mesh,
+    SpriteFrame,
+    Sprite,
+    UITransform,
 } from 'cc';
 import { COLS, COLORS, CellValue, ENDLESS_HEIGHT_LIMIT, ENDLESS_GRAY_CAP } from '../core/Constants';
 import { isColoredCell } from '../core/Board';
@@ -123,6 +126,20 @@ export class GameController extends Component {
     /** Drag the `BoardRoot3D` scene node here. */
     @property(Node)
     boardRoot3D: Node | null = null;
+
+    /** 重力压制释放特效 —— 80 帧序列帧。把 `assets/image/efackt` 里的
+     *  所有 PNG 全选后拖进来。留空则跳过特效（只保留屏幕抖动）。 */
+    @property({ type: [SpriteFrame], tooltip: '重力压制释放时的序列帧特效（assets/image/efackt 里那 80 帧全选拖进来即可，按名字排序）。留空则不播放。' })
+    authoredGravityPressFxFrames: SpriteFrame[] = [];
+
+    /** 序列帧宿主节点（UI 空间，会在这个节点下建一个临时 Sprite 播完就销毁）。
+     *  推荐挂到 Canvas 下方 —— 会盖在塔和 HUD 之间的层级上。留空时 fallback 到 Canvas。 */
+    @property({ type: Node, tooltip: '重力压制特效的宿主节点（UI 空间）。留空时脚本会自动找 Canvas。' })
+    authoredGravityPressFxRoot: Node | null = null;
+
+    /** 序列帧播放的帧率（帧/秒）。默认 30。 */
+    @property({ tooltip: '重力压制序列帧的播放帧率（fps）。默认 30。' })
+    authoredGravityPressFxFps: number = 30;
 
     /** Drag `cube-mat.mtl` here. This is the material every brick uses; the
      *  controller clones it per brick at runtime so `mainColor` can be
@@ -4048,6 +4065,10 @@ export class GameController extends Component {
         // heavy impact rather than a silent teleport. Reuses the same
         // amplitude / duration as the tier-3 bomb / wrecker shake.
         this._shakeBoardRoot(440, 0.075);
+        // Sequence-frame FX (author-supplied). Runs in parallel with
+        // the settle → clear pipeline; drop-frame is a cosmetic layer,
+        // no gameplay coupling.
+        this._playGravityPressFx();
         // Half-second pause so the player registers the new packed
         // state, THEN the clear pass runs (with its own flash FX).
         this.scheduleOnce(() => {
@@ -4056,6 +4077,60 @@ export class GameController extends Component {
             // read before the piece starts falling again.
             this.scheduleOnce(() => { gs.modalPaused = false; }, 0.3);
         }, 0.5);
+    }
+
+    /** Play the author-supplied 序列帧 for the gravity-press release.
+     *  Spawns a temporary UI Sprite parented to `authoredGravityPressFxRoot`
+     *  (or the first Canvas found in this scene), steps through the
+     *  frames at `authoredGravityPressFxFps`, then destroys the node.
+     *  Silently no-ops when no frames are wired. */
+    private _playGravityPressFx(): void {
+        const frames = this.authoredGravityPressFxFrames;
+        if (!frames || frames.length === 0) return;
+        // Resolve host: explicit @property first, else walk up to the
+        // first UI Canvas. Bail if neither is available.
+        let host: Node | null = this.authoredGravityPressFxRoot;
+        if (!host || !host.isValid) {
+            const scene = director.getScene();
+            if (scene) {
+                const canvases = scene.getComponentsInChildren('cc.Canvas' as any);
+                if (canvases && canvases.length) host = (canvases[0] as any).node;
+            }
+        }
+        if (!host || !host.isValid) {
+            console.warn('[GravityPressFx] no host node; skipping');
+            return;
+        }
+        const node = new Node('GravityPressFx');
+        node.parent = host;
+        const ut = node.addComponent(UITransform);
+        // Size to host so the FX fills the play area; PNGs are usually
+        // authored square with transparent margins, so this reads as a
+        // centred burst regardless of host aspect.
+        const hostUt = host.getComponent(UITransform);
+        if (hostUt) {
+            ut.setContentSize(hostUt.contentSize.width, hostUt.contentSize.height);
+        }
+        const spr = node.addComponent(Sprite);
+        spr.sizeMode = Sprite.SizeMode.CUSTOM;
+        spr.spriteFrame = frames[0];
+        // Step the frames on a schedule. Using this.schedule (Cocos)
+        // ties the interval to the game loop; when the game pauses
+        // (modalPaused doesn't pause scheduler by default, so this
+        // continues correctly) the FX still plays.
+        const fps = this.authoredGravityPressFxFps > 0 ? this.authoredGravityPressFxFps : 30;
+        const interval = 1 / fps;
+        let idx = 0;
+        const cb = () => {
+            idx++;
+            if (idx >= frames.length) {
+                this.unschedule(cb);
+                if (node.isValid) node.destroy();
+                return;
+            }
+            if (spr && spr.isValid) spr.spriteFrame = frames[idx];
+        };
+        this.schedule(cb, interval, frames.length - 1);
     }
 
     /** Place the warning ring `ENDLESS_HEIGHT_LIMIT` rows above the
