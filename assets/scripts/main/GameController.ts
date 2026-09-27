@@ -4453,20 +4453,19 @@ export class GameController extends Component {
         if (this.orbitSelectEffect && this.boardRoot3D) {
             const marker = new Node('OrbitSelectTarget');
             marker.layer = this.boardRoot3D.layer;
-            // Parent to scene root, but scale the target position by
-            // boardRoot3D.worldScale so the marker sits at the same
-            // world coord as the actual pool cube (which is a
-            // descendant of boardRoot3D and inherits its 0.75 scale
-            // — TOWER_VIEW_SCALE). Without applying that scale here
-            // the marker lands at (localPos * 1.0) instead of
-            // (localPos * 0.75) → 33% too far out radially, so the
-            // orb + shell visibly overshoot the cube outward.
-            const ws = this.boardRoot3D.worldScale;
-            const wp = new Vec3(
-                localPos.x * ws.x,
-                localPos.y * ws.y + this.boardRoot3D.worldPosition.y,
-                localPos.z * ws.z,
-            );
+            // Compute world position through boardRoot3D's full world
+            // matrix — that bakes in scale (TOWER_VIEW_SCALE=0.75),
+            // yaw (from currentCenterCol), AND the Y translation. A
+            // manual `local × worldScale` skips the yaw and puts the
+            // marker on the opposite side of the tower once the yaw
+            // is non-zero. Parent under boardRoot3D briefly, let
+            // Cocos compute worldPosition through the transform chain,
+            // then reparent to scene root while preserving that
+            // absolute world position (so subsequent tower rotations
+            // don't drag the marker along).
+            this.boardRoot3D.addChild(marker);
+            marker.setPosition(localPos.x, localPos.y, localPos.z);
+            const wp = marker.worldPosition.clone();
             director.getScene()!.addChild(marker);
             marker.setWorldPosition(wp);
             // DEBUG marker — small bright sphere so we can visually
