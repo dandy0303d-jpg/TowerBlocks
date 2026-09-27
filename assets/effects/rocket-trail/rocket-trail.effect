@@ -35,12 +35,12 @@ CCProgram trail-vs %{
   #include <legacy/decode-base>
   #include <legacy/local-batch>
 
-  // a_texCoord / a_color / a_position all come from <legacy/input>;
-  // redeclaring them here as `in vec2 a_texCoord;` etc. makes GLSL
-  // reject the effect (duplicate attribute declaration), and Cocos
-  // silently drops the compiled JSON — you get the runtime
-  // "download failed: import://.../effect.json" and the material
-  // falls back to unlit white on the geometry.
+  // a_position comes from <legacy/input>. a_texCoord and a_color
+  // are NOT provided by the standard include — must be declared
+  // explicitly for effects that read them (matches Cocos's own
+  // sprite / particle effect conventions).
+  in vec2 a_texCoord;
+  in vec4 a_color;
 
   out vec2 v_uv;
   out vec4 v_color;
