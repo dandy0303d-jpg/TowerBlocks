@@ -132,9 +132,10 @@ export class GameController extends Component {
     @property({ type: Node, tooltip: '重力压制特效的宿主节点（UI 空间）。留空时脚本会自动找 Canvas。' })
     authoredGravityPressFxRoot: Node | null = null;
 
-    /** 序列帧播放的帧率（帧/秒）。默认 30。 */
-    @property({ tooltip: '重力压制序列帧的播放帧率（fps）。默认 30。' })
-    authoredGravityPressFxFps: number = 30;
+    /** 序列帧播放的帧率（帧/秒）。默认 180 —— 80 帧刚好在 440ms 的
+     *  震屏窗口内播完，FX 与震屏同步收尾。手感如需调整可直接改这里。 */
+    @property({ tooltip: '重力压制序列帧的播放帧率（fps）。默认 180，让 80 帧刚好在 440ms 震屏内播完。' })
+    authoredGravityPressFxFps: number = 180;
 
     /** Drag `cube-mat.mtl` here. This is the material every brick uses; the
      *  controller clones it per brick at runtime so `mainColor` can be
