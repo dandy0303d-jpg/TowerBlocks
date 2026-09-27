@@ -29,6 +29,7 @@ import {
     SpriteFrame,
     Sprite,
     UITransform,
+    macro,
 } from 'cc';
 import { COLS, COLORS, CellValue, ENDLESS_HEIGHT_LIMIT, ENDLESS_GRAY_CAP } from '../core/Constants';
 import { isColoredCell } from '../core/Board';
@@ -4132,23 +4133,34 @@ export class GameController extends Component {
         spr.sizeMode = Sprite.SizeMode.CUSTOM;
         spr.spriteFrame = frames[0];
         console.log(`[GravityPressFx] spawn: host="${host.name}" size=${w}×${h} anchor=(${hostUt.anchorPoint.x},${hostUt.anchorPoint.y}) frames=${frames.length} layer=${node.layer}`);
-        // Step the frames on a schedule. Using this.schedule (Cocos)
-        // ties the interval to the game loop; when the game pauses
-        // (modalPaused doesn't pause scheduler by default, so this
-        // continues correctly) the FX still plays.
+        // Step the frames on a per-tick basis. Cocos' scheduler fires
+        // at most ONCE per game frame (~60 Hz), so setting interval =
+        // 1/240 doesn't actually give us 240 fps — the callback still
+        // only runs 60 times a second and we see only 60 frame
+        // advances. To honour high fps values we tick every frame
+        // (interval 0) and compute how many source frames should have
+        // elapsed based on real time, jumping forward multiple frames
+        // per tick when necessary.
         const fps = this.authoredGravityPressFxFps > 0 ? this.authoredGravityPressFxFps : 30;
-        const interval = 1 / fps;
-        let idx = 0;
+        const startMs = Date.now();
+        const totalMs = (frames.length / fps) * 1000;
+        let lastIdx = 0;
         const cb = () => {
-            idx++;
-            if (idx >= frames.length) {
+            const elapsed = Date.now() - startMs;
+            const t = Math.min(1, elapsed / totalMs);
+            const targetIdx = Math.min(frames.length - 1, Math.floor(t * frames.length));
+            if (targetIdx !== lastIdx) {
+                lastIdx = targetIdx;
+                if (spr && spr.isValid) spr.spriteFrame = frames[targetIdx];
+            }
+            if (elapsed >= totalMs) {
                 this.unschedule(cb);
                 if (node.isValid) node.destroy();
-                return;
             }
-            if (spr && spr.isValid) spr.spriteFrame = frames[idx];
         };
-        this.schedule(cb, interval, frames.length - 1);
+        // interval 0 → run every frame. Repeat count high enough to
+        // cover the whole play window at any conceivable frame rate.
+        this.schedule(cb, 0, macro.REPEAT_FOREVER);
     }
 
     /** Place the warning ring `ENDLESS_HEIGHT_LIMIT` rows above the
