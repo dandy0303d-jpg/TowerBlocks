@@ -4453,21 +4453,20 @@ export class GameController extends Component {
         if (this.orbitSelectEffect && this.boardRoot3D) {
             const marker = new Node('OrbitSelectTarget');
             marker.layer = this.boardRoot3D.layer;
-            // Compute world position through boardRoot3D's full world
-            // matrix — that bakes in scale (TOWER_VIEW_SCALE=0.75),
-            // yaw (from currentCenterCol), AND the Y translation. A
-            // manual `local × worldScale` skips the yaw and puts the
-            // marker on the opposite side of the tower once the yaw
-            // is non-zero. Parent under boardRoot3D briefly, let
-            // Cocos compute worldPosition through the transform chain,
-            // then reparent to scene root while preserving that
-            // absolute world position (so subsequent tower rotations
-            // don't drag the marker along).
+            // KEEP marker as a child of boardRoot3D. The tower's
+            // currentBoardYOffsetVal is still tweening toward its
+            // target when the FX starts (level-mode target for a
+            // 28-row board = -2.375 world Y, but tower.worldPosition.y
+            // is 2.63 at spawn time and smoothly rides down). If we
+            // reparented the marker to scene root at the initial
+            // world pos, marker would stay put while the actual cube
+            // moves — orb hits at the WRONG row by the time syncCubes
+            // paints the prop. Leaving marker under boardRoot3D means
+            // it tracks tower yaw AND boardY together — same as the
+            // real cube.
             this.boardRoot3D.addChild(marker);
             marker.setPosition(localPos.x, localPos.y, localPos.z);
             const wp = marker.worldPosition.clone();
-            director.getScene()!.addChild(marker);
-            marker.setWorldPosition(wp);
             // DEBUG marker — small bright sphere so we can visually
             // verify the target position matches the actual embed cube.
             // Remove after verifying alignment.
