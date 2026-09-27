@@ -4415,13 +4415,20 @@ export class GameController extends Component {
             onDone();
             return;
         }
+        // Force the tower yaw to match the camera-facing column NOW.
+        // playEmbedRevealFxIfPending is called before the first game
+        // update() tick (`_assembling` is still true → rotateCylinder
+        // is gated out), so boardRoot3D.yaw is still its default 0.
+        // Without this call the marker's world position is computed
+        // against yaw=0, and the visual "front" col (whatever col is
+        // at world +Z) does NOT match what the game will render as
+        // front once _assembling clears — so orb lands on what LOOKS
+        // like the back of the tower. rotateCylinder() writes yaw =
+        // -currentCenterCol * ANGLE_PER_COL, aligning the tower with
+        // the piece column right now.
+        this.rotateCylinder();
         // Re-pick the injection cell now that a piece has spawned and
-        // the camera-facing centre column is known. The original pick
-        // (in GameState._injectEmbedProp at level load) runs BEFORE
-        // any piece exists, so its front-12-column filter defaults to
-        // col 0 which can be nowhere near what the camera actually
-        // shows. Re-pick with the real centre and the orb will always
-        // land on a cell the player can see.
+        // the camera-facing centre column is known.
         gs.rePickEmbedInjectionForCamera(this.currentCenterCol());
         const inj = gs.lastEmbedInjection;
         if (!inj) {
