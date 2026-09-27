@@ -4443,18 +4443,6 @@ export class GameController extends Component {
             // real cube.
             this.boardRoot3D.addChild(marker);
             marker.setPosition(localPos.x, localPos.y, localPos.z);
-            const wp = marker.worldPosition.clone();
-            // DEBUG marker — small bright sphere so we can visually
-            // verify the target position matches the actual embed cube.
-            // Remove after verifying alignment.
-            const debugSphere = new Node('DebugSphere');
-            debugSphere.layer = this.boardRoot3D.layer;
-            marker.addChild(debugSphere);
-            const dmr = debugSphere.addComponent(MeshRenderer);
-            dmr.mesh = utils.MeshUtils.createMesh(primitives.sphere(0.25, { segments: 16 }));
-            if (this.cubeMaterial) dmr.setSharedMaterial(this.cubeMaterial, 0);
-            const bp = this.boardRoot3D.worldPosition;
-            console.log(`[OrbitSelect] embed inject at r=${inj.r} c=${inj.c} kind=${inj.kind} localPos=(${localPos.x.toFixed(2)},${localPos.y.toFixed(2)},${localPos.z.toFixed(2)}) markerWorld=(${wp.x.toFixed(2)},${wp.y.toFixed(2)},${wp.z.toFixed(2)}) towerWorld=(${bp.x.toFixed(2)},${bp.y.toFixed(2)},${bp.z.toFixed(2)}) yaw=${this.boardRoot3D.eulerAngles.y.toFixed(1)}`);
             const fx = OrbitSelect.play({
                 tower: this.boardRoot3D,
                 target: marker,
