@@ -26,10 +26,6 @@ import {
     tween,
     Button,
     Mesh,
-    SpriteFrame,
-    Sprite,
-    UITransform,
-    macro,
 } from 'cc';
 import { COLS, COLORS, CellValue, ENDLESS_HEIGHT_LIMIT, ENDLESS_GRAY_CAP } from '../core/Constants';
 import { isColoredCell } from '../core/Board';
@@ -122,35 +118,6 @@ export class GameController extends Component {
     /** Drag the `BoardRoot3D` scene node here. */
     @property(Node)
     boardRoot3D: Node | null = null;
-
-    /** 重力压制释放特效 —— 80 帧序列帧。把 `assets/image/efackt` 里的
-     *  所有 PNG 全选后拖进来。留空则跳过特效（只保留屏幕抖动）。 */
-    @property({ type: [SpriteFrame], tooltip: '重力压制释放时的序列帧特效（assets/image/efackt 里那 80 帧全选拖进来即可，按名字排序）。留空则不播放。' })
-    authoredGravityPressFxFrames: SpriteFrame[] = [];
-
-    /** 序列帧宿主节点（UI 空间，会在这个节点下建一个临时 Sprite 播完就销毁）。
-     *  推荐挂到 Canvas 下方 —— 会盖在塔和 HUD 之间的层级上。留空时 fallback 到 Canvas。 */
-    @property({ type: Node, tooltip: '重力压制特效的宿主节点（UI 空间）。留空时脚本会自动找 Canvas。' })
-    authoredGravityPressFxRoot: Node | null = null;
-
-    /** 序列帧播放的帧率（帧/秒）。默认 89 —— 39 帧刚好在 440ms 的
-     *  震屏窗口内播完，FX 与震屏同步收尾。序列帧张数变了以后按
-     *  `frames.length / 0.44` 调整就好。 */
-    @property({ tooltip: '重力压制序列帧的播放帧率（fps）。默认 89，让 39 帧刚好在 440ms 震屏内播完；换张数后按 帧数/0.44 重算。' })
-    authoredGravityPressFxFps: number = 182;
-
-    /** 甩干机释放特效 —— 序列帧数组。留空则跳过 FX。 */
-    @property({ type: [SpriteFrame], tooltip: '甩干机释放时的序列帧特效（全选拖进来即可，按名字排序）。留空则不播放。' })
-    authoredDryerFxFrames: SpriteFrame[] = [];
-
-    /** 甩干机特效宿主节点。留空自动 fallback 到 Canvas。 */
-    @property({ type: Node, tooltip: '甩干机特效的宿主节点（UI 空间）；用它的 UITransform 控制显示位置与尺寸。留空时脚本自动找 Canvas。' })
-    authoredDryerFxRoot: Node | null = null;
-
-    /** 甩干机序列帧播放的帧率（帧/秒）。甩干机动作持续 1s，把这个
-     *  值设成 `帧数 / 1.0` 就能刚好在动作结束时收尾。 */
-    @property({ tooltip: '甩干机序列帧的播放帧率（fps）。动作持续 1s，帧率设成 帧数/1.0 就能同步收尾。默认 30。' })
-    authoredDryerFxFps: number = 30;
 
     /** Drag `cube-mat.mtl` here. This is the material every brick uses; the
      *  controller clones it per brick at runtime so `mainColor` can be
@@ -4005,9 +3972,6 @@ export class GameController extends Component {
         if (!gs || !this.boardRoot3D) return;
         if (this._dryerYawOffsetDeg !== 0) return;   // already running
         gs.modalPaused = true;
-        // Sequence-frame FX (author-supplied). Runs in parallel with
-        // the tower spin; visual layer only, no gameplay coupling.
-        this._playDryerFx();
         // Tween the offset 0 → 360 over 1 s using a linear ease so the
         // spin speed reads as constant. On complete, reset to 0 so
         // rotateCylinder's normal yaw picks up cleanly.
@@ -4060,10 +4024,6 @@ export class GameController extends Component {
         // heavy impact rather than a silent teleport. Reuses the same
         // amplitude / duration as the tier-3 bomb / wrecker shake.
         this._shakeBoardRoot(440, 0.075);
-        // Sequence-frame FX (author-supplied). Runs in parallel with
-        // the settle → clear pipeline; drop-frame is a cosmetic layer,
-        // no gameplay coupling.
-        this._playGravityPressFx();
         // Half-second pause so the player registers the new packed
         // state, THEN the clear pass runs (with its own flash FX).
         this.scheduleOnce(() => {
@@ -4072,127 +4032,6 @@ export class GameController extends Component {
             // read before the piece starts falling again.
             this.scheduleOnce(() => { gs.modalPaused = false; }, 0.3);
         }, 0.5);
-    }
-
-    /** Play the author-supplied 序列帧 for the gravity-press release. */
-    private _playGravityPressFx(): void {
-        this._playSpriteSequenceFx(
-            this.authoredGravityPressFxFrames,
-            this.authoredGravityPressFxRoot,
-            this.authoredGravityPressFxFps,
-            'GravityPressFx',
-        );
-    }
-
-    /** Play the author-supplied 序列帧 for the dryer release. */
-    private _playDryerFx(): void {
-        this._playSpriteSequenceFx(
-            this.authoredDryerFxFrames,
-            this.authoredDryerFxRoot,
-            this.authoredDryerFxFps,
-            'DryerFx',
-        );
-    }
-
-    /** Shared sequence-frame FX runner. Spawns a temporary UI Sprite
-     *  under `host` (or the first Canvas as fallback), sized to match
-     *  host's UITransform rect, and steps through `frames` at `fps`
-     *  (real-time index — high fps values honoured even when the game
-     *  loop only ticks at 60Hz). Node auto-destroys after the last
-     *  frame. No-op when frames is empty. */
-    private _playSpriteSequenceFx(
-        frames: SpriteFrame[],
-        rootOverride: Node | null,
-        fps: number,
-        tag: string,
-    ): void {
-        if (!frames || frames.length === 0) return;
-        // Resolve host: explicit @property first, else walk up to the
-        // first UI Canvas. Bail if neither is available.
-        let host: Node | null = rootOverride;
-        if (!host || !host.isValid) {
-            const scene = director.getScene();
-            if (scene) {
-                const canvases = scene.getComponentsInChildren('cc.Canvas' as any);
-                if (canvases && canvases.length) host = (canvases[0] as any).node;
-            }
-        }
-        if (!host || !host.isValid) {
-            console.warn(`[${tag}] no host node; skipping`);
-            return;
-        }
-        // Host defines the display rect. It MUST have a UITransform +
-        // meaningful contentSize (that's the whole point of exposing
-        // the Fx Root — the author sizes / positions this node in the
-        // scene to control where and how big the FX renders). If it's
-        // missing UITransform we add one, but a 0×0 rect will just
-        // stay invisible — surface that as a warning.
-        let hostUt = host.getComponent(UITransform);
-        if (!hostUt) hostUt = host.addComponent(UITransform);
-        const w = hostUt.contentSize.width;
-        const h = hostUt.contentSize.height;
-        if (w <= 0 || h <= 0) {
-            console.warn(`[${tag}] host "${host.name}" has zero UITransform size — set a Content Size in Inspector to control the FX display range.`);
-        }
-        // Capture the host's WORLD transform BEFORE we choose a parent,
-        // so the FX can be pinned in screen space regardless of what
-        // the host's ancestors do (e.g. tower yaw during 甩干机 — if
-        // the FX parented directly under a spinning node, it would
-        // slide around the pivot even with rotation reset).
-        const hostWorldPos = host.getWorldPosition();
-        // Prefer parenting to a stable UI ancestor (Canvas). Walk up
-        // the tree looking for one; fall back to host if none found.
-        let anchor: Node = host;
-        let cur: Node | null = host;
-        while (cur) {
-            if (cur.getComponent('cc.Canvas' as any)) { anchor = cur; break; }
-            cur = cur.parent;
-        }
-        const node = new Node(tag);
-        node.layer = host.layer;  // Canvas camera renders by layer mask
-        node.parent = anchor;
-        // Pin at the host's world position captured above; reset world
-        // rotation to identity so the sprite stays axis-aligned to the
-        // screen even if the host is spinning.
-        node.setWorldPosition(hostWorldPos);
-        node.setWorldRotationFromEuler(0, 0, 0);
-        const ut = node.addComponent(UITransform);
-        ut.setContentSize(w, h);
-        ut.setAnchorPoint(hostUt.anchorPoint.x, hostUt.anchorPoint.y);
-        const spr = node.addComponent(Sprite);
-        // CUSTOM so the sprite honors our UITransform size (matches
-        // host rect); the sprite frame gets stretched into that box.
-        spr.sizeMode = Sprite.SizeMode.CUSTOM;
-        spr.spriteFrame = frames[0];
-        console.log(`[${tag}] spawn: host="${host.name}" size=${w}×${h} anchor=(${hostUt.anchorPoint.x},${hostUt.anchorPoint.y}) frames=${frames.length} fps=${fps} layer=${node.layer}`);
-        // Step the frames on a per-tick basis. Cocos' scheduler fires
-        // at most ONCE per game frame (~60 Hz), so setting interval =
-        // 1/240 doesn't actually give us 240 fps — the callback still
-        // only runs 60 times a second and we see only 60 frame
-        // advances. To honour high fps values we tick every frame
-        // (interval 0) and compute how many source frames should have
-        // elapsed based on real time, jumping forward multiple frames
-        // per tick when necessary.
-        const effectiveFps = fps > 0 ? fps : 30;
-        const startMs = Date.now();
-        const totalMs = (frames.length / effectiveFps) * 1000;
-        let lastIdx = 0;
-        const cb = () => {
-            const elapsed = Date.now() - startMs;
-            const t = Math.min(1, elapsed / totalMs);
-            const targetIdx = Math.min(frames.length - 1, Math.floor(t * frames.length));
-            if (targetIdx !== lastIdx) {
-                lastIdx = targetIdx;
-                if (spr && spr.isValid) spr.spriteFrame = frames[targetIdx];
-            }
-            if (elapsed >= totalMs) {
-                this.unschedule(cb);
-                if (node.isValid) node.destroy();
-            }
-        };
-        // interval 0 → run every frame. Repeat count high enough to
-        // cover the whole play window at any conceivable frame rate.
-        this.schedule(cb, 0, macro.REPEAT_FOREVER);
     }
 
     /** Place the warning ring `ENDLESS_HEIGHT_LIMIT` rows above the
