@@ -4101,29 +4101,36 @@ export class GameController extends Component {
             console.warn('[GravityPressFx] no host node; skipping');
             return;
         }
-        const node = new Node('GravityPressFx');
-        node.layer = host.layer;  // stay on host's layer so the Canvas camera renders it
-        node.parent = host;
-        const ut = node.addComponent(UITransform);
-        // Sit dead-centre of the host regardless of the host's own
-        // anchor / layout — the sprite's own anchor (0.5, 0.5) handles
-        // the rest. Explicit z=0 so the FX doesn't get pushed behind
-        // any 3D content the host might sit alongside.
-        node.setPosition(0, 0, 0);
-        const spr = node.addComponent(Sprite);
-        // TRIMMED: size auto-matches the sprite frame's trimmed rect, so
-        // the FX renders at its native authored resolution without us
-        // having to know the host's size. Avoids the "sprite is 0×0
-        // because host has no UITransform" trap.
-        spr.sizeMode = Sprite.SizeMode.TRIMMED;
-        spr.spriteFrame = frames[0];
-        // Force a UITransform update so the frame's native size lands
-        // on the node this same frame (some setters defer to the next
-        // tick otherwise).
-        if (frames[0] && frames[0].originalSize) {
-            ut.setContentSize(frames[0].originalSize.width, frames[0].originalSize.height);
+        // Host defines the display rect. It MUST have a UITransform +
+        // meaningful contentSize (that's the whole point of exposing
+        // the Fx Root — the author sizes / positions this node in the
+        // scene to control where and how big the FX renders). If it's
+        // missing UITransform we add one, but a 0×0 rect will just
+        // stay invisible — surface that as a warning.
+        let hostUt = host.getComponent(UITransform);
+        if (!hostUt) hostUt = host.addComponent(UITransform);
+        const w = hostUt.contentSize.width;
+        const h = hostUt.contentSize.height;
+        if (w <= 0 || h <= 0) {
+            console.warn(`[GravityPressFx] host "${host.name}" has zero UITransform size — set a Content Size in Inspector to control the FX display range.`);
         }
-        console.log(`[GravityPressFx] spawn: host="${host.name}" hostUt=${!!host.getComponent(UITransform)} frames=${frames.length} firstSize=${frames[0]?.originalSize?.width}×${frames[0]?.originalSize?.height} nodeLayer=${node.layer}`);
+        const node = new Node('GravityPressFx');
+        node.layer = host.layer;  // Canvas camera renders by layer mask
+        node.parent = host;
+        // Fill the host rect exactly — sprite scales to host size.
+        // Host's own anchor + position places the rect in world space;
+        // this node sits at (0,0) in host-local, so it lines up with
+        // the host rect regardless of anchor.
+        node.setPosition(0, 0, 0);
+        const ut = node.addComponent(UITransform);
+        ut.setContentSize(w, h);
+        ut.setAnchorPoint(hostUt.anchorPoint.x, hostUt.anchorPoint.y);
+        const spr = node.addComponent(Sprite);
+        // CUSTOM so the sprite honors our UITransform size (matches
+        // host rect); the sprite frame gets stretched into that box.
+        spr.sizeMode = Sprite.SizeMode.CUSTOM;
+        spr.spriteFrame = frames[0];
+        console.log(`[GravityPressFx] spawn: host="${host.name}" size=${w}×${h} anchor=(${hostUt.anchorPoint.x},${hostUt.anchorPoint.y}) frames=${frames.length} layer=${node.layer}`);
         // Step the frames on a schedule. Using this.schedule (Cocos)
         // ties the interval to the game loop; when the game pauses
         // (modalPaused doesn't pause scheduler by default, so this
