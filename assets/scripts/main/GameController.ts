@@ -4383,13 +4383,25 @@ export class GameController extends Component {
      *  Idempotent + a fast no-op when no embed injection is pending. */
     public playEmbedRevealFxIfPending(onDone: () => void): void {
         const gs = this.gameState;
-        const inj = gs?.lastEmbedInjection;
-        if (!gs || !inj || !this.cubeManager || !this.boardRoot3D) {
+        if (!gs || !gs.lastEmbedInjection || !this.cubeManager || !this.boardRoot3D) {
             if (gs) { gs.modalPaused = false; gs.lastEmbedInjection = null; }
             onDone();
             return;
         }
-
+        // Re-pick the injection cell now that a piece has spawned and
+        // the camera-facing centre column is known. The original pick
+        // (in GameState._injectEmbedProp at level load) runs BEFORE
+        // any piece exists, so its front-12-column filter defaults to
+        // col 0 which can be nowhere near what the camera actually
+        // shows. Re-pick with the real centre and the orb will always
+        // land on a cell the player can see.
+        gs.rePickEmbedInjectionForCamera(this.currentCenterCol());
+        const inj = gs.lastEmbedInjection;
+        if (!inj) {
+            gs.modalPaused = false;
+            onDone();
+            return;
+        }
         // Target cell in boardRoot3D LOCAL space. Both FX paths
         // parent under boardRoot3D so LOCAL == the space their own
         // children live in.
