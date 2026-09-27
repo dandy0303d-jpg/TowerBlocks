@@ -1,0 +1,95 @@
+// 火箭能量拖尾（加法混合、双面、不写深度）
+// Cocos Creator 3.8.x
+// 同一个 effect 两种用法（由 RocketTrail.ts 自动创建材质）：
+//   RIBBON 宏开启：光带。uv.x = 0 头 ~ 1 尾，uv.y = 0~1 横向
+//   RIBBON 宏关闭：圆形光点（火花、喷口光晕），颜色和透明度来自顶点色
+// 顶点位置已经是世界坐标（节点挂在场景根，变换为单位矩阵）。
+CCEffect %{
+  techniques:
+  - name: additive
+    passes:
+    - vert: trail-vs:vert
+      frag: trail-fs:frag
+      depthStencilState:
+        depthTest: true
+        depthWrite: false
+      blendState:
+        targets:
+        - blend: true
+          blendSrc: src_alpha
+          blendDst: one
+          blendSrcAlpha: zero
+          blendDstAlpha: one
+      rasterizerState:
+        cullMode: none
+      properties:
+        headColor: { value: [1.0, 0.55, 0.24, 1.0], linear: true, editor: { type: color } }
+        tailColor: { value: [1.0, 0.16, 0.12, 1.0], linear: true, editor: { type: color } }
+        params:    { value: [18.0, 22.0, 1.0, 0.0], editor: { tooltip: 'x=流光速度 y=流光密度 z=强度 w=保留' } }
+}%
+
+CCProgram trail-vs %{
+  precision highp float;
+  #include <legacy/input>
+  #include <builtin/uniforms/cc-global>
+  #include <legacy/local-batch>
+
+  in vec2 a_texCoord;
+  in vec4 a_color;
+
+  out vec2 v_uv;
+  out vec4 v_color;
+
+  vec4 vert () {
+    vec4 position;
+    CCVertInput(position);
+
+    mat4 matWorld;
+    CCGetWorldMatrix(matWorld);
+
+    v_uv = a_texCoord;
+    v_color = a_color;
+    return cc_matProj * (cc_matView * matWorld) * position;
+  }
+}%
+
+CCProgram trail-fs %{
+  precision highp float;
+  #include <builtin/uniforms/cc-global>
+  #include <legacy/output>
+
+  in vec2 v_uv;
+  in vec4 v_color;
+
+  uniform TrailConstants {
+    vec4 headColor;
+    vec4 tailColor;
+    vec4 params;
+  };
+
+  vec4 frag () {
+    vec3 col;
+    float a;
+
+  #if RIBBON
+    float u      = clamp(v_uv.x, 0.0, 1.0);
+    float across = abs(v_uv.y - 0.5) * 2.0;
+    float core   = exp(-across * across * 18.0);                   // 白色细芯
+    float glow   = exp(-across * across * 3.0);                    // 外发光
+    float flow   = 0.55 + 0.45 * sin(u * params.y - cc_time.x * params.x + v_uv.y * 3.0);
+    float fade   = pow(1.0 - u, 1.5);
+
+    col = mix(headColor.rgb, tailColor.rgb, smoothstep(0.0, 0.8, u));
+    col = mix(col, vec3(1.0, 0.9, 0.75), core * (1.0 - u) * 0.5);
+    a   = (glow * 0.6 * flow + core) * fade * v_color.a;
+  #else
+    float d = length(v_uv - 0.5) * 2.0;
+    float k = clamp(1.0 - d, 0.0, 1.0);
+    col = mix(v_color.rgb, vec3(1.0), pow(k, 6.0));
+    a   = k * k * v_color.a;
+  #endif
+
+    a = clamp(a * params.z, 0.0, 1.0);
+    return CCFragOutput(vec4(col, a));
+  }
+}%

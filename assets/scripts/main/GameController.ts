@@ -26,9 +26,11 @@ import {
     tween,
     Button,
     Mesh,
+    EffectAsset,
 } from 'cc';
 import { GravityPressEffect } from '../../effects/gravity/GravityPressEffect';
 import { SpinTowerEffect } from '../../effects/gravity/SpinTowerEffect';
+import { RocketTrail } from '../../effects/rocket-trail/RocketTrail';
 import { COLS, COLORS, CellValue, ENDLESS_HEIGHT_LIMIT, ENDLESS_GRAY_CAP } from '../core/Constants';
 import { isColoredCell } from '../core/Board';
 import { SoundManager } from '../audio/SoundManager';
@@ -139,6 +141,13 @@ export class GameController extends Component {
      *  变换，所以 `rotateCylinder` 在这段时间不会写入 boardRoot3D。 */
     @property({ type: SpinTowerEffect, tooltip: '甩干机 3D 特效控制器（挂 SpinTowerEffect 的节点）。留空 fallback 到旧的 yaw-tween 逻辑。' })
     dryerEffect: SpinTowerEffect | null = null;
+
+    /** 火箭弹拖尾 EffectAsset（`assets/effects/rocket-trail/rocket-trail.effect`）。
+     *  非空时，每颗新发射的火箭都会 attach 一个 `RocketTrail`
+     *  实例；旧的 `RocketTrailFX` 组件不再挂在池子里的方块上。
+     *  留空 fallback 到旧的 RocketTrailFX 3-strip 拖尾。 */
+    @property({ type: EffectAsset, tooltip: '火箭弹拖尾 EffectAsset。留空则用旧的 RocketTrailFX。' })
+    rocketTrailEffect: EffectAsset | null = null;
 
     /** Drag `cube-mat.mtl` here. This is the material every brick uses; the
      *  controller clones it per brick at runtime so `mainColor` can be
@@ -1353,13 +1362,15 @@ export class GameController extends Component {
                 return;
             }
             this.rocketPool.push(n);
-            // Attach the self-contained RocketTrailFX component. It
-            // manages its own ribbon nodes as SIBLINGS of this cube,
-            // tracks the cube's per-frame position, and rebuilds a
-            // 3-layer flame strip. Pool re-use across rockets is
-            // handled inside the component via a teleport-detection
-            // heuristic — no pool-side wiring needed.
-            n.addComponent(RocketTrailFX);
+            // When the new-style `rocketTrailEffect` is wired, we
+            // attach a fresh `RocketTrail` per-fired-rocket in
+            // renderFallingRockets (auto-destroys on fadeout, so a
+            // per-shot lifecycle is natural). Only fall back to the
+            // legacy per-cube `RocketTrailFX` component when no
+            // effect is wired.
+            if (!this.rocketTrailEffect) {
+                n.addComponent(RocketTrailFX);
+            }
         }
         log(`[TowerBlocks] rocket pool built: ${POOL_SIZE} red-brick bullets with per-cube trail component.`);
     }
@@ -1443,6 +1454,7 @@ export class GameController extends Component {
             if (this.rocketCursor >= this.rocketPool.length) break;
             const node = this.rocketPool[this.rocketCursor];
             this.rocketCursor++;
+            const wasActive = node.active;
             if (!node.active) node.active = true;
             const theta = rk.col * ANGLE_PER_COL;
             const x = RADIUS * Math.sin(theta);
@@ -1450,9 +1462,21 @@ export class GameController extends Component {
             const y = Y_BOTTOM + ((totalRows - 1) - rk.y) * CELL_SIZE;
             node.setPosition(x, y, z);
             node.setRotationFromEuler(90, math.toDegree(theta) + 180, 0);
-            // Ribbon: RocketTrailFX component on this cube handles
-            // the trail rebuild in its own update() — reads the
-            // position we just set. No further code here.
+            // New-style trail: attach a fresh RocketTrail the frame
+            // this cube goes inactive → active (i.e. a new rocket
+            // just spawned onto this pool slot). RocketTrail lives on
+            // scene-root, follows target.worldPosition, auto-destroys
+            // on fadeout — so one attach per shot is the whole
+            // lifecycle. Legacy path (no effect wired) is handled by
+            // the RocketTrailFX component still on the cube.
+            if (this.rocketTrailEffect && !wasActive) {
+                RocketTrail.attach(node, this.rocketTrailEffect, {
+                    // Rockets in TetriTower drop straight down along
+                    // the cylinder wall. Seed the direction so the
+                    // first frames aren't stuck at the default +Z.
+                    tailOffset: CELL_SIZE * 0.5,
+                }).setDirection(new Vec3(0, -1, 0));
+            }
         }
         for (let i = this.rocketCursor; i < this.rocketPool.length; i++) {
             if (this.rocketPool[i].active) this.rocketPool[i].active = false;
