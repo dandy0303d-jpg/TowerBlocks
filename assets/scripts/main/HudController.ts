@@ -27,6 +27,7 @@ import {
 } from 'cc';
 import { ensureDimBackdrop } from './UiHelpers';
 import { LevelCompletePopup } from '../../effects/level-complete/LevelCompletePopup';
+import { DestinyBlockPopup } from '../../effects/destiny-block/DestinyBlockPopup';
 import { GameController } from './GameController';
 import { ToastManager } from './ToastManager';
 import { BackKeyManager } from './BackKeyManager';
@@ -277,6 +278,14 @@ export class HudController extends Component {
      *  完成再走后续 hide 流程。 */
     @property({ type: LevelCompletePopup, tooltip: '通关庆祝新版弹窗（挂 LevelCompletePopup 的节点）。留空则用旧的 scale-tween 面板。' })
     authoredLevelCompletePopup: LevelCompletePopup | null = null;
+
+    /** 本命方块弹窗新版动画（挂 DestinyBlockPopup 的节点）。非空时
+     *  在 `showFateModal` 打开时同步调用其 `show({level, counts})` 播
+     *  放入场动画（面板落下 + 角色颠簸 + 层数翻牌 + 方块点亮 + 卡片
+     *  依次弹出 + 数字滚动）；`hideFateModal` 时调用其 `hide()`。
+     *  留空则跳过额外动画，只显示原来的 fateOverlay。 */
+    @property({ type: DestinyBlockPopup, tooltip: '本命方块弹窗新版动画（挂 DestinyBlockPopup 的节点）。留空则不播放入场动画。' })
+    authoredDestinyBlockPopup: DestinyBlockPopup | null = null;
 
     @property({ type: Label, tooltip: '通关庆祝面板里的"恭喜通关"标题 Label。showLevelClearTime 时会把它的 string 填成 t("level.congrats")（各语言已翻译）。可空——不拖则不设置标题（面板里静态字符串也行）。' })
     authoredLevelClearTitleLabel: Label | null = null;
@@ -4005,6 +4014,21 @@ export class HudController extends Component {
         // dim and leak into the modal.
         this.fateOverlay.setSiblingIndex(999);
         this.fateOverlay.active = true;
+        // Fire the new author-supplied intro animation on top of the
+        // existing overlay, when wired. Read embed-prop counts off the
+        // cached backpack so the card-count roll animates from x0 to
+        // the real value on open. `fadeMask: false` since the overlay
+        // dim is already up.
+        if (this.authoredDestinyBlockPopup && this.authoredDestinyBlockPopup.node.isValid) {
+            const popup = this.authoredDestinyBlockPopup;
+            const counts = [
+                this._embedCounts.boom1 ?? 0,
+                this._embedCounts.row1  ?? 0,
+                this._embedCounts.wrecker ?? 0,
+            ];
+            popup.node.active = true;
+            popup.show({ level: level.order ?? 0, counts, fadeMask: false });
+        }
         // Reset the per-modal paid-refresh tier counter so this fresh
         // open starts back at tier 0 (10 gems). Cap is
         // MAX_PAID_REFRESHES_PER_MODAL — after that the button greys
@@ -4024,6 +4048,12 @@ export class HudController extends Component {
 
     private hideFateModal(): void {
         if (this.fateOverlay) this.fateOverlay.active = false;
+        if (this.authoredDestinyBlockPopup && this.authoredDestinyBlockPopup.node.isValid) {
+            const popup = this.authoredDestinyBlockPopup;
+            popup.hide().then(() => {
+                if (popup.node && popup.node.isValid) popup.node.active = false;
+            });
+        }
         this.fateResolve = null;
         this.fateCancel  = null;
         if (this.fatePreviewTimer) {
