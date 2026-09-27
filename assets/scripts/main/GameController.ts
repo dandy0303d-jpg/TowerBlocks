@@ -4478,7 +4478,7 @@ export class GameController extends Component {
             dmr.mesh = utils.MeshUtils.createMesh(primitives.sphere(0.25, { segments: 16 }));
             if (this.cubeMaterial) dmr.setSharedMaterial(this.cubeMaterial, 0);
             const bp = this.boardRoot3D.worldPosition;
-            console.log(`[OrbitSelect] embed inject at r=${inj.r} c=${inj.c} kind=${inj.kind} localPos=(${localPos.x.toFixed(2)},${localPos.y.toFixed(2)},${localPos.z.toFixed(2)}) markerWorld=(${wp.x.toFixed(2)},${wp.y.toFixed(2)},${wp.z.toFixed(2)}) towerWorld=(${bp.x.toFixed(2)},${bp.y.toFixed(2)},${bp.z.toFixed(2)}) yaw=${this.boardRoot3D.eulerAngles.y.toFixed(1)} scale=${ws.x.toFixed(2)}`);
+            console.log(`[OrbitSelect] embed inject at r=${inj.r} c=${inj.c} kind=${inj.kind} localPos=(${localPos.x.toFixed(2)},${localPos.y.toFixed(2)},${localPos.z.toFixed(2)}) markerWorld=(${wp.x.toFixed(2)},${wp.y.toFixed(2)},${wp.z.toFixed(2)}) towerWorld=(${bp.x.toFixed(2)},${bp.y.toFixed(2)},${bp.z.toFixed(2)}) yaw=${this.boardRoot3D.eulerAngles.y.toFixed(1)}`);
             const fx = OrbitSelect.play({
                 tower: this.boardRoot3D,
                 target: marker,
