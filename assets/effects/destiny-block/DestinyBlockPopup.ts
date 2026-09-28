@@ -217,52 +217,52 @@ export class DestinyBlockPopup extends Component {
             });
         }, this.blocks.length ? revealT : 0);
 
-        // 1.00 道具卡
+        // 0.40 道具卡（加快节奏：delay 1.0→0.4，间隔 0.08→0.04，位移时间 0.25→0.15）
         this.cards.forEach((c, i) => {
             if (!c) return;
-            const b = this.base(c), d = 1.0 + i * 0.08;
+            const b = this.base(c), d = 0.4 + i * 0.04;
             c.setPosition(b.pos.x, b.pos.y - 60, b.pos.z);
             c.setScale(Vec3.multiplyScalar(new Vec3(), b.scale, 0.6));
-            tween(this.op(c)).delay(d).to(0.12, { opacity: b.opacity }).start();
+            tween(this.op(c)).delay(d).to(0.08, { opacity: b.opacity }).start();
             tween(c).delay(d)
-                .to(0.25, { position: b.pos.clone(), scale: Vec3.multiplyScalar(new Vec3(), b.scale, 1.08) }, { easing: 'quadOut' })
-                .to(0.12, { scale: b.scale.clone() }, { easing: 'quadInOut' })
+                .to(0.15, { position: b.pos.clone(), scale: Vec3.multiplyScalar(new Vec3(), b.scale, 1.08) }, { easing: 'quadOut' })
+                .to(0.08, { scale: b.scale.clone() }, { easing: 'quadInOut' })
                 .start();
             const lbl = this.cardCounts[i];
             const target = counts[i];
             if (lbl && target !== undefined) {
                 lbl.string = this.countFormat.replace('{n}', '0');
                 const counter = { v: 0 };
-                tween(counter).delay(d + 0.1).to(0.5, { v: target }, {
+                tween(counter).delay(d + 0.05).to(0.35, { v: target }, {
                     easing: 'quadOut',
                     onUpdate: () => { lbl.string = this.countFormat.replace('{n}', String(Math.round(counter.v))); },
                 }).call(() => { lbl.string = this.countFormat.replace('{n}', String(target)); }).start();
             }
         });
 
-        // 1.30 提示文字
+        // 0.60 提示文字（跟着道具卡节奏）
         if (this.hint) {
             const b = this.base(this.hint);
-            tween(this.op(this.hint)).delay(1.3).to(0.25, { opacity: b.opacity }).start();
+            tween(this.op(this.hint)).delay(0.6).to(0.15, { opacity: b.opacity }).start();
         }
-        // 1.40 开始按钮
+        // 0.65 开始按钮
         if (this.startButton) {
             const n = this.startButton, b = this.base(n);
             n.setScale(0, 0, 1);
-            tween(this.op(n)).delay(1.4).to(0.1, { opacity: b.opacity }).start();
-            tween(n).delay(1.4)
-                .to(0.25, { scale: Vec3.multiplyScalar(new Vec3(), b.scale, 1.1) }, { easing: 'backOut' })
-                .to(0.1, { scale: b.scale.clone() })
+            tween(this.op(n)).delay(0.65).to(0.08, { opacity: b.opacity }).start();
+            tween(n).delay(0.65)
+                .to(0.18, { scale: Vec3.multiplyScalar(new Vec3(), b.scale, 1.1) }, { easing: 'backOut' })
+                .to(0.08, { scale: b.scale.clone() })
                 .start();
         }
 
-        this.scheduleOnce(() => { this._shineT = 0; }, 1.8);
+        this.scheduleOnce(() => { this._shineT = 0; }, 1.0);
         return new Promise<void>(res => {
             this._showResolve = res;
             this.scheduleOnce(() => {
                 this._idle = true; this._t = 0;
                 const r = this._showResolve; this._showResolve = null; r && r();
-            }, 1.8);
+            }, 1.0);
         });
     }
 
@@ -323,23 +323,7 @@ export class DestinyBlockPopup extends Component {
                 const k = Math.sin(t * 1.6);
                 n.setScale(b.scale.x * (1 + 0.012 * k), b.scale.y * (1 + 0.03 * k), b.scale.z);
             });
-            // 方块轻微脉动
-            this.blocks.forEach((blk, i) => this.idle(blk, (n, b) => {
-                const k = 1 + 0.03 * Math.max(0, Math.sin(t * 2.4 - i * 0.7));
-                n.setScale(b.scale.x * k, b.scale.y * k, b.scale.z);
-            }));
-            // 道具卡浮动（选中的那张放大且不浮动）
-            this.cards.forEach((c, i) => this.idle(c, (n, b) => {
-                if (i === this._selected) return;
-                n.setPosition(b.pos.x, b.pos.y + Math.sin(t * 2 + i * 1.1) * 3, b.pos.z);
-            }));
-            // 提示文字呼吸
-            this.idle(this.hint, (n, b) => { this.op(n).opacity = b.opacity * (0.65 + 0.35 * (0.5 + 0.5 * Math.sin(t * 3))); });
-            // 按钮呼吸
-            this.idle(this.startButton, (n, b) => {
-                const k = 1 + 0.035 * Math.sin(t * 2.5);
-                n.setScale(b.scale.x * k, b.scale.y * k, b.scale.z);
-            });
+            // 方块脉动、道具卡浮动、提示文字呼吸、按钮呼吸 —— 按需求全部移除
 
             // Zzz
             this._zzzAcc += dt;
@@ -348,7 +332,11 @@ export class DestinyBlockPopup extends Component {
             this._twinkleAcc += dt;
             if (this._twinkleAcc > 0.4) {
                 this._twinkleAcc = 0;
-                const pool = [...this.blocks, ...this.cards, this.title].filter(n => !!n) as Node[];
+                // 置灰的道具卡不应该闪 —— 只让未选中前的所有卡、或选中的那张、以及方块/标题参与
+                const cardPool = this._selected >= 0
+                    ? (this.cards[this._selected] ? [this.cards[this._selected]] : [])
+                    : this.cards;
+                const pool = [...this.blocks, ...cardPool, this.title].filter(n => !!n) as Node[];
                 if (pool.length) this.sparkBurst(pool[(Math.random() * pool.length) | 0], 1, 1.2);
             }
         }
@@ -562,6 +550,55 @@ export class DestinyBlockPopup extends Component {
 
     private idle(n: Node | null, fn: (n: Node, b: { pos: Vec3; scale: Vec3; angle: number; opacity: number }) => void) {
         if (n && n.isValid) fn(n, this.base(n));
+    }
+
+    /**
+     * 对外接口：为动态生成的本命方块格子播放落下动画。
+     * 用于 HudController.drawFateShape() 每次重建 FateCell_r_c 之后调用。
+     * @param cells 动态生成的方块节点数组（顺序即落下顺序）
+     * @param startDelay 首个方块开始下落的延时（秒），默认 0（立即开始，配合弹窗时序请传 0.75）
+     */
+    animateBlocks(cells: Node[], startDelay = 0) {
+        if (!cells || cells.length === 0) return;
+        for (const blk of cells) {
+            if (!blk || !blk.isValid) continue;
+            // 每次动态生成时都要重新记录 base（覆盖之前的记录）
+            this._base.set(blk, {
+                pos: blk.position.clone(),
+                scale: blk.scale.clone(),
+                angle: blk.angle,
+                opacity: this.op(blk).opacity || 255,
+            });
+        }
+        cells.forEach((blk, i) => {
+            if (!blk || !blk.isValid) return;
+            const b = this._base.get(blk)!;
+            const d = startDelay + i * 0.12;
+            Tween.stopAllByTarget(blk);
+            Tween.stopAllByTarget(this.op(blk));
+            blk.setPosition(b.pos.x, b.pos.y + 90, b.pos.z);
+            this.op(blk).opacity = 0;
+            tween(this.op(blk)).delay(d).to(0.08, { opacity: b.opacity }).start();
+            tween(blk).delay(d)
+                .to(0.22, { position: b.pos.clone() }, { easing: 'quadIn' })
+                .call(() => { this.landDust(blk, 0.6); this.ring(blk, 0.8, 1.6, 0.3, 0.6); })
+                .to(0.06, { scale: new Vec3(b.scale.x * 1.15, b.scale.y * 0.85, b.scale.z) }, { easing: 'quadOut' })
+                .to(0.15, { scale: b.scale.clone() }, { easing: 'backOut' })
+                .start();
+        });
+        const revealT = startDelay + (cells.length - 1) * 0.12 + 0.22 + 0.2;
+        this.scheduleOnce(() => {
+            cells.forEach((blk, i) => {
+                if (!blk || !blk.isValid) return;
+                const b = this._base.get(blk); if (!b) return;
+                tween(blk).delay(i * 0.04)
+                    .to(0.08, { scale: Vec3.multiplyScalar(new Vec3(), b.scale, 1.18) }, { easing: 'quadOut' })
+                    .to(0.25, { scale: b.scale.clone() }, { easing: 'backOut' })
+                    .start();
+                this.ring(blk, 0.9, 2.4, 0.5, 1);
+                this.sparkBurst(blk, 4, 1.3);
+            });
+        }, revealT);
     }
 }
 
