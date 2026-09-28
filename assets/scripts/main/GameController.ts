@@ -32,6 +32,8 @@ import { GravityPressEffect } from '../../effects/gravity/GravityPressEffect';
 import { SpinTowerEffect } from '../../effects/gravity/SpinTowerEffect';
 import { RocketTrail } from '../../effects/rocket-trail/RocketTrail';
 import { OrbitSelect } from '../../effects/orbit-select/OrbitSelect';
+import { BlockSpin } from '../../effects/block-spin/BlockSpin';
+import { GatlingDrop } from '../../effects/gatling-drop/GatlingDrop';
 import { COLS, COLORS, CellValue, ENDLESS_HEIGHT_LIMIT, ENDLESS_GRAY_CAP } from '../core/Constants';
 import { isColoredCell } from '../core/Board';
 import { SoundManager } from '../audio/SoundManager';
@@ -40,6 +42,7 @@ import { getControlMode, subscribe as subscribeSettings } from '../core/Settings
 import { LevelProgress } from '../core/LevelProgress';
 import { submitScore, submitLevelTime } from '../core/LeaderboardApi';
 import { AnalyticsApi } from '../core/AnalyticsApi';
+import { ActivityProgressReporter, ActivityProgressKeys } from '../core/ActivityProgressReporter';
 import { buildTutorialLevel } from '../core/TutorialLevelData';
 // Settings.gestureMode currently unused — the gesture system was simplified
 // to "left-half tap/hold/drag" (no flick branch). Import kept commented for
@@ -151,6 +154,25 @@ export class GameController extends Component {
      *  外壳选中高亮）。留空 fallback 到旧的 EmbedRevealFX3D 弧线特效。 */
     @property({ type: EffectAsset, tooltip: '绕塔选中特效 EffectAsset（orbit-select.effect）。留空则回退到旧的 EmbedRevealFX3D。' })
     orbitSelectEffect: EffectAsset | null = null;
+
+    /** 拆迁队方块被触发发射拖尾时，源方块位置播放的自转特效
+     *  EffectAsset（`assets/effects/block-spin/block-spin.effect`）。
+     *  在 wrecker prePulse 回调里 `BlockSpin.play` 一个 1 秒的旋转 + 光带 +
+     *  彩色火花组合。留空则不播放。 */
+    @property({ type: EffectAsset, tooltip: '拆迁队方块自转特效 EffectAsset（block-spin.effect）。留空则不播放。' })
+    blockSpinEffect: EffectAsset | null = null;
+
+    /** 主 3D 摄像机 Node（一般是 mainCamera3D）。BlockSpin 会用它算
+     *  光带朝向和前后调暗。留空时 BlockSpin 会自动挑一个透视相机，但
+     *  如果场景里有 UI 摄像机排在前面容易选错，建议显式拖入。 */
+    @property({ type: Node, tooltip: '主 3D 摄像机 Node —— BlockSpin 用来算光带朝向。留空则自动查找。' })
+    blockSpinCameraNode: Node | null = null;
+
+    /** 加特林方块连发特效 EffectAsset（`assets/effects/gatling-drop/gatling-drop.effect`）。
+     *  加特林命中每个格子时叠一层子弹飞入 + 光环 + 火花 + 碎屑。
+     *  现有的碎裂 FX 保持不变。留空则不播。 */
+    @property({ type: EffectAsset, tooltip: '加特林连发特效 EffectAsset（gatling-drop.effect）。留空则不播放。' })
+    gatlingDropEffect: EffectAsset | null = null;
 
     /** Drag `cube-mat.mtl` here. This is the material every brick uses; the
      *  controller clones it per brick at runtime so `mainColor` can be
@@ -326,6 +348,10 @@ export class GameController extends Component {
     /** Pool of in-flight gatling bullet spheres (similar to hail drops). */
     private gatlingBulletPool: Node[] = [];
     private gatlingBulletCursor: number = 0;
+    /** 每帧 renderFallingGatling 里记录每个池 slot 当前服务的是哪颗
+     *  子弹（reference）—— 用来检测 slot 里的子弹被换了（前一颗落地、
+     *  后续子弹在 falling 数组里前移），需要重新 attach GatlingDrop。 */
+    private _gatlingSlotRefs: Array<unknown> = [];
 
 
     /** Pool of falling-rocket instances. Each frame `syncCubes`
@@ -731,6 +757,12 @@ export class GameController extends Component {
                     log('[TowerBlocks] GAME OVER, reason=', r, '(deferred until effects clear)');
                     this.pendingGameOverReason = r;
                     SoundManager.instance?.play('game_over');
+                    // Activity progress: flush any accumulated deltas so
+                    // the game-over popup (if it shows activity progress)
+                    // reflects THIS run's contribution. Fire-and-forget —
+                    // network failure just leaves the batch pending for
+                    // the 60s tick or the next flush.
+                    void ActivityProgressReporter.flush('game-over');
                     // ---- Firebase: stage_fail (custom event) ----
                     // Firebase's predefined `level_end` doesn't cover
                     // "failed with a distinct reason", so we log a
@@ -748,6 +780,10 @@ export class GameController extends Component {
                 },
                 onLevelWin:     ()  => {
                     log('[TowerBlocks] LEVEL WIN (deferred until effects clear)');
+                    // Activity progress: same reasoning as onGameOver —
+                    // flush THIS level's line-clear tally before the
+                    // level-win popup can pull activity status.
+                    void ActivityProgressReporter.flush('level-win');
                     // Fire the pending flag immediately — drainPendingPopups
                     // still gates on fxStillPlaying (colored-block shatter
                     // animation), so MenuController.showLevelWin only runs
@@ -1401,10 +1437,13 @@ export class GameController extends Component {
         const z      = RADIUS * Math.cos(theta);
         const yawDeg = math.toDegree(theta) + 180;
 
+        const visualSize = CELL_SIZE * GameController.TOWER_VIEW_SCALE;
         for (const b of falling) {
             if (this.gatlingBulletCursor >= this.gatlingBulletPool.length) break;
-            const node = this.gatlingBulletPool[this.gatlingBulletCursor];
+            const slot = this.gatlingBulletCursor;
+            const node = this.gatlingBulletPool[slot];
             this.gatlingBulletCursor++;
+            const wasActive = node.active;
             if (!node.active) node.active = true;
 
             const y = Y_BOTTOM + ((totalRows - 1) - b.y) * CELL_SIZE;
@@ -1412,9 +1451,33 @@ export class GameController extends Component {
             // Cube.prefab brick — same X=90 orientation as board bricks
             // so the curved face points outward along the cylinder.
             node.setRotationFromEuler(90, yawDeg, 0);
+
+            // GatlingDrop v5 —— 每颗子弹挂个跟随的发光壳 + 拖尾。
+            // 需要在两种情况下 attach：
+            //   1) 池 slot 从 inactive → active（第一次进池）
+            //   2) 池 slot 里的子弹 REF 变了（前一颗落地后，剩下的子弹
+            //      在 falling 数组里前移，这个 slot 现在服务的是另一颗
+            //      子弹 —— 之前 attach 的 trail 被"瞬移"检测踢掉了）
+            // 单纯 !wasActive 只能盖到第一种，导致后续子弹没特效。
+            const prevRef = this._gatlingSlotRefs[slot];
+            const needsAttach = this.gatlingDropEffect && (!wasActive || prevRef !== b);
+            if (needsAttach) {
+                try {
+                    GatlingDrop.attach(node, this.gatlingDropEffect!, {
+                        blockSize:  visualSize,
+                        cameraNode: this.blockSpinCameraNode ?? undefined,
+                        glow:       0,   // 关掉方块外面的发光罩子，只留拖尾 + 火花
+                        // 不传 color → 让 v5 读子弹自身材质 mainColor / albedo
+                    } as any);
+                } catch (err) {
+                    console.warn('[Gatling] GatlingDrop.attach failed:', err);
+                }
+            }
+            this._gatlingSlotRefs[slot] = b;
         }
         for (let i = this.gatlingBulletCursor; i < this.gatlingBulletPool.length; i++) {
             if (this.gatlingBulletPool[i].active) this.gatlingBulletPool[i].active = false;
+            this._gatlingSlotRefs[i] = null;
         }
     }
 
@@ -1587,68 +1650,15 @@ export class GameController extends Component {
         }
     }
 
-    /** Per-frame trail update: emit rainbow star sparks at each falling
-     *  rocket/gatling bullet's tail — matches the "single cube
-     *  elimination" FX. */
-    private stepRocketTrail(dt: number): void {
+    /** Per-frame trail update. 历史上负责给 falling rocket / gatling
+     *  子弹尾部喷星星火花。现在两者都改用 ribbon：
+     *   - Rockets 2026-09-19 改成 renderFallingRockets 里的 3 层 ribbon 尾焰
+     *   - Gatling 2026-09-28 改成 GatlingDrop.attach() 跟随子弹
+     *  这个函数保留是为了兼容 update() 里的调用位置；只做 accumulator
+     *  归零，防止未来某处又想恢复 spawnStarsAt 时的首帧爆发。 */
+    private stepRocketTrail(_dt: number): void {
         if (!this.gameState) return;
-
-        // ---- 1. Emit trail sparks at each bullet's tail ----
-        const rows         = this.gameState.state.board.length;
-        const yOffset      = this.boardYOffset(rows);
-        const rocketFall   = this.gameState.rocket.getFalling();
-        const gatlingFall  = this.gameState.gatling.getFalling();
-        // Board yaw for world-position rotation (shared with the
-        // shatter/star spawner's coordinate convention).
-        const centerCol = this.currentCenterCol();
-        const boardYawDeg = -math.toDegree(centerCol * ANGLE_PER_COL);
-        const yawRad = math.toRadian(boardYawDeg);
-        const cosY = Math.cos(yawRad), sinY = Math.sin(yawRad);
-
-        // Throttle: burst every `spawnEveryMs` per bullet — spawnStarsAt
-        // launches `flashStarsPerCell` sparks per call, and per-frame
-        // per-bullet would overwhelm the star pool. ~50ms per bullet
-        // reads as a continuous sparkle stream at 60 fps.
-        const spawnEveryMs = 50;
-        this.rocketTrailStarAccumMs += dt * 1000;
-        const shouldEmit = this.rocketTrailStarAccumMs >= spawnEveryMs;
-        if (shouldEmit) {
-            this.rocketTrailStarAccumMs -= spawnEveryMs;
-            // Trail sparks read best small + short-lived — a big
-            // burst per bullet per 50ms feels overwhelming. 0.4 gets
-            // us "fine sparkle dust" instead of "cube-shatter cloud".
-            const TRAIL_SIZE = 0.4;
-            // Match the Cube.prefab mesh offset — bullets and the
-            // eventual shatter FX both live at (RADIUS - CELL_SIZE/2)
-            // radially and Y + CELL_SIZE vertically. Without matching
-            // the trail here, sparks emit from the bullet's NODE
-            // position (outer-face + one row below), not from the
-            // brick's visual centre — user sees the trail floating
-            // beside/below the actual projectile.
-            const trailRadius = RADIUS - CELL_SIZE * 0.5;
-            const trailYBump  = CELL_SIZE;
-            // Rocket trail sparks removed per user request 2026-09-19 —
-            // the falling rockets now use the 3-layer ribbon exhaust
-            // built in renderFallingRockets instead. Gatling bullets
-            // still emit sparks (they don't have ribbons yet).
-            for (const gk of gatlingFall) {
-                const cellTheta = centerCol * ANGLE_PER_COL;
-                // Gatling bullets are pinned to the camera-facing
-                // column. Applying the -CELL_SIZE/2 radial offset in
-                // local space (same as rocketFall above) becomes a
-                // constant Z offset after the identity Y rotation.
-                const worldX    = 0;
-                const worldZ    = trailRadius;
-                const rocketY   = Y_BOTTOM + ((rows - 1) - gk.y) * CELL_SIZE;
-                const worldY    = rocketY + yOffset + trailYBump;
-                this.spawnStarsAt(worldX, worldY, worldZ, cellTheta, boardYawDeg, TRAIL_SIZE);
-            }
-        }
-        // No projectiles in flight — keep the accumulator drained so
-        // the first tick of the next storm doesn't burst.
-        if (rocketFall.length === 0 && gatlingFall.length === 0) {
-            this.rocketTrailStarAccumMs = 0;
-        }
+        this.rocketTrailStarAccumMs = 0;
     }
 
 
@@ -1745,7 +1755,7 @@ export class GameController extends Component {
         if (!this.boardRoot3D) return;
         if (this.blindBeamNode) return;   // idempotent — build once
 
-        const BEAM_WIDTH  = CELL_SIZE;
+        const BEAM_WIDTH  = CELL_SIZE * 4;   // 4 倍宽 —— 覆盖前面 4 列
         const BEAM_HEIGHT = CELL_SIZE * 60;
         const BEAM_DEPTH  = 0.08;
         const mesh = utils.MeshUtils.createMesh(primitives.box({
@@ -1763,13 +1773,13 @@ export class GameController extends Component {
         // is the transparent pass.
         const mat = new Material();
         mat.initialize({ effectName: 'builtin-unlit', technique: 1 });
-        mat.setProperty('mainColor', new Color(255, 220, 90, 130));
+        mat.setProperty('mainColor', new Color(255, 220, 90, 70));   // 更透一点（130 → 70）
         mr.material = mat;
 
         // Initial pose — updated per frame; the once-off setup here
         // just avoids a frame of undefined position before the first
         // updateBlindBeamPose fires.
-        beam.setPosition(0, 0, RADIUS + 0.05);
+        beam.setPosition(0, 0, RADIUS + 0.6);
         beam.active = false;
         this.blindBeamNode = beam;
     }
@@ -1787,10 +1797,9 @@ export class GameController extends Component {
         if (!this.blindBeamNode) return;
         const col   = Math.round(centerCol);
         const theta = col * ANGLE_PER_COL;
-        // Radial offset: sit just outside the cube surface so we don't
-        // z-fight with the front-column cubes when `blindShowTowerDebug`
-        // is on. Uses the SAME radius the cube placement code uses.
-        const r = RADIUS + 0.05;
+        // Radial offset: 从 RADIUS+0.05 推到 RADIUS+0.6，往外浮一层，
+        // 光柱与前排方块儿之间留出可见空气感，减少边缘 z-fight。
+        const r = RADIUS + 0.6;
         this.blindBeamNode.setPosition(
             r * Math.sin(theta),
             0,
@@ -2382,9 +2391,39 @@ export class GameController extends Component {
             // Post-fail reveal ALSO overrides so the player can see
             // the final tower before the fail popup covers it. Active
             // piece + ghost keep rendering either way.
-            const hideBoardCells = this.gameState.mode === 'blind'
+            //
+            // Light-beam reveal: when the blind-mode beam is on it
+            // uncovers the 4 columns it illuminates (matches the 4×
+            // wider beam mesh). We build a Set<number> of visible cols
+            // once per frame and pass a per-cell predicate to
+            // syncBoardCells so cells IN those cols render normally
+            // while everything else stays hidden. The beam widens
+            // symmetrically around Math.round(centerCol); at width 4
+            // we cover offsets {-1, 0, 1, 2} — matches the beam's
+            // world-X footprint (centered mesh, width 4×CELL_SIZE).
+            const blindMode = this.gameState.mode === 'blind'
                 && !this.blindShowTowerDebug
                 && !this.postFailRevealPending;
+            let hideBoardCells: boolean | ((r: number, c: number) => boolean) = false;
+            if (blindMode) {
+                const beamCenter = Math.round(centerCol);
+                const revealCols = new Set<number>();
+                for (const off of [-1, 0, 1, 2]) {
+                    revealCols.add(((beamCenter + off) % COLS + COLS) % COLS);
+                }
+                hideBoardCells = (_r, c) => !revealCols.has(c);
+            }
+            // 拆迁队 BlockSpin 结束后要求源方块消失 —— 在 shatter commit
+            // 之前的空档，让 CubeManager 跳过这些格子。set 里存
+            // `${r}-${c}`，commit / level reset 时清空。
+            if (this._wreckerSpinHiddenCells.size > 0) {
+                const hidden = this._wreckerSpinHiddenCells;
+                const prev = hideBoardCells;
+                hideBoardCells = (r, c) => {
+                    if (hidden.has(`${r}-${c}`)) return true;
+                    return typeof prev === 'function' ? prev(r, c) : prev === true;
+                };
+            }
             // Backpack `bomb_block` armed cells — build a per-frame
             // lookup so CubeManager renders locked-but-not-yet-fired
             // box3 cubes with the danger ramp-up animation instead of
@@ -3282,6 +3321,12 @@ export class GameController extends Component {
             return;
         }
 
+        // BlockSpin —— 拆迁队方块被触发发射拖尾时，在源方块位置起一个
+        // 1 秒的自转 + 光带 + 火花特效。用一个空 Node 当动画载体：
+        // BlockSpin 会在场景里另起 FX 根节点，围绕这个载体位置渲染
+        // 外壳 / 残影 / 光带 / 光环，池化的源方块 cube 不受影响。
+        this._playWreckerSourceSpin(srcR, srcC);
+
         // Projectile path — launch one small colored cube from
         // (srcR, srcC) to each target, stagger arrivals so the pulses
         // read as a sweep instead of an all-at-once bloom.
@@ -3314,6 +3359,61 @@ export class GameController extends Component {
         // Commit after the LAST projectile lands + its full pulse plays.
         const commitAt = now + maxArrivalMs + pulseMs;
         if (commitAt > this.wreckerCommitAt) this.wreckerCommitAt = commitAt;
+    }
+
+    /** 拆迁队方块被触发时在源位置播放 BlockSpin。用一个空 Node 作为
+     *  BlockSpin 的动画载体（invisible puppet）—— BlockSpin 自己会在
+     *  场景根下另起 FX 节点渲染外壳/光带/火花，围绕 puppet 位置。
+     *  puppet 挂在 boardRoot3D 下，会跟着塔一起旋转；如果不希望效果
+     *  跟着塔旋转，改成挂到 scene 根（`director.getScene()`）。
+     *  1 秒后 BlockSpin 自 destroy，puppet 也一起清掉。 */
+    private _playWreckerSourceSpin(srcR: number, srcC: number): void {
+        if (!this.blockSpinEffect || !this.boardRoot3D) return;
+        const totalRows = this.gameState?.state.board.length ?? 0;
+        if (totalRows <= 0) return;
+        const scene = director.getScene();
+        if (!scene) return;
+        const puppet = new Node('WreckerSpinPuppet');
+        // 挂在 scene 根 —— 特效锁在触发时刻的世界位置，不跟塔转
+        // （否则 1s 内塔如果动了效果会跟着漂）
+        scene.addChild(puppet);
+        puppet.layer = this.boardRoot3D.layer;
+        // 用 cellWorldPos 算源方块的世界坐标（cellWorldPos 已 apply
+        // boardRoot3D 的世界矩阵，含 TOWER_VIEW_SCALE）
+        this.cellWorldPos(srcR, srcC, GameController._tmpLocal);
+        puppet.setWorldPosition(GameController._tmpLocal);
+        // 让 puppet 朝外（同 cube 的角度）—— radial 模式的旋转轴会用它
+        const theta = srcC * ANGLE_PER_COL;
+        // 加上 boardRoot3D 的世界 yaw 一起考虑
+        const yaw = this.boardRoot3D.eulerAngles.y + math.toDegree(theta);
+        puppet.setRotationFromEuler(0, yaw, 0);
+        try {
+            // 塔整体缩了 TOWER_VIEW_SCALE (0.75)，FX 挂 scene 根不吃这个缩放，
+            // 所以 blockSize 用 CELL_SIZE * TOWER_VIEW_SCALE 让外壳 / 光带
+            // 大小跟屏幕上看到的方块对齐。turns 从 2 → 3 让彩虹光带在
+            // 1 秒里跑更多圈，拖尾更明显。
+            const visualSize = CELL_SIZE * GameController.TOWER_VIEW_SCALE;
+            const spin = BlockSpin.play({
+                block:      puppet,
+                effect:     this.blockSpinEffect,
+                tower:      this.boardRoot3D,   // 用来算"向外"方向
+                cameraNode: this.blockSpinCameraNode ?? undefined,   // v4: 显式指定避免选到 UI 相机
+                blockSize:  visualSize,
+                duration:   1.0,
+                turns:      3,
+            });
+            // 触发瞬间就让源方块从渲染中消失（拆迁队嵌入道具立刻藏起来），
+            // BlockSpin 在同一位置起特效；spin.done 时清掉 puppet。
+            // 隐藏一直持续到 shatter commit 把它从 board 上真正清掉。
+            const key = `${srcR}-${srcC}`;
+            this._wreckerSpinHiddenCells.add(key);
+            spin.done.then(() => {
+                if (puppet && puppet.isValid) puppet.destroy();
+            });
+        } catch (err) {
+            console.warn('[Wrecker] BlockSpin failed:', err);
+            if (puppet && puppet.isValid) puppet.destroy();
+        }
     }
 
     /** In-flight wrecker "marker" prop nodes — the fake wrecker cubes
@@ -3473,6 +3573,11 @@ export class GameController extends Component {
      *  a level reset (or a tear-down before landing) can cancel them
      *  before they push stale pulses / spawn zombie nodes. */
     private _wreckerProjectileTimeouts: ReturnType<typeof setTimeout>[] = [];
+
+    /** Cells the wrecker source occupied that have had their BlockSpin
+     *  finish playing — CubeManager should skip rendering them until the
+     *  shatter commit clears them from the board. Cleared on level reset. */
+    private _wreckerSpinHiddenCells: Set<string> = new Set();
 
     /** Spawn a small colored cube at source (srcR, srcC), tween it to
      *  target (dstR, dstC) over `flightMs` ms, fire `onArrive` when it
@@ -3819,6 +3924,10 @@ export class GameController extends Component {
         if (!this.gameState) return;
         if (Date.now() < this.wreckerCommitAt) return;
         this.wreckerCommitAt = 0;
+        // Commit clears wrecker cells from the board, so the hidden-cell
+        // set is no longer needed — its entries would be already-null
+        // cells anyway. Reset to keep memory bounded.
+        this._wreckerSpinHiddenCells.clear();
         // Tear down every temp orange marker RIGHT before the shatter
         // fires. Doing it here (rather than per-marker setTimeout in
         // _spawnWreckerMarkerAt) keeps the markers alive through
@@ -4727,6 +4836,11 @@ export class GameController extends Component {
         if (this.clearEffect === 1) {
             this.queueFlash(r, content);
         }
+        // Activity system — accumulate one line cleared per call.
+        // Fires for every row that shatters (level mode / endless / blind
+        // / bomb splice — every path funnels through here). Batched by
+        // ActivityProgressReporter, flushed on game-over + 60s tick.
+        ActivityProgressReporter.report(ActivityProgressKeys.LINES_CLEARED_TOTAL, 1);
     }
 
     /** Queue all 24 cells on row `r` for the pre-detonation pulse.
@@ -5431,6 +5545,9 @@ export class GameController extends Component {
         // onto the fresh board.
         for (const h of this._wreckerProjectileTimeouts) clearTimeout(h);
         this._wreckerProjectileTimeouts.length = 0;
+        // 拆迁队源方块的 spin hidden set —— level reset 时清空防止
+        // 新关卡里对应格子被误隐藏。
+        this._wreckerSpinHiddenCells.clear();
         // Nuke any temp wrecker marker props still hanging on target
         // cells — their per-marker auto-destroy timers will still fire
         // and no-op on already-destroyed nodes, so we're safe to drop

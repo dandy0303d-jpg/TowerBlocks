@@ -15,6 +15,7 @@ import {
     Graphics,
     Vec3,
     tween,
+    Tween,
     director,
     log,
     sys,
@@ -45,6 +46,7 @@ import type { EmbedProp } from '../core/Types';
 import { setBannedHandler, getBannedState, setBearerToken, type BannedState } from '../core/Http';
 import { fetchWallet, subscribeBalance, emitBalance } from '../core/WalletApi';
 import { BadgeClaims } from '../core/BadgeClaims';
+import { claimBadgeReward, fetchBadgeClaims } from '../core/BadgeClaimApi';
 import { fetchBackpack, getCachedBackpack } from '../core/BackpackApi';
 import { BACKEND_BASE_URL } from '../core/BackendConfig';
 import { TutorialProgress } from '../core/TutorialProgress';
@@ -184,6 +186,9 @@ export class MenuController extends Component {
 
     @property({ type: Button, tooltip: '右上角"徽章图鉴"按钮（点击 → 打开完整徽章面板）。' })
     authoredBadgeCollectionButton: Button | null = null;
+
+    @property({ type: SpriteFrame, tooltip: '徽章图鉴按钮右上角红点图（比如红底白色感叹号）。留空则用纯色红圆 + 白字数字兜底。资源建议：textures/ui/activity_badge.png' })
+    authoredBadgeCollectionRedDotFrame: SpriteFrame | null = null;
 
     // ---- 徽章图鉴面板 ----
     @property({ type: Node, tooltip: '徽章图鉴面板根节点（含 dim 遮罩 + 卡片）。脚本 setActive 控制开关。可空。' })
@@ -739,6 +744,11 @@ export class MenuController extends Component {
         });
         // Paint the correct logo on first load too.
         this._refreshLocalizedLogo();
+        // Pull server-side badge-claim history so a fresh install /
+        // reinstall / cross-device sign-in doesn't let the player
+        // re-claim already-rewarded groupIdxs. Fires-and-forgets —
+        // offline / signed-out users keep the localStorage-only view.
+        this._hydrateBadgeClaimsFromServer();
         // Subscribe to wallet balance broadcasts so the mode-select
         // topup button + settings balance strip repaint the moment
         // gems change — no matter which surface caused the change
@@ -1410,7 +1420,7 @@ export class MenuController extends Component {
         fx.layer  = canvasNode.layer;
         fx.setSiblingIndex(9999);
         const ut = fx.addComponent(UITransform);
-        ut.setContentSize(96, 96);
+        ut.setContentSize(100, 122);   // 徽章原生分辨率 100×122，避免飞行中被压扁成正方形
         const spr = fx.addComponent(Sprite);
         spr.sizeMode = Sprite.SizeMode.CUSTOM;
         spr.spriteFrame = icon;
@@ -1440,6 +1450,94 @@ export class MenuController extends Component {
      *  refresh call is made. */
     private _suppressLatestBadge: boolean = false;
 
+    /** 徽章图鉴按钮上的红点子节点。首次 `_paintBadgeCollectionRedDot`
+     *  时懒建，之后复用；有未领取时显示 + 弹跳，没有则隐藏。 */
+    private _badgeCollectionRedDot: Node | null = null;
+
+    /** 计算 [0, earnedCount) 里有多少枚徽章的钻石奖励还没领。有 > 0 时
+     *  在徽章图鉴按钮右上角显示红点 + 数字 + 循环弹跳；等于 0 时隐藏。 */
+    private _paintBadgeCollectionRedDot(maxCleared: number): void {
+        const btn = this.authoredBadgeCollectionButton;
+        if (!btn || !btn.node || !btn.node.isValid) return;
+
+        // 统计已 earn 但未 claim 的档位数（跟徽章面板的可领判定同源：
+        // `_paintBadgePanelCell` 里也是 earned && !BadgeClaims.isClaimed）
+        const earned = this._earnedBadgeCount(maxCleared);
+        let unclaimed = 0;
+        for (let i = 0; i < earned; i++) {
+            if (!BadgeClaims.isClaimed(i)) unclaimed++;
+        }
+
+        // 懒建红点，放到按钮右上角。
+        // 有 `authoredBadgeCollectionRedDotFrame` 就用图片（不加数字）；
+        // 没有就用纯色红圆 + 白字数字兜底。
+        let dot = this._badgeCollectionRedDot;
+        if (!dot || !dot.isValid) {
+            dot = new Node('BadgeCollectionRedDot');
+            dot.parent = btn.node;
+            dot.layer  = btn.node.layer;
+            const dotUT = dot.addComponent(UITransform);
+            const bg = dot.addComponent(Sprite);
+            bg.sizeMode = Sprite.SizeMode.CUSTOM;
+            if (this.authoredBadgeCollectionRedDotFrame) {
+                // 图片模式：34×35（跟活动图标红点一样）
+                dotUT.setContentSize(34, 35);
+                bg.spriteFrame = this.authoredBadgeCollectionRedDotFrame;
+            } else {
+                // 兜底：30×30 纯色红圆 + 白字数字
+                dotUT.setContentSize(30, 30);
+                bg.type  = Sprite.Type.SIMPLE;
+                bg.color = new Color(230, 50, 60, 255);
+                const lblNode = new Node('BadgeCollectionRedDotLabel');
+                lblNode.parent = dot;
+                lblNode.layer  = dot.layer;
+                lblNode.addComponent(UITransform).setContentSize(30, 30);
+                const lbl = lblNode.addComponent(Label);
+                lbl.string   = '';
+                lbl.fontSize = 18;
+                lbl.color    = new Color(255, 255, 255, 255);
+                lbl.horizontalAlign = Label.HorizontalAlign.CENTER;
+                lbl.verticalAlign   = Label.VerticalAlign.CENTER;
+            }
+            // 摆到按钮右上角，稍微压边
+            const btnUT = btn.node.getComponent(UITransform);
+            if (btnUT) {
+                dot.setPosition(btnUT.width / 2 - 6, btnUT.height / 2 - 6, 0);
+            }
+            this._badgeCollectionRedDot = dot;
+        }
+
+        if (unclaimed <= 0) {
+            dot.active = false;
+            Tween.stopAllByTarget(dot);
+            return;
+        }
+
+        // 数字更新（只在兜底模式有 Label；图片模式不显示数字）
+        const lbl = dot.getChildByName('BadgeCollectionRedDotLabel')?.getComponent(Label);
+        if (lbl) lbl.string = unclaimed > 99 ? '99+' : String(unclaimed);
+        dot.active = true;
+
+        // 循环弹跳（缩放 1 → 1.3 → 0.9 → 1.15 → 1，停 1.6s，再来）
+        // 已有循环 tween 时不叠加
+        Tween.stopAllByTarget(dot);
+        dot.setScale(1, 1, 1);
+        const one = new Vec3(1, 1, 1);
+        const big = new Vec3(1.3, 1.3, 1);
+        const dip = new Vec3(0.9, 0.9, 1);
+        const mid = new Vec3(1.15, 1.15, 1);
+        tween(dot)
+            .repeatForever(
+                tween(dot)
+                    .to(0.12, { scale: big }, { easing: 'quadOut' })
+                    .to(0.10, { scale: dip }, { easing: 'quadIn'  })
+                    .to(0.10, { scale: mid }, { easing: 'quadOut' })
+                    .to(0.14, { scale: one }, { easing: 'backOut' })
+                    .delay(1.6),
+            )
+            .start();
+    }
+
     public refreshFatePieceProgressUi(currentIdx: number): void {
         const maxCleared = LevelProgress.maxClearedIdx;
         const groupIdx   = this._fatePieceGroupIdx(currentIdx);
@@ -1465,6 +1563,8 @@ export class MenuController extends Component {
                 const spr = btnNode.getComponent(Sprite) ?? btnNode.getComponentInChildren(Sprite);
                 if (spr) spr.spriteFrame = nextIcon;
             }
+            // 徽章图鉴按钮右上角红点 —— 有未领取奖励时显示 + 跳动
+            this._paintBadgeCollectionRedDot(maxCleared);
         }
 
         // ---- Badges ----
@@ -1656,41 +1756,78 @@ export class MenuController extends Component {
         }
     }
 
-    /** Handle the "领取" tap: mark claimed, credit +1 gem, repaint.
-     *  Placeholder for a server-side call — TODO once the backend
-     *  `/player/badge/claim` endpoint exists. */
+    /** Handle the "领取" tap. Calls the server's
+     *  `POST /player/badge/claim` endpoint (tetritower-badge-claim-v1)
+     *  which atomically inserts the claim row + credits gems in a
+     *  single transaction. Server is authoritative on the balance —
+     *  we only mark local BadgeClaims after a 200 response so a
+     *  network failure doesn't lock the player out of the reward.
+     *
+     *  Idempotency: server returns `alreadyClaimed=true` for repeated
+     *  claims on the same groupIdx; we mirror that state locally and
+     *  don't double-credit. */
     private _onClaimBadgeReward(groupIdx: number): void {
         if (BadgeClaims.isClaimed(groupIdx)) return;   // double-tap guard
-        BadgeClaims.markClaimed(groupIdx);
-        // Credit +1 gem client-side. This is a fire-and-forget stub
-        // until we ship the server endpoint that actually adjusts the
-        // wallet — do NOT ship this to production without server
-        // enforcement or players will grief-claim from local storage.
-        fetchWallet().then((w) => {
-            emitBalance((w.gems ?? 0) + 1);
-            log(`[BadgePanel] claimed badge ${groupIdx}; +1 gem (client-side stub, wallet=${w.gems})`);
-        }).catch((err) => {
-            console.warn('[BadgePanel] claim wallet fetch failed:', err?.message || err);
-            emitBalance(1);   // best-effort visual bump so the tap feels responsive
-        });
-        SoundManager.instance?.play('item_pick');
-        // Repaint just this cell so the button flips to 已领取 without
-        // a full list rebuild.
+        // Disable the cell immediately so a fast repeat tap during
+        // the round-trip can't fire the request twice.
         const list = this.authoredBadgePanelList;
+        let cellNode: Node | null = null;
         if (list && list.isValid) {
-            for (const cell of list.children) {
-                if ((cell as any)._isBadgePanelCell) {
-                    // Cheap way to find the cell we changed: the
-                    // order matches groupIdx (0..n).
-                    const idx = Array.from(list.children).filter(c => (c as any)._isBadgePanelCell).indexOf(cell);
-                    if (idx === groupIdx) {
-                        const earnedCount = this._earnedBadgeCount(LevelProgress.maxClearedIdx);
-                        this._paintBadgePanelCell(cell, groupIdx, groupIdx < earnedCount);
-                        break;
-                    }
-                }
-            }
+            const cells = Array.from(list.children).filter(c => (c as any)._isBadgePanelCell);
+            cellNode = cells[groupIdx] ?? null;
+            const btn = cellNode?.getComponent(Button);
+            if (btn) btn.interactable = false;
         }
+        SoundManager.instance?.play('item_pick');
+        claimBadgeReward(groupIdx).then((res) => {
+            if (!res.ok) {
+                console.warn(`[BadgePanel] claim ${groupIdx} rejected:`, res.reason);
+                // Re-enable the button so the player can retry —
+                // don't mark local claimed on failure.
+                const btn = cellNode?.getComponent(Button);
+                if (btn) btn.interactable = true;
+                return;
+            }
+            // Server credited (or confirmed already-credited). Mirror
+            // locally so subsequent paints show 已领取 without a
+            // network round-trip.
+            BadgeClaims.markClaimed(groupIdx);
+            log(`[BadgePanel] claimed badge ${groupIdx}; ` +
+                `+${res.gemsAwarded} gems (balance=${res.balance}` +
+                `${res.alreadyClaimed ? ', already-claimed' : ''})`);
+            // Repaint just this cell so it flips to 已领取.
+            if (cellNode) {
+                const earnedCount = this._earnedBadgeCount(LevelProgress.maxClearedIdx);
+                this._paintBadgePanelCell(cellNode, groupIdx, groupIdx < earnedCount);
+            }
+            // 徽章图鉴按钮上的红点也刷一下（未领奖计数减 1）
+            this._paintBadgeCollectionRedDot(LevelProgress.maxClearedIdx);
+        }).catch((err) => {
+            console.warn('[BadgePanel] claim network failure:', err?.message || err);
+            // Server didn't confirm — leave BadgeClaims untouched and
+            // re-enable the button so the player can retry.
+            const btn = cellNode?.getComponent(Button);
+            if (btn) btn.interactable = true;
+        });
+    }
+
+    /** Hydrate the local BadgeClaims cache from the server. Called from
+     *  onLoad so the badge panel reflects claims made on other devices
+     *  (or in previous sessions that lost their localStorage). Silent
+     *  failure — offline / unauthed users still get local-only view. */
+    private _hydrateBadgeClaimsFromServer(): void {
+        fetchBadgeClaims().then((res) => {
+            if (!Array.isArray(res.claimed)) return;
+            for (const idx of res.claimed) {
+                if (Number.isFinite(idx)) BadgeClaims.markClaimed(idx);
+            }
+            log(`[BadgePanel] hydrated ${res.claimed.length} server claims`);
+            // hydrate 完成后刷红点 —— 服务端可能告知有本地还没标记
+            // 已领的档位，红点数量要减少
+            this._paintBadgeCollectionRedDot(LevelProgress.maxClearedIdx);
+        }).catch((err) => {
+            log(`[BadgePanel] claim hydrate skipped: ${err?.message || err}`);
+        });
     }
 
     /** Enter-button callback wired to LevelSelectStage3D. Plays the
@@ -1738,6 +1875,9 @@ export class MenuController extends Component {
             // node now so the restored cubes stay invisible — doEnterLevel
             // hides it again later (idempotent, no-op the second time).
             if (this.levelStage3D) this.levelStage3D.node.active = false;
+            // 从选择关卡进入游戏时，本命方块弹窗弹出前 0.5s 播散花音效
+            // （与 advance() 里通关切换关卡的行为保持一致）。
+            setTimeout(() => SoundManager.instance?.play('level_scatter'), 600);
             const useEmbed = (rawLvl?.order ?? 0) >= EMBED_MIN_LEVEL_ORDER;
             if (useEmbed && hud && typeof hud.showFateEmbedPicker === 'function' && rawLvl) {
                 hud.showFateEmbedPicker(rawLvl, (embed: EmbedProp | null) => {
@@ -2150,7 +2290,7 @@ export class MenuController extends Component {
             // Play the scatter SFX at the moment the fate popup appears
             // (per design — audio lines up with the popup pop-in beat,
             // not the earlier scatter visual).
-            SoundManager.instance?.play('level_scatter');
+            setTimeout(() => SoundManager.instance?.play('level_scatter'), 600);
             // Step 3+4: pop the fate modal.
             //   levels < 16 → auto-dismiss preview (advance after holdMs)
             //   levels ≥ 16 → interactive embed-prop picker (advance on

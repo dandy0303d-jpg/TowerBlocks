@@ -1,0 +1,128 @@
+// 塔上方块华丽自转（加法混合、双面、不写深度）
+// Cocos Creator 3.8.x
+// 一个 effect 四种用法（由 BlockSpin.ts 自动创建材质，不需要手动建材质）：
+//   RIBBON 宏：彩色环绕光带。uv.x = 0 头 ~ 1 尾，uv.y = 0~1 横向，颜色来自顶点色（DEBUG_SOLID 宏：强制纯红，调试用）
+//   SHELL  宏：套在旋转方块外的发光外壳 / 残影（棱边高亮 + 扫光 + 闪白），用于单位立方体
+//   RING   宏：朝向摄像机的光环，颜色透明度来自顶点色
+//   都不开：朝向摄像机的圆形光点（头部光晕、火花），颜色透明度来自顶点色
+// 颜色由脚本以线性空间传入。
+CCEffect %{
+  techniques:
+  - name: additive
+    passes:
+    - vert: spin-vs:vert
+      frag: spin-fs:frag
+      depthStencilState:
+        depthTest: true
+        depthWrite: false
+      blendState:
+        targets:
+        - blend: true
+          blendSrc: src_alpha
+          blendDst: one
+          blendSrcAlpha: zero
+          blendDstAlpha: one
+      rasterizerState:
+        cullMode: none
+      properties:
+        headColor: { value: [0.35, 0.85, 1.0, 1.0], editor: { type: color } }
+        tailColor: { value: [0.45, 0.2, 1.0, 1.0], editor: { type: color } }
+        params:    { value: [14.0, 30.0, 1.0, 0.0], editor: { tooltip: 'RIBBON: x=流光速度 y=流光密度 z=强度；SHELL: x=强度 y=扫光相位 z=闪白' } }
+}%
+
+CCProgram spin-vs %{
+  precision highp float;
+  #include <legacy/input>
+  #include <builtin/uniforms/cc-global>
+  #include <legacy/local-batch>
+  #include <legacy/decode-base>   // 提供 a_texCoord（不要自己再声明，会重复定义）
+
+  #if SHELL
+  #else
+    in vec4 a_color;
+  #endif
+
+  out vec3 v_local;
+  out vec2 v_uv;
+  out vec4 v_color;
+
+  vec4 vert () {
+    vec4 position;
+    CCVertInput(position);
+
+    mat4 matWorld;
+    CCGetWorldMatrix(matWorld);
+
+    v_local = position.xyz;
+  #if SHELL
+    v_uv = vec2(0.0);
+    v_color = vec4(1.0);
+  #else
+    v_uv = a_texCoord;
+    v_color = a_color;
+  #endif
+    return cc_matProj * (cc_matView * matWorld) * position;
+  }
+}%
+
+CCProgram spin-fs %{
+  precision highp float;
+  #include <builtin/uniforms/cc-global>
+  #include <legacy/output>
+
+  in vec3 v_local;
+  in vec2 v_uv;
+  in vec4 v_color;
+
+  uniform SpinConstants {
+    vec4 headColor;
+    vec4 tailColor;
+    vec4 params;
+  };
+
+  vec4 frag () {
+    vec3 col;
+    float a;
+
+  #if RIBBON
+    float u      = clamp(v_uv.x, 0.0, 1.0);
+    float across = abs(v_uv.y - 0.5) * 2.0;
+    float core   = exp(-across * across * 16.0);
+    float glow   = exp(-across * across * 2.5);
+    float flow   = 0.55 + 0.45 * sin(u * params.y - cc_time.x * params.x + v_uv.y * 2.0);
+    float fade   = pow(1.0 - u, 1.2);
+
+    // 颜色来自顶点色（脚本按彩虹色写入）
+    col = v_color.rgb;
+    col = mix(col, vec3(1.0), core * (1.0 - u) * 0.2);
+    a   = (glow * 0.9 * flow + core * 0.8) * fade * v_color.a * params.z;
+    #if DEBUG_SOLID
+      // 调试：纯红色、不淡出，用来确认光带三角形有没有提交
+      col = vec3(1.0, 0.0, 0.0);
+      a   = 0.9;
+    #endif
+  #elif SHELL
+    vec3 q = abs(v_local) * 2.0;
+    float mx  = max(q.x, max(q.y, q.z));
+    float mn  = min(q.x, min(q.y, q.z));
+    float mid = q.x + q.y + q.z - mx - mn;
+    float edge = smoothstep(0.72, 0.98, mid);
+    float d = (v_local.y + 0.5) - fract(params.y);
+    float scan = exp(-d * d * 90.0);
+    a   = (0.12 + edge * 0.9 + scan * 0.55) * params.x + params.z * 0.85;
+    col = mix(headColor.rgb, vec3(1.0), clamp(edge * 0.35 + params.z, 0.0, 1.0));
+  #elif RING
+    float r = length(v_uv - 0.5) * 2.0;
+    float ring = 1.0 - smoothstep(0.0, 0.12, abs(r - 0.85));
+    a   = ring * v_color.a;
+    col = mix(v_color.rgb, vec3(1.0), ring * 0.4);
+  #else
+    float r = length(v_uv - 0.5) * 2.0;
+    float k = clamp(1.0 - r, 0.0, 1.0);
+    a   = k * k * v_color.a;
+    col = mix(v_color.rgb, vec3(1.0), pow(k, 6.0));
+  #endif
+
+    return CCFragOutput(vec4(col, clamp(a, 0.0, 1.0)));
+  }
+}%

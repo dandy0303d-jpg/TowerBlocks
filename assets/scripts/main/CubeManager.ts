@@ -368,13 +368,15 @@ export class CubeManager extends Component {
          *  ghost cubes at that row using the piece's shape/type. Pass
          *  `null` (or omit) to disable the ghost. */
         ghostY: number | null = null,
-        /** Blind-mode toggle: skip rendering the settled board cells
-         *  entirely (game state stays intact — we just don't paint any
-         *  cube for stored cells). Active piece + ghost still render so
-         *  the player can see what they're placing. Set true by
-         *  GameController when `mode === 'blind'` and the debug
-         *  "show tower" switch is off. */
-        hideBoardCells: boolean = false,
+        /** Blind-mode hide policy.
+         *  - `false` (default): render every settled cell as usual.
+         *  - `true`: skip every settled cell (classic blind mode).
+         *  - `(r, c) => bool`: per-cell filter — true means HIDE that
+         *    cell, false means render normally. Used by blind-mode +
+         *    light-beam reveal: cells inside the beam's column strip
+         *    return false (rendered visible), everything else returns
+         *    true (stays hidden).  */
+        hideBoardCells: boolean | ((r: number, c: number) => boolean) = false,
         /** Backpack `bomb_block` armed-detonation lookup: given a
          *  board cell (r, c), returns `t01` in [0,1] if that cell is
          *  a locked box3 bomb currently ramping up toward detonate,
@@ -407,11 +409,14 @@ export class CubeManager extends Component {
         const boomsGrid    = state.boardBooms;
 
         // ---- board cells ----
-        // Blind mode skips this whole loop — all pool cursors stay at 0
-        // and the tail-hide code below will deactivate every previously
-        // active cube on the first frame after the mode kicks in.
-        if (!hideBoardCells) for (let r = 0; r < totalRows; r++) {
+        // Blind mode fully-hide short-circuits the whole loop. Per-cell
+        // hide (predicate form) still walks the loop but skips cells
+        // the predicate marks hidden — used by the light-beam reveal.
+        const hideAll = hideBoardCells === true;
+        const hideFn  = typeof hideBoardCells === 'function' ? hideBoardCells : null;
+        if (!hideAll) for (let r = 0; r < totalRows; r++) {
             for (let c = 0; c < COLS; c++) {
+                if (hideFn && hideFn(r, c)) continue;
                 const v    = state.board[r][c];
                 const bomb = bombsGrid && bombsGrid[r] ? bombsGrid[r][c] : null;
                 // Cells mid-fall report a FRACTIONAL row from displayRowFor —

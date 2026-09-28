@@ -3569,6 +3569,22 @@ export class HudController extends Component {
         }
     }
 
+    /** Collect the FateCell_* children created by drawFateShape and hand
+     *  them to the authored DestinyBlockPopup for its drop-in animation.
+     *  No-op when the popup isn't wired or the shape has no cells. */
+    private _animateFateCells(startDelay: number): void {
+        const popup = this.authoredDestinyBlockPopup;
+        if (!popup || !popup.node || !popup.node.isValid) return;
+        if (!this.fateShapeGfx) return;
+        const container = this.fateShapeGfx.node;
+        const cells: Node[] = [];
+        for (const child of container.children) {
+            if (child.name.startsWith('FateCell_')) cells.push(child);
+        }
+        if (cells.length === 0) return;
+        popup.animateBlocks(cells, startDelay);
+    }
+
     private drawFateShape(): void {
         if (!this.fateShapeGfx) return;
         // Clear the base Graphics (kept for the background — a single
@@ -3701,7 +3717,7 @@ export class HudController extends Component {
      *  showLevelClearTime AT the scatter-start beat itself, so the
      *  drain-fx wait already lives upstream.  */
     private static readonly LEVEL_CLEAR_MOVE_MS       = 300;   // duration of the move-to-center tween
-    private static readonly LEVEL_CLEAR_CENTER_HOLD_MS = 2000; // sit at center for this long
+    private static readonly LEVEL_CLEAR_CENTER_HOLD_MS = 2600; // 1.6s popup 入场 + 1s 停留
     private static readonly LEVEL_CLEAR_POST_HIDE_MS  = 250;   // gap between timer-disappear and fate modal
     private static readonly LEVEL_CLEAR_CENTER_SCALE  = 1.5;   // font enlargement while centered
     /** Total ms from showLevelClearTime call to onComplete callback.
@@ -4027,7 +4043,13 @@ export class HudController extends Component {
                 this._embedCounts.wrecker ?? 0,
             ];
             popup.node.active = true;
+            popup.layerFormat = t('level.floor');   // i18n 层数格式
             popup.show({ level: level.order ?? 0, counts, fadeMask: false });
+            // Play the drop-in animation on the dynamically-generated
+            // FateCell_* nodes created by drawFateShape above. 0.75 matches
+            // the popup's own internal timeline (title lands at 0.4,
+            // layer flips at 0.75, blocks fall at 0.75).
+            this._animateFateCells(0.75);
         }
         // Reset the per-modal paid-refresh tier counter so this fresh
         // open starts back at tier 0 (10 gems). Cap is
@@ -4079,6 +4101,7 @@ export class HudController extends Component {
         onDone: () => void,
         durationMs: number = 1500,
         subtitleOverride?: string | null,
+        displayFloor?: number,
     ): void {
         if (!this.fateOverlay) { onDone(); return; }
         const cp = level.customPiece;
@@ -4113,12 +4136,24 @@ export class HudController extends Component {
             this.hidePicker();
         }
         this.fateOverlay.active = true;
+        // Preview 走一遍 DestinyBlockPopup 的入场动画。
+        // 弹窗入场 1.8s + 停留 1s = 2.8s，忽略 caller 传入的 durationMs
+        // （原来的 1000/2000 都不够跑完入场时序）。
+        let holdMs = durationMs;
+        if (this.authoredDestinyBlockPopup && this.authoredDestinyBlockPopup.node.isValid) {
+            const popup = this.authoredDestinyBlockPopup;
+            popup.node.active = true;
+            popup.layerFormat = t('level.floor');   // i18n 层数格式
+            popup.show({ level: displayFloor ?? (level.order ?? 0), counts: [0, 0, 0], fadeMask: false });
+            this._animateFateCells(0.75);
+            holdMs = 2000;   // 弹窗入场 ~1.0s + 停留 1s
+        }
         if (this.fatePreviewTimer) clearTimeout(this.fatePreviewTimer);
         this.fatePreviewTimer = setTimeout(() => {
             this.fatePreviewTimer = null;
             this.hideFateModal();
             onDone();
-        }, durationMs);
+        }, holdMs);
     }
 
     /** Interactive fate modal for level 16+ entries.
@@ -4145,6 +4180,7 @@ export class HudController extends Component {
         level: LevelData,
         onStart: (picked: EmbedProp | null) => void,
         subtitleOverride?: string | null,
+        displayFloor?: number,
     ): void {
         if (!this.fateOverlay) { onStart(null); return; }
 
@@ -4181,6 +4217,13 @@ export class HudController extends Component {
         this._fateEmbedModeActive = true;
         this._embedConsuming = false;
         if (this.authoredEmbedPickerRoot) this.authoredEmbedPickerRoot.active = true;
+        // ORDER CRITICAL: _resetEmbedPickerButtons must run BEFORE
+        // popup.show(). popup.show() moves any wired popup.cards to
+        // base.y - 60 and starts a delay-1s tween back up, and reset
+        // does Tween.stopAllByTarget(node) which would kill that tween
+        // mid-flight → cards stuck 60px below on second open.
+        // Reset first snapshots the true authored home position.
+        this._resetEmbedPickerButtons();
         // Fire the new author-supplied intro animation on top of the
         // picker UI, when wired. Card-count roll animates from x0 to
         // the cached backpack values. `fadeMask: false` — overlay dim
@@ -4196,12 +4239,12 @@ export class HudController extends Component {
             };
             const counts = [readCount('boom1'), readCount('row1'), readCount('wrecker')];
             popup.node.active = true;
-            popup.show({ level: level.order ?? 0, counts, fadeMask: false });
+            popup.layerFormat = t('level.floor');   // i18n 层数格式
+            popup.show({ level: displayFloor ?? (level.order ?? 0), counts, fadeMask: false });
+            // Play the drop-in animation on the dynamically-generated
+            // FateCell_* nodes (see showFateModal for timing rationale).
+            this._animateFateCells(0.75);
         }
-        // Reset any transform mutations left by the previous open's
-        // pick-to-centre animation. Layout will reposition on next
-        // frame — we just have to restore scale/opacity/active state.
-        this._resetEmbedPickerButtons();
         this._refreshEmbedSelectMarks();
         if (this.authoredEmbedStartLabel) this.authoredEmbedStartLabel.string = t('fate.start');
         if (this.authoredEmbedHintLabel)  this.authoredEmbedHintLabel.string  = t('fate.embedPick.hint');
@@ -4216,15 +4259,27 @@ export class HudController extends Component {
         const cached = getCachedBackpack(60_000);
         if (cached) this._paintEmbedCounts(cached.items);
         else this._paintEmbedCounts([]);   // renders "-" placeholders + disables buttons
+        // 存最新已知 items，供 popup 计数动画结束后的 re-paint 用。
+        let latestEmbedItems: Array<{ id: string; count: number }> = cached ? cached.items : [];
         fetchBackpack().then((r) => {
             // Only apply if this picker session is still current — a
             // fast player who closed + reopened before the fetch resolved
             // shouldn't have the stale reply stomp their new state.
             if (!this._fateEmbedModeActive) return;
+            latestEmbedItems = r.items;
             this._paintEmbedCounts(r.items);
         }).catch((err) => {
             console.warn('[FateEmbedPicker] backpack fetch failed:', err);
         });
+        // popup.cardCounts 和 authoredEmbedXxxCountLabel 是同一批 Label
+        // 节点。popup.show 起了个从 0 滚到 counts[i] 的 tween，delay 0.45s
+        // 跑 0.35s。tween 的 onUpdate 会每帧覆盖 label，我们上面 fetch
+        // 完成后的 _paintEmbedCounts 会被它 stomp 掉。
+        // 修复：popup 动画结束（~1s）后再 re-paint 一次，用最新的 items。
+        this.scheduleOnce(() => {
+            if (!this._fateEmbedModeActive) return;
+            this._paintEmbedCounts(latestEmbedItems);
+        }, 1.0);
 
         // Cancel any pending preview timer left over from a previous
         // preview open — the picker is stay-open until 开始.
@@ -4823,6 +4878,10 @@ export class HudController extends Component {
         this.fateCurrentShape = null;
         this.refreshFateSubtitle();
         this.drawFateShape();
+        // Reroll should also replay the block drop animation so the new
+        // shape has visual impact. No 0.75s delay here — popup is
+        // already up in idle state, animation should start immediately.
+        this._animateFateCells(0);
     }
 
     private onFateConfirm(): void {
