@@ -2149,6 +2149,29 @@ export class GameState {
             this.state.boardWreckers![r][c] = null;
             wreckerFireQueue.push({ r, c });
         }
+        // 补一遍：boom 的钻石爆破可能把一个之前"没跟别的道具挨着"的
+        // 拆迁队的宿主格子清掉了（`activateBoom` 只清 board / boardBombs，
+        // 不动 boardWreckers）—— 这样在 endless / blind 模式里根本不
+        // 走 `clearLines`（不会调 processClearedWreckers），拆迁队就静
+        // 悄悄 orphan 了：host 是 null 不显示，boardWreckers 还是 true
+        // 但没人 fire —— 视觉上就是"拆迁队被隐藏但没触发"。
+        // 这里扫一遍所有 boardWreckers 找 host 为 null 的 orphan，加进
+        // fire queue，跟 adjWreckers 一起走后面的 pick 流程。
+        if (this.state.boardWreckers) {
+            const seenAdj = new Set<string>();
+            for (const { r, c } of adjWreckers) seenAdj.add(`${r}-${c}`);
+            for (let r = 0; r < this.state.boardWreckers.length; r++) {
+                const row = this.state.boardWreckers[r];
+                if (!row) continue;
+                for (let c = 0; c < row.length; c++) {
+                    if (!row[c]) continue;                       // 不是拆迁队
+                    if (this.state.board[r][c] !== null) continue; // 宿主还在，等自然清
+                    if (seenAdj.has(`${r}-${c}`)) continue;      // 已经在 adjWreckers 里处理了
+                    row[c] = null;
+                    wreckerFireQueue.push({ r, c });
+                }
+            }
+        }
 
         if (adjBooms.length) {
             // Apply gravity NOW after boom clears. Cubes above the
@@ -2896,6 +2919,24 @@ export class GameState {
             if (!stillThere) continue;
             this.state.boardWreckers![r][c] = null;
             wreckerFireQueueMortar.push({ r, c });
+        }
+        // 同 lockAndNext：补一遍被 boom 钻石清了宿主但没进 adjWreckers
+        // 的 orphan 拆迁队。mortar 路径同样在 endless / blind 模式下
+        // 不走 clearLines，orphan 会静悄悄丢失，得在这里补齐。
+        if (this.state.boardWreckers) {
+            const seenAdj = new Set<string>();
+            for (const { r, c } of adjWreckersMortar) seenAdj.add(`${r}-${c}`);
+            for (let r = 0; r < this.state.boardWreckers.length; r++) {
+                const row = this.state.boardWreckers[r];
+                if (!row) continue;
+                for (let c = 0; c < row.length; c++) {
+                    if (!row[c]) continue;
+                    if (this.state.board[r][c] !== null) continue;
+                    if (seenAdj.has(`${r}-${c}`)) continue;
+                    row[c] = null;
+                    wreckerFireQueueMortar.push({ r, c });
+                }
+            }
         }
         if (adjBooms.length) {
             // Now apply gravity — pull cells above the boom diamond
