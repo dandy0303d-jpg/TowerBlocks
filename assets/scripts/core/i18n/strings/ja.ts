@@ -110,7 +110,7 @@ export const JA: Record<string, string> = {
     'shapeshifter.cancel':   'キャンセル',
 
     // ---------- 運命ブロックダイアログ ----------
-    'fate.modalTitle':   '運命のブロック',
+    'fate.modalTitle':   '運命ブロック {n}',
     'fate.reroll':       '運命を変える ({n}/3)',
     'fate.reroll.ad':    '🎬 広告で運命を変える',
     'fate.start':        'スタート',
@@ -230,6 +230,7 @@ export const JA: Record<string, string> = {
     'settings.haptic':       'バイブレーション',
     'settings.hideDev':      'DEV ボタンを隠す',
     'badges.earned':        '獲得バッジ {n}',
+    'badges.earnedTitle':   '新しいバッジを獲得！',
     'badges.claim':         '受け取る +1💎',
     'badges.claimed':       '受取済',
     'settings.controls':       '操作方法',

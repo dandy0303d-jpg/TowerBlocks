@@ -116,7 +116,7 @@ export const KO: Record<string, string> = {
     'endless.milestone':     '{n}층 달성!',
 
     // ---------- Fate piece modal ----------
-    'fate.modalTitle':   '운명의 블록',
+    'fate.modalTitle':   '본명 블록 {n}',
     'fate.reroll':       '운명을 바꿔라 ({n}/3)',
     'fate.reroll.ad':    '🎬 광고 보고 운명 바꾸기',
     'fate.start':        '시작',
@@ -227,6 +227,7 @@ export const KO: Record<string, string> = {
     'settings.haptic':       '진동',
     'settings.hideDev':      'DEV 버튼 숨기기',
     'badges.earned':        '획득 배지 {n}개',
+    'badges.earnedTitle':   '새 배지 획득!',
     'badges.claim':         '받기 +1💎',
     'badges.claimed':       '받음',
     'settings.controls':       '조작 방식',

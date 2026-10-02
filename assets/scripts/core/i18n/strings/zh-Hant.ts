@@ -108,7 +108,7 @@ export const ZH_HANT: Record<string, string> = {
     'shapeshifter.cancel':   '取消',
 
     // ---------- 本命方塊彈窗 ----------
-    'fate.modalTitle':   '本命方塊',
+    'fate.modalTitle':   '本命方塊 {n}',
     'fate.reroll':       '逆天改命 ({n}/3)',
     'fate.reroll.ad':    '🎬 看廣告改命',
     'fate.start':        '直接開始',
@@ -228,6 +228,7 @@ export const ZH_HANT: Record<string, string> = {
     'settings.haptic':       '手機震動',
     'settings.hideDev':      '隱藏 DEV 按鈕',
     'badges.earned':        '已獲得徽章 {n} 枚',
+    'badges.earnedTitle':   '恭喜獲得新徽章',
     'badges.claim':         '領取 +1💎',
     'badges.claimed':       '已領取',
     'settings.controls':       '操作方式',

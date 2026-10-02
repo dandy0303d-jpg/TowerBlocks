@@ -51,6 +51,10 @@ export class DestinyBlockPopup extends Component {
     @property({ type: [Label], tooltip: '道具卡数量 Label（x83），和 cards 一一对应' }) cardCounts: Label[] = [];
     @property({ tooltip: '数量文字格式' }) countFormat = 'x{n}';
     @property({ tooltip: '点击道具卡时自动播放选中动画' }) autoBindCards = true;
+    /** 多选模式：选中时只播放"闪光 + 光环"高亮，不改卡片 scale / opacity，
+     *  也不置灰其他卡片。配合 autoBindCards=true 使用；toggle 语义：点一下
+     *  进入 selected，再点一下退出 selected（光环 + 闪光再闪一次）。 */
+    @property({ tooltip: '多选模式：高亮只闪光，不缩放不置灰' }) multiMode = false;
     @property({ type: Node, tooltip: '「选择一个开场道具」提示文字' }) hint: Node | null = null;
     @property({ type: Node, tooltip: '「直接开始」按钮' }) startButton: Node | null = null;
 
@@ -111,7 +115,10 @@ export class DestinyBlockPopup extends Component {
 
         if (this.autoBindCards) {
             this.cards.forEach((c, i) => c && c.on(Node.EventType.TOUCH_END, () => {
-                if (this._idle) this.selectCard(this._selected === i ? -1 : i);
+                if (!this._idle) return;
+                // multiMode：每次点击都把 i 传给 selectCard，由里面 toggle
+                // _selectedSet。单选模式用老的"同索引=取消"逻辑。
+                this.selectCard(this.multiMode ? i : (this._selected === i ? -1 : i));
             }, this));
         }
     }
@@ -125,6 +132,7 @@ export class DestinyBlockPopup extends Component {
         this._idle = false;
         this._shineT = -1;
         this._selected = -1;
+        this._selectedSet.clear();
         this._sparkles.length = this._rings.length = this._dust.length = 0;
         this.clearZzz();
 
@@ -268,6 +276,21 @@ export class DestinyBlockPopup extends Component {
 
     /** 选中某张道具卡（-1 取消选择） */
     selectCard(index: number) {
+        if (this.multiMode) {
+            // 多选：index 代表"刚被点击的"那张卡；在 _selectedSet 里 toggle。
+            // 不改 scale / opacity，只在"刚进 selected 态"时放一次闪光 + 光环。
+            const c = this.cards[index];
+            if (!c) { if (this.onCardSelected) this.onCardSelected(index); return; }
+            if (this._selectedSet.has(index)) {
+                this._selectedSet.delete(index);
+            } else {
+                this._selectedSet.add(index);
+                this.sparkBurst(c, 6, 1.1);
+                this.ring(c, 0.9, 1.6, 0.35, 0.8);
+            }
+            if (this.onCardSelected) this.onCardSelected(index);
+            return;
+        }
         this._selected = index;
         this._selT = 0;
         this.cards.forEach((c, i) => {
@@ -283,6 +306,9 @@ export class DestinyBlockPopup extends Component {
         });
         if (this.onCardSelected) this.onCardSelected(index);
     }
+
+    /** 多选模式下记录哪些卡片已选中。单选模式下用 _selected: number。 */
+    private _selectedSet: Set<number> = new Set();
 
     hide(): Promise<void> {
         this.stopAll();

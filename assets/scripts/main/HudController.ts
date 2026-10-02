@@ -744,8 +744,10 @@ export class HudController extends Component {
      *  chose to skip). `_embedPicked` mirrors the currently-highlighted
      *  option so the two select-mark nodes can be toggled without an
      *  extra field per button. */
-    private _embedResolve: ((picked: EmbedProp | null) => void) | null = null;
-    private _embedPicked: EmbedProp | null = null;
+    private _embedResolve: ((picked: EmbedProp[]) => void) | null = null;
+    /** 多选集合——玩家可以同时选 boom1 / row1 / wrecker 中任意组合。
+     *  START 时按 size 排顺序扣道具 + 透传到 GameState 做多格注入。 */
+    private _embedPickedSet: Set<EmbedProp> = new Set();
     /** True while the level-16+ picker is on screen. Used by hideFateModal
      *  to skip the auto-dismiss timer clear path (there is no timer in
      *  picker mode) and to reset the picker root when the modal closes. */
@@ -890,7 +892,7 @@ export class HudController extends Component {
         // cell count from the currently-selected fate shape.
         const fateActive = this.authoredFateOverlay?.active
             || (this.fateOverlay && this.fateOverlay.active);
-        if (fateActive) this.refreshFateSubtitle();
+        if (fateActive) { this.refreshFateTitle(); this.refreshFateSubtitle(); }
         // Fate reroll button label ("逆天改命 (n/3)") also carries
         // dynamic count that trackI18nLabel can't re-interpolate —
         // repaint unconditionally so language switch mid-session picks
@@ -3284,12 +3286,10 @@ export class HudController extends Component {
         this.fateTitleLab = this.authoredFateTitleLabel ?? this.makeDummyLabel();
         this.fateSubLab   = this.authoredFateSubtitleLabel ?? this.makeDummyLabel();
         this.fateHintLab  = this.authoredFateHintLabel ?? this.makeDummyLabel();
-        // i18n on the two STATIC fate labels (title + hint). Subtitle
-        // is dynamic (level tag + cell count) — refreshFateSubtitle
-        // handles it via t() each time.
-        if (this.authoredFateTitleLabel) {
-            this.trackI18nLabel(this.authoredFateTitleLabel, 'fate.modalTitle');
-        }
+        // i18n on the static fate hint label.
+        // 标题改成动态：'本命方块 {n}' —— n = 当前关卡所属 fate 组 (1..220)。
+        // 不用 trackI18nLabel（params 是静态的），改为在每次 show* 打开时
+        // 调 refreshFateTitle()，再在语言切换 subscribe 回调里也补一次。
         if (this.authoredFateHintLabel) {
             this.trackI18nLabel(this.authoredFateHintLabel, 'fate.hint');
         }
@@ -3386,27 +3386,27 @@ export class HudController extends Component {
             this.authoredEmbedStartButton.node.off('click');
             this.authoredEmbedStartButton.node.on('click', () => {
                 if (this._embedConsuming) return;   // debounce double-tap during network round-trip
-                const picked = this._embedPicked;
-                console.log(`[FateEmbedPicker] START clicked, picked=${picked ?? 'none'}`);
-                if (!picked) {
-                    // No item to consume — resolve immediately.
-                    this._resolveEmbedAndClose(null);
+                const picked = Array.from(this._embedPickedSet);
+                console.log(`[FateEmbedPicker] START clicked, picked=[${picked.join(',') || 'none'}]`);
+                if (picked.length === 0) {
+                    // 空选也允许直接开始，不消耗任何道具。
+                    this._resolveEmbedAndClose([]);
                     return;
                 }
-                // Debit server-side FIRST — client-side embed injection
-                // must only fire after the server confirms the debit.
+                // 服务器端一次性批量扣除——每种道具并发请求，全部成功才算
+                // 真的消耗。任意一个失败就 rollback 状态（服务器端是原子
+                // 的，失败说明实际库存不够或者网络错，不需要补偿）。
                 this._embedConsuming = true;
                 if (this.authoredEmbedStartButton) this.authoredEmbedStartButton.interactable = false;
-                consumeBackpackItem(picked).then((r) => {
-                    console.log(`[FateEmbedPicker] consume OK ${picked} → remaining ${r.count}`);
-                    this._playPickToCenterFx(picked, () => this._resolveEmbedAndClose(picked));
+                Promise.all(picked.map(k => consumeBackpackItem(k))).then((results) => {
+                    results.forEach((r, i) => {
+                        console.log(`[FateEmbedPicker] consume OK ${picked[i]} → remaining ${r.count}`);
+                    });
+                    this._playPickToCenterFxMulti(picked, () => this._resolveEmbedAndClose(picked));
                 }).catch((err) => {
-                    console.warn(`[FateEmbedPicker] consume failed for ${picked}:`, err);
+                    console.warn(`[FateEmbedPicker] consume failed:`, err);
                     this._embedConsuming = false;
                     if (this.authoredEmbedStartButton) this.authoredEmbedStartButton.interactable = true;
-                    // Refetch server truth so the label updates (probably
-                    // 0 now if it was a not-enough error). Selection clears
-                    // in _paintEmbedCounts if the count fell to 0.
                     fetchBackpack().then((res) => {
                         if (this._fateEmbedModeActive) this._paintEmbedCounts(res.items);
                     }).catch(() => { /* stay on cached */ });
@@ -4016,6 +4016,7 @@ export class HudController extends Component {
         // Belt: hide the embed picker root if a prior Lvl 16+ open left
         // it visible (fresh interactive fate modal should never show it).
         if (this.authoredEmbedPickerRoot) this.authoredEmbedPickerRoot.active = false;
+        this.refreshFateTitle();
         this.refreshFateSubtitle();
         this.drawFateShape();
         // Mutex with EnergyPicker — see showPicker for rationale.
@@ -4029,6 +4030,7 @@ export class HudController extends Component {
         // so without a sibling-index bump they'd render on top of the
         // dim and leak into the modal.
         this.fateOverlay.setSiblingIndex(999);
+        this._resetFateOverlayOpacities();
         this.fateOverlay.active = true;
         // Fire the new author-supplied intro animation on top of the
         // existing overlay, when wired. Read embed-prop counts off the
@@ -4044,7 +4046,7 @@ export class HudController extends Component {
             ];
             popup.node.active = true;
             popup.layerFormat = t('level.floor');   // i18n 层数格式
-            popup.show({ level: level.order ?? 0, counts, fadeMask: false });
+            popup.show({ level: level.order ? (((level.order - 1) % 9) + 1) : 0, counts, fadeMask: false });
             // Play the drop-in animation on the dynamically-generated
             // FateCell_* nodes created by drawFateShape above. 0.75 matches
             // the popup's own internal timeline (title lands at 0.4,
@@ -4068,6 +4070,35 @@ export class HudController extends Component {
         this.updateFateRerollButtonLabel();
     }
 
+    /** 把 fate overlay 整棵子树上所有 UIOpacity 组件的 opacity 复位到 255。
+     *  在每次 show*（Modal / Preview / EmbedPicker）里 fateOverlay.active=true
+     *  之前调用，撤销上次 pick-to-center 动画留下的 opacity=0 残影。
+     *  （否则第二次开本命弹窗时，shape canvas / 标题 / 角色都看不见。） */
+    private _resetFateOverlayOpacities(): void {
+        const root = this.authoredFateOverlay ?? this.fateOverlay;
+        if (!root || !root.isValid) return;
+        const walk = (n: Node) => {
+            Tween.stopAllByTarget(n);
+            const op = n.getComponent(UIOpacity);
+            if (op) {
+                Tween.stopAllByTarget(op);
+                op.opacity = 255;
+            }
+            for (const c of n.children) walk(c);
+        };
+        walk(root);
+        // 旧的 pick-to-center 还把一些按钮的 scale / active 改了，一并复原。
+        for (const btn of [this.authoredEmbedBoomButton, this.authoredEmbedRowBombButton, this.authoredEmbedWreckerButton]) {
+            if (!btn || !btn.node.isValid) continue;
+            btn.node.active = true;
+            btn.node.setScale(1, 1, 1);
+        }
+        if (this.authoredEmbedStartButton && this.authoredEmbedStartButton.node.isValid) {
+            this.authoredEmbedStartButton.node.active = true;
+            this.authoredEmbedStartButton.node.setScale(1, 1, 1);
+        }
+    }
+
     private hideFateModal(): void {
         if (this.fateOverlay) this.fateOverlay.active = false;
         if (this.authoredDestinyBlockPopup && this.authoredDestinyBlockPopup.node.isValid) {
@@ -4089,7 +4120,7 @@ export class HudController extends Component {
         // so the next open starts clean.
         if (this.authoredEmbedPickerRoot) this.authoredEmbedPickerRoot.active = false;
         this._embedResolve = null;
-        this._embedPicked = null;
+        this._embedPickedSet.clear();
         this._fateEmbedModeActive = false;
     }
 
@@ -4120,6 +4151,8 @@ export class HudController extends Component {
         // takes precedence over the default "关卡 X - Y 格" line so the
         // post-clear flow can show a distinct label without touching
         // the fate-entry path.
+        this.fateIsEndlessEntry = !cp;
+        this.refreshFateTitle();
         if (subtitleOverride != null && this.fateSubLab) {
             this.fateSubLab.string = subtitleOverride;
         } else {
@@ -4135,6 +4168,7 @@ export class HudController extends Component {
             console.warn('[FatePreview] picker still active — closing it first');
             this.hidePicker();
         }
+        this._resetFateOverlayOpacities();
         this.fateOverlay.active = true;
         // Preview 走一遍 DestinyBlockPopup 的入场动画。
         // 弹窗入场 1.8s + 停留 1s = 2.8s，忽略 caller 传入的 durationMs
@@ -4144,7 +4178,7 @@ export class HudController extends Component {
             const popup = this.authoredDestinyBlockPopup;
             popup.node.active = true;
             popup.layerFormat = t('level.floor');   // i18n 层数格式
-            popup.show({ level: displayFloor ?? (level.order ?? 0), counts: [0, 0, 0], fadeMask: false });
+            popup.show({ level: displayFloor ?? (level.order ? (((level.order - 1) % 9) + 1) : 0), counts: [0, 0, 0], fadeMask: false });
             this._animateFateCells(0.75);
             holdMs = 2000;   // 弹窗入场 ~1.0s + 停留 1s
         }
@@ -4178,7 +4212,7 @@ export class HudController extends Component {
      */
     public showFateEmbedPicker(
         level: LevelData,
-        onStart: (picked: EmbedProp | null) => void,
+        onStart: (picked: EmbedProp[]) => void,
         subtitleOverride?: string | null,
         displayFloor?: number,
     ): void {
@@ -4194,6 +4228,7 @@ export class HudController extends Component {
         this.fateCurrentBase  = (cp && cp.baseType) || (['I','O','T','S','Z','J','L'] as PieceType[])[idx % 7];
         this.fateLevelOrder   = level.order || 0;
         this.fateIsEndlessEntry = false;
+        this.refreshFateTitle();
         if (subtitleOverride != null && this.fateSubLab) {
             this.fateSubLab.string = subtitleOverride;
         } else {
@@ -4212,10 +4247,14 @@ export class HudController extends Component {
         }
 
         // ---- Show the embed picker + reset selection ----
-        this._embedPicked = null;
+        this._embedPickedSet.clear();
         this._embedResolve = onStart;
         this._fateEmbedModeActive = true;
         this._embedConsuming = false;
+        // ORDER CRITICAL: 必须在 popup.show() 之前复位 opacity，否则我们的
+        // Tween.stopAllByTarget 会杀掉 popup 刚起的 drop-in tween，panel
+        // 停在 y+700（屏幕顶部外），其它内容看起来"卡住"。
+        this._resetFateOverlayOpacities();
         if (this.authoredEmbedPickerRoot) this.authoredEmbedPickerRoot.active = true;
         // ORDER CRITICAL: _resetEmbedPickerButtons must run BEFORE
         // popup.show(). popup.show() moves any wired popup.cards to
@@ -4240,7 +4279,11 @@ export class HudController extends Component {
             const counts = [readCount('boom1'), readCount('row1'), readCount('wrecker')];
             popup.node.active = true;
             popup.layerFormat = t('level.floor');   // i18n 层数格式
-            popup.show({ level: displayFloor ?? (level.order ?? 0), counts, fadeMask: false });
+            // 多选模式：popup 保留自己的 TOUCH_END 回调（闪光 + 光环高亮），
+            // 但 multiMode=true 让 selectCard 不改 scale / opacity，也不置
+            // 灰其他卡片。toggle 语义——点一下进 selected，再点一下退出。
+            popup.multiMode = true;
+            popup.show({ level: displayFloor ?? (level.order ? (((level.order - 1) % 9) + 1) : 0), counts, fadeMask: false });
             // Play the drop-in animation on the dynamically-generated
             // FateCell_* nodes (see showFateModal for timing rationale).
             this._animateFateCells(0.75);
@@ -4326,10 +4369,12 @@ export class HudController extends Component {
         dim(this.authoredEmbedBoomButton,    this._embedCounts.boom1   > 0);
         dim(this.authoredEmbedRowBombButton, this._embedCounts.row1    > 0);
         dim(this.authoredEmbedWreckerButton, this._embedCounts.wrecker > 0);
-        if (this._embedPicked && this._embedCounts[this._embedPicked] === 0) {
-            this._embedPicked = null;
-            this._refreshEmbedSelectMarks();
+        // 任何已选但库存归零的 kind 自动从集合里剔除。
+        let changed = false;
+        for (const k of Array.from(this._embedPickedSet)) {
+            if (this._embedCounts[k] === 0) { this._embedPickedSet.delete(k); changed = true; }
         }
+        if (changed) this._refreshEmbedSelectMarks();
     }
 
     /** Snapshot of each embed-button's original local position, taken
@@ -4380,31 +4425,160 @@ export class HudController extends Component {
         }
     }
 
-    /** Toggle picker state — tapping the currently-picked option
-     *  deselects it, tapping another option switches. Called from the
-     *  three @property click handlers. Guards against picking an item
-     *  the player doesn't own (defense in depth — the button should
-     *  already be non-interactable in that case). */
+    /** 多选 toggle —— 点一下加入集合，再点一下移出。库存 0 的按钮不响应。 */
     private _togglePickedEmbed(next: EmbedProp): void {
         if (this._embedCounts[next] <= 0) {
             console.log(`[FateEmbedPicker] ignore pick — ${next} count=0`);
             return;
         }
-        this._embedPicked = (this._embedPicked === next) ? null : next;
+        if (this._embedPickedSet.has(next)) this._embedPickedSet.delete(next);
+        else this._embedPickedSet.add(next);
         this._refreshEmbedSelectMarks();
     }
 
-    /** Sync the three select-mark nodes to the current `_embedPicked`. */
+    /** Sync the three select-mark nodes to the current `_embedPickedSet`. */
     private _refreshEmbedSelectMarks(): void {
         if (this.authoredEmbedBoomSelectMark) {
-            this.authoredEmbedBoomSelectMark.active = this._embedPicked === 'boom1';
+            this.authoredEmbedBoomSelectMark.active = this._embedPickedSet.has('boom1');
         }
         if (this.authoredEmbedRowBombSelectMark) {
-            this.authoredEmbedRowBombSelectMark.active = this._embedPicked === 'row1';
+            this.authoredEmbedRowBombSelectMark.active = this._embedPickedSet.has('row1');
         }
         if (this.authoredEmbedWreckerSelectMark) {
-            this.authoredEmbedWreckerSelectMark.active = this._embedPicked === 'wrecker';
+            this.authoredEmbedWreckerSelectMark.active = this._embedPickedSet.has('wrecker');
         }
+    }
+
+    /** 多选 START：每个被选中的按钮都播放完整的"飞到中央 + 爆发 + 淡出"
+     *  动画（并行），未被选中的直接 active=false 隐藏，START 按钮也隐藏。
+     *  所有动画完成后触发 onDone。 */
+    private _playPickToCenterFxMulti(picked: EmbedProp[], onDone: () => void): void {
+        if (picked.length === 0) { onDone(); return; }
+        const root = this.authoredEmbedPickerRoot;
+        if (!root) { onDone(); return; }
+
+        const btnFor = (k: EmbedProp) =>
+            k === 'boom1' ? this.authoredEmbedBoomButton
+          : k === 'row1'  ? this.authoredEmbedRowBombButton
+                          : this.authoredEmbedWreckerButton;
+
+        // 先把未被选中的按钮 + START 按钮一次性隐藏，picked 的按钮保留做动画。
+        const pickedSet = new Set(picked);
+        for (const k of ['boom1', 'row1', 'wrecker'] as EmbedProp[]) {
+            if (!pickedSet.has(k)) {
+                const b = btnFor(k);
+                if (b) b.node.active = false;
+            }
+        }
+        if (this.authoredEmbedStartButton) this.authoredEmbedStartButton.node.active = false;
+        // 清高亮
+        this._embedPickedSet.clear();
+        this._refreshEmbedSelectMarks();
+
+        // 把 fate overlay 底下除了 embed picker root 这一支之外的所有节点
+        // 淡出 —— 避免 picker root 的任何祖先被淡（否则 UIOpacity 会向下
+        // 乘到 picked 按钮上，让它们也一起淡掉）。
+        //
+        // 策略：
+        //   1. 建 pickerRoot → ... → fateOverlay 的祖先链 Set
+        //   2. DFS 遍历 fateOverlay。遇到 pickerRoot 整支子树跳过；
+        //      遇到祖先链上的节点"向下走"但不淡自己（它要保持可见给
+        //      pickerRoot 用）；其它节点都淡。
+        const pickerRoot = this.authoredEmbedPickerRoot;
+        const fateOverlay = this.authoredFateOverlay ?? this.fateOverlay;
+        if (fateOverlay && fateOverlay.isValid) {
+            const ancestors = new Set<Node>();
+            if (pickerRoot) {
+                let p: Node | null = pickerRoot;
+                while (p) { ancestors.add(p); if (p === fateOverlay) break; p = p.parent; }
+            }
+            const fadeIfNotAncestor = (n: Node) => {
+                if (n === pickerRoot) return;              // 整支跳过
+                if (ancestors.has(n)) {
+                    // 祖先节点自己不淡（会把 pickerRoot 带走），但继续向下
+                    // 遍历它的其他子节点。
+                    for (const c of n.children) fadeIfNotAncestor(c);
+                    return;
+                }
+                // 普通节点：淡它自己（opacity 到 0 后整支子树都看不见了，
+                // 不用再递归），省掉 N 条 tween。
+                const op = n.getComponent(UIOpacity) ?? n.addComponent(UIOpacity);
+                Tween.stopAllByTarget(op);
+                tween(op).to(0.25, { opacity: 0 }, { easing: 'quadOut' }).start();
+            };
+            fadeIfNotAncestor(fateOverlay);
+        }
+
+        // 目标点：picker root 中心，在每张卡片 node.parent 的局部坐标系里算。
+        const destWorld = new Vec3();
+        root.getWorldPosition(destWorld);
+
+        // 爆发 Graphics 节点 —— 挂在 fateOverlay 上，位置 = picker root 中心。
+        const spawnBurst = () => {
+            const burstParent = this.fateOverlay ?? root.parent ?? root;
+            const burst = new Node('EmbedPickBurst');
+            burstParent.addChild(burst);
+            const burstParentUT = burstParent.getComponent(UITransform);
+            const burstLocal = new Vec3();
+            if (burstParentUT) burstParentUT.convertToNodeSpaceAR(destWorld, burstLocal);
+            burst.setPosition(burstLocal);
+            burst.addComponent(UITransform).setContentSize(300, 300);
+            const gfx = burst.addComponent(Graphics);
+            const burstOp = burst.addComponent(UIOpacity);
+            burstOp.opacity = 0;
+            const burstStart = Date.now();
+            const burstDurMs = 400;
+            const drawBurst = () => {
+                const t = Math.min(1, (Date.now() - burstStart) / burstDurMs);
+                const r = 30 + t * 130;
+                const alpha = Math.floor(220 * (1 - t));
+                burstOp.opacity = alpha;
+                gfx.clear();
+                gfx.lineWidth = 4;
+                gfx.strokeColor = new Color(255, 210, 80, 255);
+                gfx.circle(0, 0, r); gfx.stroke();
+                gfx.lineWidth = 2;
+                gfx.strokeColor = new Color(255, 245, 180, 255);
+                gfx.circle(0, 0, r * 0.6); gfx.stroke();
+                if (t >= 1) { this.unschedule(drawBurst); burst.destroy(); }
+            };
+            this.schedule(drawBurst, 0);
+        };
+
+        // 每个 picked 按钮并行跑：fly to centre → 短暂汇合 → 向上飞 + 淡出。
+        let remaining = picked.length;
+        let burstSpawned = false;
+        const RISE_Y = 260;        // 汇合后向上飞的距离（像素）
+        const RISE_DUR = 0.6;      // 向上飞 + 淡出时长（秒）
+        for (const k of picked) {
+            const btn = btnFor(k);
+            if (!btn) { remaining--; continue; }
+            const node = btn.node;
+            const opacity = node.getComponent(UIOpacity) ?? node.addComponent(UIOpacity);
+            opacity.opacity = 255;
+            const parentUT = node.parent?.getComponent(UITransform);
+            const destLocal = new Vec3();
+            if (parentUT) parentUT.convertToNodeSpaceAR(destWorld, destLocal);
+            const risePos = new Vec3(destLocal.x, destLocal.y + RISE_Y, destLocal.z);
+            Tween.stopAllByTarget(node);
+            tween(node)
+                .to(0.3, { position: destLocal }, { easing: 'quadOut' })
+                .call(() => {
+                    // 任意一个到达中心时放一次爆发（多个按钮重叠爆发没必要重复画）。
+                    if (!burstSpawned) { spawnBurst(); burstSpawned = true; }
+                    // 汇合后向上飞 + 淡出，不缩小图标。
+                    tween(node).to(RISE_DUR, { position: risePos }, { easing: 'quadIn' }).start();
+                    tween(opacity).delay(0.1).to(RISE_DUR - 0.1, { opacity: 0 }, { easing: 'quadIn' }).start();
+                })
+                .delay(RISE_DUR + 0.02)
+                .call(() => {
+                    remaining--;
+                    if (remaining <= 0) onDone();
+                })
+                .start();
+        }
+        // 兜底：如果所有按钮都没拿到（极端情况），立即 resolve。
+        if (remaining <= 0) onDone();
     }
 
     /** Play the pre-game intro animation for the picked embed prop:
@@ -4436,7 +4610,7 @@ export class HudController extends Component {
         if (picked !== 'wrecker' && this.authoredEmbedWreckerButton) this.authoredEmbedWreckerButton.node.active = false;
         if (this.authoredEmbedStartButton) this.authoredEmbedStartButton.node.active = false;
         // Also hide the selectmark so the icon looks clean during the fly.
-        this._embedPicked = null;
+        this._embedPickedSet.clear();
         this._refreshEmbedSelectMarks();
 
         const node = button.node;
@@ -4669,15 +4843,30 @@ export class HudController extends Component {
     }
 
     /** Fire the caller's onStart with the picked embed, then close. */
-    private _resolveEmbedAndClose(picked: EmbedProp | null): void {
+    private _resolveEmbedAndClose(picked: EmbedProp[]): void {
         const cb = this._embedResolve;
         this._embedResolve = null;
-        this._embedPicked = null;
+        this._embedPickedSet.clear();
         this._fateEmbedModeActive = false;
         if (this.authoredEmbedPickerRoot) this.authoredEmbedPickerRoot.active = false;
-        this._refreshEmbedSelectMarks();   // clear both marks visually
+        this._refreshEmbedSelectMarks();   // clear all marks visually
         this.hideFateModal();
         if (cb) cb(picked);
+    }
+
+    /** 标题 `本命方块 {n}` —— n = fateLevelOrder 所属 fate 组 (1..220)。
+     *  无尽模式（没有 level order）→ 去掉数字，只显示 '本命方块'。
+     *  每次 show*（Modal/Preview/Picker）打开时和语言切换后调用。 */
+    private refreshFateTitle(): void {
+        if (!this.fateTitleLab) return;
+        if (this.fateIsEndlessEntry || !this.fateLevelOrder) {
+            // 无尽模式或没有关卡号 —— 用没有编号的 fallback（保留 {n} 位置为空）
+            this.fateTitleLab.string = t('fate.modalTitle', { n: '' }).trim();
+            return;
+        }
+        // level order 1..1980，每 9 关一组 → 组号 1..220
+        const groupNum = Math.floor((this.fateLevelOrder - 1) / 9) + 1;
+        this.fateTitleLab.string = t('fate.modalTitle', { n: groupNum });
     }
 
     private refreshFateSubtitle(): void {
@@ -4693,13 +4882,18 @@ export class HudController extends Component {
                 if (s[r][c]) cellCount++;
             }
         }
-        // Level mode: show the stage's 1-based order directly. Level 0
-        // → Stage 1, level 98 → Stage 99 (fateLevelOrder is already
-        // 1-based). Forward numbering matches every other display path
-        // — level select, fate preview, leaderboard row labels.
+        // Level mode: show the level's position WITHIN its fate group
+        // (1..9) rather than the absolute level order. Group number itself
+        // is already shown in the title ('本命方块 N'), so the subtitle
+        // repeating "第 208 层" was redundant — '第 1 层' .. '第 9 层'
+        // tells the player how far they are in this fate piece's 9-level
+        // run.  fateLevelOrder is 1-based; floor within group = (order-1) % 9 + 1.
+        const posInGroup = this.fateLevelOrder
+            ? ((this.fateLevelOrder - 1) % 9) + 1
+            : '?';
         const prefix = this.fateIsEndlessEntry
             ? t('fate.endlessSub')
-            : t('level.floor', { n: this.fateLevelOrder ?? '?' });
+            : t('level.floor', { n: posInGroup });
         this.fateSubLab.string = t('fate.subtitle', { tag: prefix, n: cellCount });
     }
 

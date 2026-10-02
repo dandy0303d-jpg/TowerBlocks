@@ -615,10 +615,10 @@ export class GameState {
         this.startRunning();
     }
 
-    startLevel(lvl: LevelData, embed: EmbedProp | null = null): void {
-        // Reset the prior level's embed record — a fresh startLevel is
+    startLevel(lvl: LevelData, embeds: EmbedProp[] = []): void {
+        // Reset the prior level's embed records — a fresh startLevel is
         // authoritative regardless of what the previous run left.
-        this.lastEmbedInjection = null;
+        this.lastEmbedInjections = [];
         const loaded = loadLevel(lvl);
         // Collect-mode levels carry a `collectGoals` array — they boot
         // into the dedicated collect mode (win = goals met, not the
@@ -631,10 +631,10 @@ export class GameState {
         this.levelTaskHeight     = loaded.taskHeight;
         this.levelReservedHeight = loaded.reservedHeight;
         this.state = loaded.state;
-        // Optional pre-level embed prop (level 16+ picker in HudController).
-        // Injects the picked prop into one random colored cell BEFORE the
-        // player sees the board — see `_injectEmbedProp` for details.
-        if (embed) this._injectEmbedProp(embed);
+        // Optional pre-level embed props (level 16+ picker in HudController).
+        // Injects the picked props into separate NON-ADJACENT random colored
+        // cells BEFORE the player sees the board — see `_injectEmbedProps`.
+        if (embeds.length > 0) this._injectEmbedProps(embeds);
         // `resetCommon` would re-shuffle the bag immediately, so we
         // inline its work here and register the level's optional
         // custom-shape piece BETWEEN bag.reset() and bag.refill() —
@@ -678,9 +678,23 @@ export class GameState {
      *  reveal reads as "the orb hits and forms the prop". The frame
      *  right after commit, `syncCubes` renders the overlay.
      *
-     *  Non-null between `_injectEmbedProp` and `commitPendingEmbedProp`.
-     *  Cleared on commit and on a fresh `startLevel`. */
-    public lastEmbedInjection: { r: number; c: number; kind: EmbedProp } | null = null;
+     *  Non-empty between `_injectEmbedProps` and `commitPendingEmbedProps`.
+     *  Cleared on commit and on a fresh `startLevel`.
+     *  Multi-embed support: array holds one entry per picked prop. Cells
+     *  are guaranteed non-adjacent (4-neighbor, cylinder-wrapped on c)
+     *  when enough colored cells exist; falls back to any cell otherwise. */
+    public lastEmbedInjections: Array<{ r: number; c: number; kind: EmbedProp }> = [];
+
+    /** Back-compat shim —— 老代码读 `lastEmbedInjection` 的拿第一个。
+     *  设 null 清空整个数组；设对象替换第一个（极少用）。保留只是防旧
+     *  调用点漏改时能跑；新代码请直接用 lastEmbedInjections。 */
+    public get lastEmbedInjection(): { r: number; c: number; kind: EmbedProp } | null {
+        return this.lastEmbedInjections[0] ?? null;
+    }
+    public set lastEmbedInjection(v: { r: number; c: number; kind: EmbedProp } | null) {
+        if (v == null) this.lastEmbedInjections = [];
+        else this.lastEmbedInjections = [v];
+    }
 
     /** Drop the player-picked embed prop onto a single colored cell.
      *
@@ -715,211 +729,178 @@ export class GameState {
      *  the camera actually sees. Cheap: reuses the same eligibility
      *  logic as the original pick. No-op if nothing is pending. */
     public rePickEmbedInjectionForCamera(centerCol: number): void {
-        const inj = this.lastEmbedInjection;
-        if (!inj) return;
+        if (this.lastEmbedInjections.length === 0) return;
+        const kinds = this.lastEmbedInjections.map(x => x.kind);
         const board = this.state.board;
         if (!board || board.length === 0) return;
         const bombs = this.state.boardBombs;
         const booms = this.state.boardBooms;
         if (!bombs || !booms) return;
-        const stones    = this.state.boardStones;
-        const chests    = this.state.boardChests;
-        const meteors   = this.state.boardMeteors;
-        const blizzards = this.state.boardBlizzards;
-        const wreckers  = this.state.boardWreckers;
-        const hails     = this.state.boardHails;
-        const rockets   = this.state.boardRockets;
-        const gatlings  = this.state.boardGatlings;
-        // Restrict picks to the EXACT camera-facing column so the orb
-        // always lands on a single front-and-centre cube — reads as
-        // "the picker highlights the block right in front of you".
-        // centerCol can be fractional (3-wide pieces like T/S/Z land
-        // at piece.x + 1.5); round to nearest integer col.
+        // Camera-facing centre column, with wrap-around widening.
         const centre = ((Math.round(centerCol) % COLS) + COLS) % COLS;
-        const cleanByRow:      Map<number, number[]> = new Map();
-        const anyColoredByRow: Map<number, number[]> = new Map();
+        // Build "near-camera" eligible cell list, ordered by proximity to
+        // centre (centre first, then centre±1, ±2, ...). We'll pick with
+        // non-adjacency constraint from this list.
+        const nearCells: Array<{ r: number; c: number; clean: boolean; dist: number }> = [];
+        const isDirty = (r: number, c: number): boolean => {
+            return (bombs[r]?.[c] != null)
+                || (booms[r]?.[c] != null)
+                || (this.state.boardStones?.[r]?.[c] != null)
+                || (this.state.boardChests?.[r]?.[c] != null)
+                || (this.state.boardMeteors?.[r]?.[c] != null)
+                || (this.state.boardBlizzards?.[r]?.[c] != null)
+                || (this.state.boardWreckers?.[r]?.[c] != null)
+                || (this.state.boardHails?.[r]?.[c] != null)
+                || (this.state.boardRockets?.[r]?.[c] != null)
+                || (this.state.boardGatlings?.[r]?.[c] != null);
+        };
         for (let r = 0; r < board.length; r++) {
             const row = board[r];
             if (!row) continue;
             for (let c = 0; c < row.length; c++) {
                 const v = row[c];
                 if (v == null || v === 'X') continue;
-                if (c !== centre) continue;
-                if (!anyColoredByRow.has(r)) anyColoredByRow.set(r, []);
-                anyColoredByRow.get(r)!.push(c);
-                const dirty =
-                       (bombs[r]?.[c] != null)
-                    || (booms[r]?.[c] != null)
-                    || (stones?.[r]?.[c] != null)
-                    || (chests?.[r]?.[c] != null)
-                    || (meteors?.[r]?.[c] != null)
-                    || (blizzards?.[r]?.[c] != null)
-                    || (wreckers?.[r]?.[c] != null)
-                    || (hails?.[r]?.[c] != null)
-                    || (rockets?.[r]?.[c] != null)
-                    || (gatlings?.[r]?.[c] != null);
-                if (!dirty) {
-                    if (!cleanByRow.has(r)) cleanByRow.set(r, []);
-                    cleanByRow.get(r)!.push(c);
-                }
+                const d = ((c - centre) % COLS + COLS) % COLS;
+                const dist = d > COLS / 2 ? COLS - d : d;
+                nearCells.push({ r, c, clean: !isDirty(r, c), dist });
             }
         }
-        // Widen search if the exact centre column has no coloured
-        // cells — try centre ±1, then ±2, ... until a colour is found.
-        // Keeps the front-facing feel while guaranteeing a valid pick.
-        const tryPick = (byRow: Map<number, number[]>): [number, number] | null => {
-            if (byRow.size === 0) return null;
-            const rows = Array.from(byRow.keys());
-            const pickR = rows[Math.floor(Math.random() * rows.length)];
-            const cols  = byRow.get(pickR)!;
-            const pickC = cols[Math.floor(Math.random() * cols.length)];
-            return [pickR, pickC];
-        };
-        let hit = tryPick(cleanByRow) ?? tryPick(anyColoredByRow);
-        if (!hit) {
-            // Widen: scan neighbouring columns outward.
-            for (let off = 1; off <= Math.floor(COLS / 2) && !hit; off++) {
-                const widerClean: Map<number, number[]> = new Map();
-                const widerAny:   Map<number, number[]> = new Map();
-                const candCols = [(centre - off + COLS) % COLS, (centre + off) % COLS];
-                for (let r = 0; r < board.length; r++) {
-                    const row = board[r];
-                    if (!row) continue;
-                    for (const c of candCols) {
-                        const v = row[c];
-                        if (v == null || v === 'X') continue;
-                        if (!widerAny.has(r)) widerAny.set(r, []);
-                        widerAny.get(r)!.push(c);
-                        const dirty =
-                               (bombs[r]?.[c] != null)
-                            || (booms[r]?.[c] != null)
-                            || (stones?.[r]?.[c] != null)
-                            || (chests?.[r]?.[c] != null)
-                            || (meteors?.[r]?.[c] != null)
-                            || (blizzards?.[r]?.[c] != null)
-                            || (wreckers?.[r]?.[c] != null)
-                            || (hails?.[r]?.[c] != null)
-                            || (rockets?.[r]?.[c] != null)
-                            || (gatlings?.[r]?.[c] != null);
-                        if (!dirty) {
-                            if (!widerClean.has(r)) widerClean.set(r, []);
-                            widerClean.get(r)!.push(c);
-                        }
-                    }
-                }
-                hit = tryPick(widerClean) ?? tryPick(widerAny);
-            }
-        }
-        if (!hit) return;
-        const [pickR, pickC] = hit;
-        this.lastEmbedInjection = { r: pickR, c: pickC, kind: inj.kind };
-        console.log(`[EmbedProp] repicked (camera-facing) ${inj.kind} at r=${pickR} c=${pickC} centre=${centre}`);
+        if (nearCells.length === 0) return;
+        // Sort by (clean DESC, dist ASC) so pickers hit clean centre cells first.
+        nearCells.sort((a, b) => (Number(b.clean) - Number(a.clean)) || (a.dist - b.dist));
+
+        const picked = this._pickNonAdjacent(nearCells, kinds.length);
+        this.lastEmbedInjections = picked.map((p, i) => ({ r: p.r, c: p.c, kind: kinds[i] }));
+        console.log(`[EmbedProp] repicked ${this.lastEmbedInjections.length} (camera-facing) at`,
+            this.lastEmbedInjections.map(x => `${x.kind}@(${x.r},${x.c})`).join(' '));
     }
 
-    private _injectEmbedProp(embed: EmbedProp): void {
+    /** Pick up to `n` cells from `pool` such that no two are 4-neighbors
+     *  (cylinder: c wraps at COLS). Falls back to allowing adjacency when
+     *  the pool runs out of non-adjacent choices. Pool is iterated in
+     *  given order (callers pre-sort by priority). */
+    private _pickNonAdjacent(
+        pool: Array<{ r: number; c: number }>,
+        n: number,
+    ): Array<{ r: number; c: number }> {
+        if (n <= 0 || pool.length === 0) return [];
+        const chosen: Array<{ r: number; c: number }> = [];
+        const isAdjacent = (a: { r: number; c: number }, b: { r: number; c: number }) => {
+            if (a.r === b.r && a.c === b.c) return true;   // same cell
+            const dr = Math.abs(a.r - b.r);
+            if (dr > 1) return false;
+            const dcRaw = ((a.c - b.c) % COLS + COLS) % COLS;
+            const dc = dcRaw > COLS / 2 ? COLS - dcRaw : dcRaw;
+            return dr + dc <= 1;   // 4-neighbor (manhattan 1)
+        };
+        // Shuffle pool slightly so repeated calls don't always pick the
+        // same ordering; preserve the overall priority groups by random
+        // in-place swap within equal-priority runs (clean/dist). Cheap:
+        // uniform shuffle is fine since callers pass a pre-sorted list
+        // and the random pass only breaks ties, not priority.
+        const shuffled = pool.slice();
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        // First pass: strict non-adjacency.
+        for (const cell of shuffled) {
+            if (chosen.length >= n) break;
+            if (chosen.some(c => isAdjacent(c, cell))) continue;
+            chosen.push(cell);
+        }
+        // Fallback: if we still need more and the pool is exhausted,
+        // allow adjacency (but still exclude exact duplicates).
+        if (chosen.length < n) {
+            for (const cell of shuffled) {
+                if (chosen.length >= n) break;
+                if (chosen.some(c => c.r === cell.r && c.c === cell.c)) continue;
+                chosen.push(cell);
+            }
+        }
+        return chosen;
+    }
+
+    private _injectEmbedProps(embeds: EmbedProp[]): void {
         const board = this.state.board;
         if (!board || board.length === 0) return;
         const bombs = this.state.boardBombs;
         const booms = this.state.boardBooms;
         if (!bombs || !booms) return;   // level state always has both, guard is TypeScript-belt
 
-        // Row-grouped pools. Stratified pick — random ROW first, then
-        // random CELL within that row — so a level with wildly varying
-        // per-row cell counts doesn't bias toward the densest rows.
-        // Previously used a flat "shuffle every cell" pool; rows with
-        // more colored cells (typically the bottom of a task zone
-        // once gaps are added) statistically won the pick, which
-        // read as "always lands on the bottom row".
-        const cleanByRow:      Map<number, number[]> = new Map();
-        const anyColoredByRow: Map<number, number[]> = new Map();
-        const stones    = this.state.boardStones;
-        const chests    = this.state.boardChests;
-        const meteors   = this.state.boardMeteors;
-        const blizzards = this.state.boardBlizzards;
-        const wreckers  = this.state.boardWreckers;
-        const hails     = this.state.boardHails;
-        const rockets   = this.state.boardRockets;
-        const gatlings  = this.state.boardGatlings;
-
-        for (let r = 0; r < board.length; r++) {
-            const row = board[r];
-            if (!row) continue;
-            for (let c = 0; c < row.length; c++) {
-                const v = row[c];
-                if (v == null) continue;
-                // Gray cells (endless-mode debris) do exist in level
-                // mode via `X` stones? No — 'X' is endless-only. But
-                // guard anyway: treat only proper colored letters as
-                // valid hosts.
-                if (v === 'X') continue;
-                if (!anyColoredByRow.has(r)) anyColoredByRow.set(r, []);
-                anyColoredByRow.get(r)!.push(c);
-                const dirty =
-                       (bombs[r]?.[c] != null)
-                    || (booms[r]?.[c] != null)
-                    || (stones?.[r]?.[c] != null)
-                    || (chests?.[r]?.[c] != null)
-                    || (meteors?.[r]?.[c] != null)
-                    || (blizzards?.[r]?.[c] != null)
-                    || (wreckers?.[r]?.[c] != null)
-                    || (hails?.[r]?.[c] != null)
-                    || (rockets?.[r]?.[c] != null)
-                    || (gatlings?.[r]?.[c] != null);
-                if (!dirty) {
-                    if (!cleanByRow.has(r)) cleanByRow.set(r, []);
-                    cleanByRow.get(r)!.push(c);
-                }
-            }
-        }
-        const byRow = cleanByRow.size > 0 ? cleanByRow : anyColoredByRow;
-        if (byRow.size === 0) return;
-        // Restrict picks to the 12 columns closest to the camera-facing
-        // centre (the front visible arc of the cylinder). Otherwise
-        // the embed prop can land on the back-facing half where the
-        // player can't see the orb impact, and the "trail hits the
-        // embed cell" beat reads as "trail flies past into nothing".
-        //
-        // Wrapped angular distance: `((c - centre) + COLS) % COLS`, then
-        // fold to [0, COLS/2] so cols 1 and (COLS-1) both count as
-        // dist 1. Keep only cols with dist ≤ FRONT_HALF. FRONT_HALF=6
-        // yields cols centre±6 = 13 cells; pruning the farthest-side
-        // extra gives exactly 12.
-        const FRONT_COUNT = 12;
+        // Build full candidate pool: all colored, non-'X' cells, with
+        // dirty/clean flag + front-arc distance from the camera-facing
+        // centre column. We'll pick N non-adjacent cells, preferring
+        // (1) clean cells (no existing prop) and (2) front-facing cols.
+        const FRONT_HALF = 6;   // front arc = 12 cols around centre
         const centreCol = ((this.lastSpawnCenterCol ?? 0) % COLS + COLS) % COLS;
         const wrapDist = (c: number): number => {
             const d = ((c - centreCol) % COLS + COLS) % COLS;
             return d > COLS / 2 ? COLS - d : d;
         };
-        const filteredByRow: Map<number, number[]> = new Map();
-        for (const [r, cols] of byRow) {
-            const front = cols.filter(c => wrapDist(c) < FRONT_COUNT / 2);
-            if (front.length) filteredByRow.set(r, front);
+        const isDirty = (r: number, c: number): boolean => {
+            return (bombs[r]?.[c] != null)
+                || (booms[r]?.[c] != null)
+                || (this.state.boardStones?.[r]?.[c] != null)
+                || (this.state.boardChests?.[r]?.[c] != null)
+                || (this.state.boardMeteors?.[r]?.[c] != null)
+                || (this.state.boardBlizzards?.[r]?.[c] != null)
+                || (this.state.boardWreckers?.[r]?.[c] != null)
+                || (this.state.boardHails?.[r]?.[c] != null)
+                || (this.state.boardRockets?.[r]?.[c] != null)
+                || (this.state.boardGatlings?.[r]?.[c] != null);
+        };
+        const pool: Array<{ r: number; c: number; clean: boolean; front: boolean }> = [];
+        for (let r = 0; r < board.length; r++) {
+            const row = board[r];
+            if (!row) continue;
+            for (let c = 0; c < row.length; c++) {
+                const v = row[c];
+                if (v == null || v === 'X') continue;
+                pool.push({ r, c, clean: !isDirty(r, c), front: wrapDist(c) < FRONT_HALF });
+            }
         }
-        // Empty front-filtered set → fall back to unfiltered so the
-        // embed prop still spawns (rather than silently dropped).
-        const finalByRow = filteredByRow.size > 0 ? filteredByRow : byRow;
-        // Pick a random row from the eligible-row set, THEN a random
-        // column within that row. Each row gets equal weight — a row
-        // with 20 cells doesn't outvote a row with 5.
-        const rows = Array.from(finalByRow.keys());
-        const pickR = rows[Math.floor(Math.random() * rows.length)];
-        const cols  = finalByRow.get(pickR)!;
-        const pickC = cols[Math.floor(Math.random() * cols.length)];
-        // Deferred commit — the cell stays a plain colored cube until
-        // GameController's post-assembly FX calls `commitPendingEmbedProp`
-        // at orb impact, so the reveal reads as "orb → prop forms here".
-        this.lastEmbedInjection = { r: pickR, c: pickC, kind: embed };
-        console.log(`[EmbedProp] queued ${embed} at r=${pickR} c=${pickC} (eligibleRows=${rows.length} rowRange=[${Math.min(...rows)}..${Math.max(...rows)}])`);
+        if (pool.length === 0) return;
+        // Sort: clean desc, front desc —— 优先 clean + front 的格子。
+        pool.sort((a, b) => (Number(b.clean) - Number(a.clean)) || (Number(b.front) - Number(a.front)));
+        const picked = this._pickNonAdjacent(pool, embeds.length);
+        // Deferred commit — the cells stay plain colored cubes until
+        // GameController's post-assembly FX calls `commitPendingEmbedProps`
+        // at orb impact.
+        this.lastEmbedInjections = picked.map((p, i) => ({ r: p.r, c: p.c, kind: embeds[i] }));
+        console.log(`[EmbedProp] queued ${this.lastEmbedInjections.length} at`,
+            this.lastEmbedInjections.map(x => `${x.kind}@(${x.r},${x.c})`).join(' '));
     }
 
-    /** Write the picker's pending embed prop into the board's prop
-     *  arrays, then null out `lastEmbedInjection`. Called by
-     *  GameController when the yellow-orb FX lands on the target cell
-     *  — the next `syncCubes` frame paints the overlay, giving the
-     *  glow pulse a real prop to reveal. Idempotent when nothing's
-     *  pending. */
-    public commitPendingEmbedProp(): void {
-        const inj = this.lastEmbedInjection;
+    /** Write every pending embed prop into the board's prop arrays,
+     *  then clear `lastEmbedInjections`. Idempotent when empty. */
+    public commitPendingEmbedProps(): void {
+        if (this.lastEmbedInjections.length === 0) return;
+        const bombs = this.state.boardBombs;
+        const booms = this.state.boardBooms;
+        const board = this.state.board;
+        for (const inj of this.lastEmbedInjections) {
+            if (inj.kind === 'boom1' && booms) {
+                booms[inj.r][inj.c] = 1;
+            } else if (inj.kind === 'row1' && bombs) {
+                bombs[inj.r][inj.c] = 'row1';
+            } else if (inj.kind === 'wrecker') {
+                if (!this.state.boardWreckers) {
+                    const cols = board[0]?.length ?? 0;
+                    this.state.boardWreckers = board.map(() => new Array<true | null>(cols).fill(null));
+                }
+                this.state.boardWreckers[inj.r][inj.c] = true;
+            }
+            console.log(`[EmbedProp] committed ${inj.kind} at r=${inj.r} c=${inj.c}`);
+        }
+        this.lastEmbedInjections = [];
+    }
+
+    /** Commit a single pending injection by index — allows GameController to
+     *  commit one prop at a time as each orb FX lands. Removes the entry
+     *  from `lastEmbedInjections` so later indices shift down. */
+    public commitPendingEmbedPropAt(idx: number): void {
+        const inj = this.lastEmbedInjections[idx];
         if (!inj) return;
         const bombs = this.state.boardBombs;
         const booms = this.state.boardBooms;
@@ -935,8 +916,15 @@ export class GameState {
             }
             this.state.boardWreckers[inj.r][inj.c] = true;
         }
-        console.log(`[EmbedProp] committed ${inj.kind} at r=${inj.r} c=${inj.c}`);
-        this.lastEmbedInjection = null;
+        console.log(`[EmbedProp] committed[${idx}] ${inj.kind} at r=${inj.r} c=${inj.c}`);
+        this.lastEmbedInjections.splice(idx, 1);
+    }
+
+    /** Back-compat shim — commits the first pending prop. New callers
+     *  should use `commitPendingEmbedProps` (all) or `commitPendingEmbedPropAt`. */
+    public commitPendingEmbedProp(): void {
+        if (this.lastEmbedInjections.length === 0) return;
+        this.commitPendingEmbedPropAt(0);
     }
 
     togglePause(): void {

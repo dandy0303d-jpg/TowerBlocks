@@ -103,7 +103,7 @@ export const PT_BR: Record<string, string> = {
     'shapeshifter.subtitle': 'Escolha uma forma para a peça atual',
     'shapeshifter.cancel':   'Cancelar',
 
-    'fate.modalTitle':   'Peça do Destino',
+    'fate.modalTitle':   'Peça do destino {n}',
     'fate.reroll':       'Reroll do Destino ({n}/3)',
     'fate.reroll.ad':    '🎬 Ver anúncio para rerroll',
     'fate.start':        'Começar',
@@ -210,6 +210,7 @@ export const PT_BR: Record<string, string> = {
     'settings.haptic':       'Vibração',
     'settings.hideDev':      'Ocultar botões DEV',
     'badges.earned':        'Emblemas: {n}',
+    'badges.earnedTitle':   'Nova insígnia obtida!',
     'badges.claim':         'Resgatar +1💎',
     'badges.claimed':       'Resgatado',
     'settings.controls':       'Controles',

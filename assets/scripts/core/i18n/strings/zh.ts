@@ -110,7 +110,7 @@ export const ZH: Record<string, string> = {
     'shapeshifter.cancel':   '取消',
 
     // ---------- 本命方块弹窗 ----------
-    'fate.modalTitle':   '本命方块',
+    'fate.modalTitle':   '本命方块 {n}',
     'fate.reroll':       '逆天改命 ({n}/3)',
     'fate.reroll.ad':    '🎬 看广告改命',
     'fate.start':        '直接开始',
@@ -235,6 +235,7 @@ export const ZH: Record<string, string> = {
     'settings.haptic':       '手机震动',
     'settings.hideDev':      '隐藏 DEV 按钮',
     'badges.earned':        '已获得徽章 {n} 枚',
+    'badges.earnedTitle':   '恭喜获得新徽章',
     'badges.claim':         '领取 +1💎',
     'badges.claimed':       '已领取',
     'settings.controls':       '操作方式',

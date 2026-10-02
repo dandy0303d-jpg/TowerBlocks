@@ -97,7 +97,7 @@ export const FR: Record<string, string> = {
     'shapeshifter.subtitle': 'Choisis une forme pour la pièce',
     'shapeshifter.cancel':   'Annuler',
 
-    'fate.modalTitle':   'Pièce du Destin',
+    'fate.modalTitle':   'Bloc du destin {n}',
     'fate.reroll':       'Reroll du Destin ({n}/3)',
     'fate.reroll.ad':    '🎬 Voir la pub pour reroll',
     'fate.start':        'Commencer',
@@ -204,6 +204,7 @@ export const FR: Record<string, string> = {
     'settings.haptic':       'Vibration',
     'settings.hideDev':      'Masquer boutons DEV',
     'badges.earned':        'Badges obtenus : {n}',
+    'badges.earnedTitle':   'Nouveau badge obtenu !',
     'badges.claim':         'Réclamer +1💎',
     'badges.claimed':       'Réclamé',
     'settings.controls':       'Contrôles',

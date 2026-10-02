@@ -107,7 +107,7 @@ export const EN: Record<string, string> = {
     'shapeshifter.cancel':   'Cancel',
 
     // ---------- Fate piece modal ----------
-    'fate.modalTitle':   'Fate Piece',
+    'fate.modalTitle':   'Fate Piece {n}',
     'fate.reroll':       'Reroll Fate ({n}/3)',
     'fate.reroll.ad':    '🎬 Watch Ad to Reroll',
     'fate.start':        'Start',
@@ -229,6 +229,7 @@ export const EN: Record<string, string> = {
     'settings.haptic':       'Vibration',
     'settings.hideDev':      'Hide DEV buttons',
     'badges.earned':        'Badges earned: {n}',
+    'badges.earnedTitle':   'Congratulations!',
     'badges.claim':         'Claim +1💎',
     'badges.claimed':       'Claimed',
     'settings.controls':       'Controls',

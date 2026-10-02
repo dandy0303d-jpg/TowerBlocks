@@ -4462,7 +4462,7 @@ export class GameController extends Component {
      *  into GameState.startLevel where a single random colored cell
      *  receives the prop. `null` / omitted for levels < 16 or when the
      *  player declined to pick. */
-    public loadLevelByIndex(idx: number, embed: EmbedProp | null = null): void {
+    public loadLevelByIndex(idx: number, embeds: EmbedProp[] = []): void {
         if (!this.gameState) return;
         if (idx < 0 || idx >= this.flatLevels.length) {
             log(`[TowerBlocks] level ${idx + 1} not found (have ${this.flatLevels.length} levels).`);
@@ -4477,13 +4477,13 @@ export class GameController extends Component {
             // Remember which level is playing so `onLevelWin` can persist
             // the completion via LevelProgress.
             this._activeLevelIdx = idx;
-            this.gameState.startLevel(lvl, embed);
+            this.gameState.startLevel(lvl, embeds);
             // Pre-game embed picker (Lvl 16+): if startLevel actually
-            // injected a prop, freeze piece movement via modalPaused so
-            // the reveal FX (yellow orb arc + cell glow) can play on
-            // top of a static tower right after the assembly animation.
-            // Cleared by `playEmbedRevealFxIfPending` when the FX ends.
-            if (this.gameState.lastEmbedInjection) {
+            // injected any props, freeze piece movement via modalPaused
+            // so the reveal FX (yellow orb arcs + cell glows) can play
+            // on top of a static tower right after assembly. Cleared by
+            // `playEmbedRevealFxIfPending` when the last FX ends.
+            if (this.gameState.lastEmbedInjections.length > 0) {
                 this.gameState.modalPaused = true;
             }
             // Snap the HUD level timer back to its top-strip rest
@@ -4519,8 +4519,8 @@ export class GameController extends Component {
      *  Idempotent + a fast no-op when no embed injection is pending. */
     public playEmbedRevealFxIfPending(onDone: () => void): void {
         const gs = this.gameState;
-        if (!gs || !gs.lastEmbedInjection || !this.cubeManager || !this.boardRoot3D) {
-            if (gs) { gs.modalPaused = false; gs.lastEmbedInjection = null; }
+        if (!gs || gs.lastEmbedInjections.length === 0 || !this.cubeManager || !this.boardRoot3D) {
+            if (gs) { gs.modalPaused = false; gs.lastEmbedInjections = []; }
             onDone();
             return;
         }
@@ -4540,97 +4540,81 @@ export class GameController extends Component {
         const totalRowsForOffset = this.gameState?.state.board.length ?? 0;
         this.currentBoardYOffsetVal = this.targetBoardYOffset(totalRowsForOffset);
         this.rotateCylinder();
-        // Re-pick the injection cell now that a piece has spawned and
-        // the camera-facing centre column is known.
+        // Re-pick ALL injection cells now that a piece has spawned and
+        // the camera-facing centre column is known. The new picker keeps
+        // non-adjacency across the multi-embed list.
         gs.rePickEmbedInjectionForCamera(this.currentCenterCol());
-        const inj = gs.lastEmbedInjection;
-        if (!inj) {
+        const injections = gs.lastEmbedInjections.slice();   // snapshot
+        if (injections.length === 0) {
             gs.modalPaused = false;
             onDone();
             return;
         }
-        // Target cell in boardRoot3D LOCAL space. Both FX paths
-        // parent under boardRoot3D so LOCAL == the space their own
-        // children live in.
         const totalRows = gs.state.board.length;
-        const localPos = this.cubeManager.cellToWorldPosition(inj.c, inj.r, totalRows);
 
-        // Preferred path — OrbitSelect (螺旋绕塔 + 方块选中高亮).
-        // Uses a real target Node so its shell + bounce can attach to
-        // a specific point in world space. We spawn an invisible marker
-        // Node at the target cell (child of boardRoot3D, LOCAL pos)
-        // and hand it to OrbitSelect; the marker gets destroyed by
-        // OrbitSelect.node.destroy() when the FX finishes. `onSelect`
-        // fires on impact — commit the prop there so syncCubes paints
-        // the overlay right at the shell flash.
-        if (this.orbitSelectEffect && this.boardRoot3D) {
-            const marker = new Node('OrbitSelectTarget');
-            marker.layer = this.boardRoot3D.layer;
-            // KEEP marker as a child of boardRoot3D. The tower's
-            // currentBoardYOffsetVal is still tweening toward its
-            // target when the FX starts (level-mode target for a
-            // 28-row board = -2.375 world Y, but tower.worldPosition.y
-            // is 2.63 at spawn time and smoothly rides down). If we
-            // reparented the marker to scene root at the initial
-            // world pos, marker would stay put while the actual cube
-            // moves — orb hits at the WRONG row by the time syncCubes
-            // paints the prop. Leaving marker under boardRoot3D means
-            // it tracks tower yaw AND boardY together — same as the
-            // real cube.
-            this.boardRoot3D.addChild(marker);
-            marker.setPosition(localPos.x, localPos.y, localPos.z);
-            const fx = OrbitSelect.play({
-                tower: this.boardRoot3D,
-                target: marker,
-                effect: this.orbitSelectEffect,
-                towerHeight: (this.gameState?.state.board.length ?? VISIBLE_ROWS) * CELL_SIZE * GameController.TOWER_VIEW_SCALE,
-                towerBottomY: Y_BOTTOM * GameController.TOWER_VIEW_SCALE,
-                // OrbitSelect adds `blockSize * 0.5` to the target
-                // radius so the orb lands on the cube's OUTER face
-                // (target is assumed to be centered at the cube).
-                // TetriTower cube centers ARE at RADIUS, and the outer
-                // face is close to RADIUS + a fraction of the visual
-                // cube size. Passing CELL_SIZE (=1) overshoots the
-                // actual cube outer face for prefabs that render
-                // smaller than one unit → orb visually misses. Use a
-                // smaller blockSize (0.3) so the orb lands closer to
-                // cube center; also shrinks the SHELL and PULSE ring
-                // sizes appropriately for the same reason.
-                blockSize: CELL_SIZE * GameController.TOWER_VIEW_SCALE,
-                orbitMargin: 0.4,
-                keepSelected: false,
-                onSelect: () => { gs.commitPendingEmbedProp(); },
-            });
-            fx.arrived.then(() => {
-                // Fade window (OrbitSelect internally destroys itself
-                // ~0.8s after hit when keepSelected=false). Unpause
-                // gameplay AT arrival so the piece resumes falling on
-                // impact rather than after the fade; the target marker
-                // stays in-place until OrbitSelect destroys itself.
+        // Play reveal FX staggered — orb N starts 0.25s after orb N-1
+        // so player sees them as separate 落点 but the overall sequence
+        // doesn't take ages. Each commit removes [0] from the array
+        // (so the N-th arrived callback always commits index 0 of the
+        // remaining list).
+        const STAGGER = 0.25;
+        let completed = 0;
+        const finish = () => {
+            completed++;
+            if (completed >= injections.length) {
                 gs.modalPaused = false;
-                gs.lastEmbedInjection = null;
+                gs.lastEmbedInjections = [];
                 onDone();
-                // Clean up marker on FX destroy (fx.node holds our
-                // marker as a sibling — destroy explicitly since we
-                // parented it to boardRoot3D, not to fx.node).
-                this.scheduleOnce(() => {
-                    if (marker.isValid) marker.destroy();
-                }, 1.2);
-            });
-            return;
-        }
+            }
+        };
 
-        // Fallback — legacy EmbedRevealFX3D arc.
-        EmbedRevealFX3D.spawn(
-            this.boardRoot3D,
-            localPos,
-            () => { gs.commitPendingEmbedProp(); },
-            () => {
-                gs.modalPaused = false;
-                gs.lastEmbedInjection = null;   // belt: commit already cleared it
-                onDone();
-            },
-        );
+        injections.forEach((inj, idx) => {
+            const localPos = this.cubeManager.cellToWorldPosition(inj.c, inj.r, totalRows);
+            const spawn = () => {
+                if (this.orbitSelectEffect && this.boardRoot3D) {
+                    const marker = new Node('OrbitSelectTarget');
+                    marker.layer = this.boardRoot3D.layer;
+                    this.boardRoot3D.addChild(marker);
+                    marker.setPosition(localPos.x, localPos.y, localPos.z);
+                    const fx = OrbitSelect.play({
+                        tower: this.boardRoot3D,
+                        target: marker,
+                        effect: this.orbitSelectEffect,
+                        towerHeight: (this.gameState?.state.board.length ?? VISIBLE_ROWS) * CELL_SIZE * GameController.TOWER_VIEW_SCALE,
+                        towerBottomY: Y_BOTTOM * GameController.TOWER_VIEW_SCALE,
+                        blockSize: CELL_SIZE * GameController.TOWER_VIEW_SCALE,
+                        orbitMargin: 0.4,
+                        keepSelected: false,
+                        // Commit by matching r/c/kind — index-based commit
+                        // would race when multi-orbs arrive out of order.
+                        onSelect: () => {
+                            const matchIdx = gs.lastEmbedInjections.findIndex(
+                                x => x.r === inj.r && x.c === inj.c && x.kind === inj.kind,
+                            );
+                            if (matchIdx >= 0) gs.commitPendingEmbedPropAt(matchIdx);
+                        },
+                    });
+                    fx.arrived.then(() => {
+                        finish();
+                        this.scheduleOnce(() => { if (marker.isValid) marker.destroy(); }, 1.2);
+                    });
+                } else {
+                    EmbedRevealFX3D.spawn(
+                        this.boardRoot3D!,
+                        localPos,
+                        () => {
+                            const matchIdx = gs.lastEmbedInjections.findIndex(
+                                x => x.r === inj.r && x.c === inj.c && x.kind === inj.kind,
+                            );
+                            if (matchIdx >= 0) gs.commitPendingEmbedPropAt(matchIdx);
+                        },
+                        () => finish(),
+                    );
+                }
+            };
+            if (idx === 0) spawn();
+            else this.scheduleOnce(spawn, idx * STAGGER);
+        });
     }
 
     /** Level-entry transition — every board cube the level just loaded

@@ -99,7 +99,7 @@ export const DE: Record<string, string> = {
     'shapeshifter.subtitle': 'Wähle eine Form für den aktuellen Block',
     'shapeshifter.cancel':   'Abbrechen',
 
-    'fate.modalTitle':   'Schicksalsblock',
+    'fate.modalTitle':   'Schicksalsblock {n}',
     'fate.reroll':       'Schicksal ändern ({n}/3)',
     'fate.reroll.ad':    '🎬 Werbung ansehen',
     'fate.start':        'Start',
@@ -206,6 +206,7 @@ export const DE: Record<string, string> = {
     'settings.haptic':       'Vibration',
     'settings.hideDev':      'DEV-Buttons ausblenden',
     'badges.earned':        'Abzeichen: {n}',
+    'badges.earnedTitle':   'Neues Abzeichen erhalten!',
     'badges.claim':         'Einlösen +1💎',
     'badges.claimed':       'Eingelöst',
     'settings.controls':       'Steuerung',

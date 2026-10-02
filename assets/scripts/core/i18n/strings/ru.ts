@@ -98,7 +98,7 @@ export const RU: Record<string, string> = {
     'shapeshifter.subtitle': 'Выбери форму для текущей фигуры',
     'shapeshifter.cancel':   'Отмена',
 
-    'fate.modalTitle':   'Блок Судьбы',
+    'fate.modalTitle':   'Блок судьбы {n}',
     'fate.reroll':       'Изменить судьбу ({n}/3)',
     'fate.reroll.ad':    '🎬 Реклама для реролла',
     'fate.start':        'Старт',
@@ -205,6 +205,7 @@ export const RU: Record<string, string> = {
     'settings.haptic':       'Вибрация',
     'settings.hideDev':      'Скрыть DEV-кнопки',
     'badges.earned':        'Значков: {n}',
+    'badges.earnedTitle':   'Новый значок!',
     'badges.claim':         'Забрать +1💎',
     'badges.claimed':       'Получено',
     'settings.controls':       'Управление',

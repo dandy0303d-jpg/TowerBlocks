@@ -51,6 +51,8 @@ import { fetchBackpack, getCachedBackpack } from '../core/BackpackApi';
 import { BACKEND_BASE_URL } from '../core/BackendConfig';
 import { TutorialProgress } from '../core/TutorialProgress';
 import { TutorialController } from './TutorialController';
+import { BadgeGetEffect } from '../../effects/badge-get/BadgeGetEffect';
+import { DiamondClaimEffect } from '../../effects/diamond-claim/DiamondClaimEffect';
 import { t, cycleLang, setLang, getLang, subscribe as subscribeLang, SUPPORTED_LANGS, Lang } from '../core/i18n/I18n';
 import {
     getBgmVolume,   setBgmVolume,   cycleBgmVolume,
@@ -189,6 +191,24 @@ export class MenuController extends Component {
 
     @property({ type: SpriteFrame, tooltip: '徽章图鉴按钮右上角红点图（比如红底白色感叹号）。留空则用纯色红圆 + 白字数字兜底。资源建议：textures/ui/activity_badge.png' })
     authoredBadgeCollectionRedDotFrame: SpriteFrame | null = null;
+
+    @property({ type: BadgeGetEffect, tooltip: '获得徽章特效（BadgeGetEffect 组件挂在场景最上层全屏节点上）。留空则回退到旧的简易飞行动画。' })
+    badgeGetFx: BadgeGetEffect | null = null;
+
+    @property({ type: Node, tooltip: '徽章飞入起点节点（如通关弹窗上的"新徽章预告"图标）。留空则跳过起点飞入，直接在中央展开。' })
+    badgeFromNode: Node | null = null;
+
+    @property({ type: Label, tooltip: '"恭喜获得新徽章"标题 Label（BadgeGetOverlay 里的 Title 节点上的 Label）。挂上后脚本会用 i18n key badges.earnedTitle 自动翻译，跟随语言切换。' })
+    badgeGetTitleLabel: Label | null = null;
+
+    @property({ type: DiamondClaimEffect, tooltip: '徽章图鉴里点击徽章领取钻石的特效（DiamondClaimEffect 组件挂在场景最上层的全屏空节点上）。留空则不播特效，只走数据流。' })
+    diamondClaimFx: DiamondClaimEffect | null = null;
+
+    @property({ type: Node, tooltip: '钻石栏图标节点（领取钻石特效飞行目标）。留空钻石只原地上飘。建议指向 modeBtnTopup 里的钻石图标。' })
+    diamondClaimTargetIcon: Node | null = null;
+
+    @property({ type: Label, tooltip: '钻石数字 Label —— 特效播放时数字滚动。留空则不滚。' })
+    diamondClaimCounterLabel: Label | null = null;
 
     // ---- 徽章图鉴面板 ----
     @property({ type: Node, tooltip: '徽章图鉴面板根节点（含 dim 遮罩 + 卡片）。脚本 setActive 控制开关。可空。' })
@@ -812,6 +832,10 @@ export class MenuController extends Component {
             if (!entry.label || !entry.label.isValid) continue;
             entry.label.string = t(entry.key, entry.params);
         }
+        // 徽章获得标题（BadgeGetOverlay 的 Title Label）——挂上就翻译。
+        if (this.badgeGetTitleLabel && this.badgeGetTitleLabel.isValid) {
+            this.badgeGetTitleLabel.string = t('badges.earnedTitle');
+        }
     }
 
     start(): void {
@@ -1396,6 +1420,92 @@ export class MenuController extends Component {
             this.refreshFatePieceProgressUi(LevelProgress.currentIdx);
             return;
         }
+
+        // 新版特效（v2）：BadgeGetEffect 挂上就走它，否则回退到旧飞行动画。
+        //  - suppress 已经在进入这个函数前打开（line 2270）：refresh 会画
+        //    N 个 slot，但最后一个（新徽章）UIOpacity=0 隐藏。这样 Layout
+        //    的位置对，fx target 也能拿到 worldPosition，但视觉上还没显。
+        //  - fx target 用 findSlot 函数，Layout 重建时能跟上。
+        //  - onArrive：suppress=false + refresh → 新徽章从透明变可见，
+        //    刚好和 fx 落位同一帧。
+        if (this.badgeGetFx) {
+            const findSlot = (): Node | null => {
+                if (!caseRoot || !caseRoot.isValid) return null;
+                const rawBadgeCount = this._earnedBadgeCount(LevelProgress.currentIdx);
+                if (rawBadgeCount <= 0) return null;
+                const inlineMax = this.authoredBadgeInlineMax > 0
+                    ? this.authoredBadgeInlineMax : rawBadgeCount;
+                const showCount = Math.min(rawBadgeCount, inlineMax);
+                const firstIdx  = rawBadgeCount - showCount;
+                let seen = 0;
+                for (const child of caseRoot.children) {
+                    if (!(child as any)._isMenuBadge) continue;
+                    const groupIdx = firstIdx + seen;
+                    if (groupIdx === earnedGroupIdx) return child;
+                    seen++;
+                }
+                return null;
+            };
+
+            SoundManager.instance?.play('item_pick');
+            // 保证标题当前语言 —— refreshI18nLabels 里已经跟着语言切换刷了，
+            // 这里 fx 播放前再兜底一次（防止节点刚 active 起来还没被刷过）。
+            if (this.badgeGetTitleLabel && this.badgeGetTitleLabel.isValid) {
+                this.badgeGetTitleLabel.string = t('badges.earnedTitle');
+            }
+            const fromNode = (this.badgeFromNode && this.badgeFromNode.isValid) ? this.badgeFromNode : null;
+            if (fromNode) {
+                const wp = fromNode.worldPosition;
+                const fromUT = fromNode.getComponent(UITransform);
+                log(`[Badge FX] from world=(${wp.x.toFixed(0)},${wp.y.toFixed(0)}) size=(${fromUT?.width ?? '?'}x${fromUT?.height ?? '?'})`);
+            }
+            const badgeSlot = findSlot();
+            if (badgeSlot) {
+                const swp = badgeSlot.worldPosition;
+                log(`[Badge FX] target world=(${swp.x.toFixed(0)},${swp.y.toFixed(0)})`);
+            }
+            log(`[Badge FX] play — from=${fromNode ? fromNode.name : 'NULL'} target-init=${badgeSlot?.name ?? 'NULL'} groupIdx=${earnedGroupIdx}`);
+            // fx 的"中央"= Badge 子节点的初始 worldPosition。如果 Badge 摆得
+            // 离 from/target 太近，segment 1（from→center）就没什么视觉幅度。
+            const badgeCenterNode = this.badgeGetFx.node.getChildByName('Badge')
+                ?? (this.badgeGetFx as any).badge as Node | null;
+            if (badgeCenterNode) {
+                const cwp = badgeCenterNode.worldPosition;
+                log(`[Badge FX] center world=(${cwp.x.toFixed(0)},${cwp.y.toFixed(0)})`);
+            }
+            // 设 deactivateOnEnd=false：fx.finish() 走"restore + 显式
+            // opacity=0"分支，而不是"restore + 0.1s 后 deactivate overlay"：
+            // 既不会出现"大徽章回弹到中央闪一下"（因为 opacity 立刻清 0），
+            // 也不会漏掉 restore（badge 的 pos/scale 被还原到 authored 值）。
+            //
+            // 以前用 scheduleOnce 0.75s 提前关 overlay 的办法有副作用——
+            // fx 内部 wait(0.8s) 用 this.scheduleOnce 在 BadgeGetEffect 组
+            // 件上注册，overlay 一关这些 scheduleOnce 全部作废，finish() /
+            // restore() 不跑，badge.position 停在上次落点。下次 play() 的
+            // record() 把那个落点当作新 "center"，造成"第二次开始中央位
+            // 和槽位重叠"的 bug。
+            this.badgeGetFx.deactivateOnEnd = false;
+            this.badgeGetFx.play({
+                from:               fromNode ?? undefined,
+                target:             findSlot,
+                frame:              icon,
+                applyFrameToTarget: false,
+                onArrive: () => {
+                    this._suppressLatestBadge = false;
+                    this.refreshFatePieceProgressUi(LevelProgress.currentIdx);
+                    this._paintBadgeCollectionRedDot(LevelProgress.currentIdx);
+                },
+            }).then(() => {
+                // play() 的 promise 在 fx.finish() 返回后 resolve。
+                // deactivateOnEnd=false 让 finish 把 restore（badge 位置
+                // 回 authored）+ opacity=0 都跑完了。此时手动关 overlay，
+                // 避免 BlockInputEvents 继续挡输入进不了关卡。
+                const fxNode = this.badgeGetFx?.node;
+                if (fxNode && fxNode.isValid) fxNode.active = false;
+            }).catch(() => { /* 忽略 */ });
+            return;
+        }
+
         const canvasNode = director.getScene()?.getComponentInChildren(Canvas)?.node;
         const canvasUT = canvasNode?.getComponent(UITransform);
         if (!canvasNode || !canvasUT) {
@@ -1551,13 +1661,14 @@ export class MenuController extends Component {
             this.authoredFatePieceProgressLabel.string = `${progress}/${LEVELS_PER_FATE_PIECE}`;
         }
 
-        // ---- Top-right collection button: preview of the badge the
-        // player is CURRENTLY working toward. Pulls the icon at the
-        // current group's index from `authoredBadgeIcons`. Falls back
-        // to whatever sprite the button already carries when the
-        // author didn't supply an icon for that group. ----
+        // ---- Top-right collection button icon ----
+        // 显示"下一枚还没获得的徽章"作为预告（authoredBadgeIcons[earnedCount]）。
+        // 用 earnedCount 而不是 groupIdx，避免玩家回看旧关卡时按钮退回到已获得的图。
+        // 所有徽章都拿完就 fallback 到最后一枚。
         if (this.authoredBadgeCollectionButton) {
-            const nextIcon = this.authoredBadgeIcons[groupIdx];
+            const earnedCount = this._earnedBadgeCount(maxCleared);
+            const iconIdx = Math.min(earnedCount, Math.max(0, this.authoredBadgeIcons.length - 1));
+            const nextIcon = this.authoredBadgeIcons[iconIdx];
             if (nextIcon) {
                 const btnNode = this.authoredBadgeCollectionButton.node;
                 const spr = btnNode.getComponent(Sprite) ?? btnNode.getComponentInChildren(Sprite);
@@ -1568,13 +1679,13 @@ export class MenuController extends Component {
         }
 
         // ---- Badges ----
-        // `_suppressLatestBadge` is on while the earn-fly FX is in
-        // flight — we render badgeCount - 1 badges so the newest one
-        // "materialises" when the flying icon lands on the case.
+        // `_suppressLatestBadge` 打开时：仍然画满 rawBadgeCount 个 slot（保持
+        // Layout 位置有效，fx 能飞到"新徽章的最终格子"），但最后一枚会被
+        // UIOpacity+Sprite.color.a 双保险拉到 0 变透明 —— 玩家看到 N-1 枚
+        // 可见 + 一个占位空位。fx 落位时 onArrive 里我们关闭 suppress 再
+        // refresh，占位变可见 = 新徽章"就在那一刻出现"。
         const rawBadgeCount = this._earnedBadgeCount(maxCleared);
-        const badgeCount = this._suppressLatestBadge && rawBadgeCount > 0
-            ? rawBadgeCount - 1
-            : rawBadgeCount;
+        const badgeCount = rawBadgeCount;
         if (this.authoredBadgeCountLabel) {
             this.authoredBadgeCountLabel.string = t('badges.earned', { n: badgeCount });
         }
@@ -1635,11 +1746,20 @@ export class MenuController extends Component {
                 }
                 spr.spriteFrame = icon;
             }
+            // suppress 打开时，最后一枚（最新徽章）被拉透明 —— 占 Layout
+            // 位置但不可见。fx 落位后由 onArrive 手动 opacity=255 恢复。
+            const isLatest = (groupIdx === badgeCount - 1);
+            if (this._suppressLatestBadge && isLatest) {
+                const op = badge.getComponent(UIOpacity) ?? badge.addComponent(UIOpacity);
+                op.opacity = 0;
+                const sprs = badge.getComponentsInChildren(Sprite);
+                for (const sp of sprs) { const c = sp.color.clone(); c.a = 0; sp.color = c; }
+            }
             // Diagnostic — surfaces "why can't I see my badge?" cases
             // (template unwired, sprite frame missing, size zero).
             const sprCheck = badge.getComponent(Sprite) ?? badge.getComponentInChildren(Sprite);
             const ut = badge.getComponent(UITransform);
-            log(`[Badge ${i}] active=${badge.active} pos=(${badge.position.x.toFixed(0)},${badge.position.y.toFixed(0)}) size=(${ut?.width ?? '?'}x${ut?.height ?? '?'}) sprite=${!!sprCheck} spriteFrame=${!!sprCheck?.spriteFrame} parentActive=${root.active} parentActiveInHierarchy=${root.activeInHierarchy}`);
+            log(`[Badge ${i}] active=${badge.active} pos=(${badge.position.x.toFixed(0)},${badge.position.y.toFixed(0)}) size=(${ut?.width ?? '?'}x${ut?.height ?? '?'}) sprite=${!!sprCheck} spriteFrame=${!!sprCheck?.spriteFrame} parentActive=${root.active} parentActiveInHierarchy=${root.activeInHierarchy}${this._suppressLatestBadge && isLatest ? ' [SUPPRESSED]' : ''}`);
         }
     }
 
@@ -1779,6 +1899,8 @@ export class MenuController extends Component {
             if (btn) btn.interactable = false;
         }
         SoundManager.instance?.play('item_pick');
+        // 记录扣款/加款前的余额，DiamondClaim 特效需要 fromValue 做数字滚动
+        const gemsBefore = this._cachedGemBalance;
         claimBadgeReward(groupIdx).then((res) => {
             if (!res.ok) {
                 console.warn(`[BadgePanel] claim ${groupIdx} rejected:`, res.reason);
@@ -1795,13 +1917,39 @@ export class MenuController extends Component {
             log(`[BadgePanel] claimed badge ${groupIdx}; ` +
                 `+${res.gemsAwarded} gems (balance=${res.balance}` +
                 `${res.alreadyClaimed ? ', already-claimed' : ''})`);
-            // Repaint just this cell so it flips to 已领取.
+
+            // Cell 立即翻成"已领取"（去掉钻石角标 + 灰按钮），特效播放
+            // 期间玩家不会看到"钻石标还在但钱已到账"的错位。
             if (cellNode) {
                 const earnedCount = this._earnedBadgeCount(LevelProgress.maxClearedIdx);
                 this._paintBadgePanelCell(cellNode, groupIdx, groupIdx < earnedCount);
             }
-            // 徽章图鉴按钮上的红点也刷一下（未领奖计数减 1）
-            this._paintBadgeCollectionRedDot(LevelProgress.maxClearedIdx);
+
+            // DiamondClaim 特效：徽章按下 → 钻石喷出 → 沿弧线飞到钻石栏 →
+            // 数字滚动到新余额。特效端只做表现，不改数据。alreadyClaimed
+            // 时跳过特效（既然已经领过了，就没必要再飞一波）。
+            if (this.diamondClaimFx && cellNode && !res.alreadyClaimed && res.gemsAwarded > 0) {
+                this.diamondClaimFx.play({
+                    from:       cellNode,
+                    amount:     res.gemsAwarded,
+                    // 钻石飞行颗数 = 奖励数量，1 颗奖励就飞 1 颗，不会
+                    // 因为默认 5~12 颗弹出一堆。上限 12 防止大奖时刷屏。
+                    gems:       Math.max(1, Math.min(12, res.gemsAwarded)),
+                    target:     this.diamondClaimTargetIcon
+                                ? () => this.diamondClaimTargetIcon
+                                : undefined,
+                    counter:    this.diamondClaimCounterLabel ?? undefined,
+                    fromValue:  gemsBefore,
+                    format:     (v: number) => t('topup.balance', { n: v.toString() }),
+                    onComplete: () => {
+                        // 全部到齐后再刷红点，避免特效播放中间闪一下。
+                        this._paintBadgeCollectionRedDot(LevelProgress.maxClearedIdx);
+                    },
+                });
+            } else {
+                // 没有特效或已领取：直接刷红点。
+                this._paintBadgeCollectionRedDot(LevelProgress.maxClearedIdx);
+            }
         }).catch((err) => {
             console.warn('[BadgePanel] claim network failure:', err?.message || err);
             // Server didn't confirm — leave BadgeClaims untouched and
@@ -1880,8 +2028,8 @@ export class MenuController extends Component {
             setTimeout(() => SoundManager.instance?.play('level_scatter'), 600);
             const useEmbed = (rawLvl?.order ?? 0) >= EMBED_MIN_LEVEL_ORDER;
             if (useEmbed && hud && typeof hud.showFateEmbedPicker === 'function' && rawLvl) {
-                hud.showFateEmbedPicker(rawLvl, (embed: EmbedProp | null) => {
-                    this.doEnterLevel(idx, releaseGuard, embed);
+                hud.showFateEmbedPicker(rawLvl, (embeds: EmbedProp[]) => {
+                    this.doEnterLevel(idx, releaseGuard, embeds);
                 });
             } else if (hud && typeof hud.showFatePreview === 'function' && rawLvl) {
                 hud.showFatePreview(rawLvl, () => this.doEnterLevel(idx, releaseGuard), 1000);
@@ -1915,7 +2063,7 @@ export class MenuController extends Component {
      *  Triggers the "assemble from outside" animation on the game side —
      *  cubes fly in and settle into place before the level actually
      *  starts. */
-    private doEnterLevel(idx: number, onGameplayReady?: () => void, embed: EmbedProp | null = null): void {
+    private doEnterLevel(idx: number, onGameplayReady?: () => void, embeds: EmbedProp[] = []): void {
         if (this.levelStage3D) {
             // Hide the Enter / Back overlay buttons — they sit on the
             // main Canvas, not on `levelStage3D.node`, so deactivating
@@ -1927,7 +2075,7 @@ export class MenuController extends Component {
         this.setGameplayVisible(true);
         BgmManager.instance?.play('level');
 
-        this.gameController?.loadLevelByIndex(idx, embed);
+        this.gameController?.loadLevelByIndex(idx, embeds);
         // Assembly shot — every board cube starts off-screen and tweens
         // to its target position. Game logic (piece falling, input) is
         // paused inside GameController until this completes.
@@ -2269,16 +2417,10 @@ export class MenuController extends Component {
         const flatLevels = (this.gameController as any)?.flatLevels as Array<any> | undefined;
         const nextRawLvl = flatLevels && flatLevels[nextIdx];
 
-        const advance = (embed: EmbedProp | null = null) => {
-            // Step 5: fate popup just closed → restart level BGM and hand
-            // off to the same entry point the level-select stage uses,
-            // so the assembly animation + camera swap match exactly with
-            // what the player sees on first entry.
-            //   doEnterLevel → setGameplayVisible(true) → re-shows
-            //   boardRoot3D, then plays the assembly fly-in.
+        const advance = (embeds: EmbedProp[] = []) => {
             BgmManager.instance?.play('level');
             this.currentLevelIdx = nextIdx;
-            this.doEnterLevel(nextIdx, undefined, embed);
+            this.doEnterLevel(nextIdx, undefined, embeds);
         };
 
         const showPreview = () => {
@@ -2296,13 +2438,13 @@ export class MenuController extends Component {
             //   levels ≥ 16 → interactive embed-prop picker (advance on
             //                  START click with the chosen embed threaded
             //                  into `advance`)
-            const floorNum = nextIdx + 1;
+            // 副标题"第 N 层"改为在当前本命方块组内的位置（1..9），
+            // 跟新的组内编号规则一致（组号已经在标题 "本命方块 N" 里显示）。
+            const floorNum = (nextIdx % 9) + 1;
             const useEmbed = (nextRawLvl?.order ?? 0) >= EMBED_MIN_LEVEL_ORDER;
             if (useEmbed && hud && typeof hud.showFateEmbedPicker === 'function' && nextRawLvl) {
-                hud.showFateEmbedPicker(nextRawLvl, (embed: EmbedProp | null) => advance(embed), t('level.floor', { n: floorNum }));
+                hud.showFateEmbedPicker(nextRawLvl, (embeds: EmbedProp[]) => advance(embeds), t('level.floor', { n: floorNum }));
             } else if (hud && typeof hud.showFatePreview === 'function' && nextRawLvl) {
-                // Title reads "第 {n} 层" / "Floor {n}" using the
-                // stage's 1-based order. Level 0 → 1층, level 98 → 99층.
                 hud.showFatePreview(nextRawLvl, () => advance(), holdMs, t('level.floor', { n: floorNum }));
             } else {
                 this.scheduleOnce(() => advance(), holdMs / 1000);
