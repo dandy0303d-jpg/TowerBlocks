@@ -96,3 +96,48 @@ export async function loginWithGoogle(idToken: string): Promise<GoogleLoginResul
     // may not have a valid bearer yet (that's the whole point of login).
     return httpPostJson<GoogleLoginResult>(url, { idToken: idToken }, BACKEND_TIMEOUT_MS, /*sign=*/false);
 }
+
+// =========================================================================
+// Play Games Services v2 variants
+// =========================================================================
+// Play Games v2 returns an auth-code (not an id_token) that MUST be
+// exchanged on the server for an id_token/access_token using the OAuth
+// Web client's secret. The server endpoint handles the Google token
+// exchange and then applies the same linking / recovery logic as the
+// web OAuth path.
+//
+// Expected server contract (tetritower-server-google-signin-v2 or newer):
+//   POST /player/link/google-games
+//     Auth: bearer of the CURRENT guest account
+//     Body: { authCode: string }
+//     Response: { linked: true }                         — bound ✓
+//                { linked: false, alreadyLinked: true,
+//                  linkedUuid?: '<other-uuid>' }         — conflict (same as web)
+//   POST /player/login/google-games
+//     Auth: none
+//     Body: { authCode: string }
+//     Response: { uuid, bearer, expEpochSec }            — recovered uuid
+//                404                                     — no player linked
+//
+// If the server doesn't implement these endpoints yet, the HTTP calls
+// 404 and PlayGamesAutoBind marks tried=true (silent fallback to guest).
+
+export async function linkGoogleGamesToCurrentAccount(authCode: string): Promise<GoogleLinkResult> {
+    const url = `${BACKEND_BASE_URL}/player/link/google-games`;
+    console.log(`[GoogleLink] linking via Play Games authCode (${authCode.length} chars)`);
+    try {
+        return await httpPostJson<GoogleLinkResult>(url, { authCode }, BACKEND_TIMEOUT_MS);
+    } catch (err: any) {
+        const msg = String(err?.message ?? err);
+        if (msg.startsWith('HTTP 409') && /already[\s_-]?linked/i.test(msg)) {
+            return { linked: false, alreadyLinked: true };
+        }
+        throw err;
+    }
+}
+
+export async function loginWithGoogleGames(authCode: string): Promise<GoogleLoginResult> {
+    const url = `${BACKEND_BASE_URL}/player/login/google-games`;
+    console.log(`[GoogleLink] recovery login via Play Games authCode (${authCode.length} chars)`);
+    return httpPostJson<GoogleLoginResult>(url, { authCode }, BACKEND_TIMEOUT_MS, /*sign=*/false);
+}

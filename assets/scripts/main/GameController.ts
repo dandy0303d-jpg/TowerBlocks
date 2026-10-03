@@ -1785,7 +1785,7 @@ export class GameController extends Component {
         if (!this.boardRoot3D) return;
         if (this.blindBeamNode) return;   // idempotent — build once
 
-        const BEAM_WIDTH  = CELL_SIZE * 4;   // 4 倍宽 —— 覆盖前面 4 列
+        const BEAM_WIDTH  = CELL_SIZE;        // 1 格宽 —— 只对准正前方 1 列
         const BEAM_HEIGHT = CELL_SIZE * 60;
         const BEAM_DEPTH  = 0.08;
         const mesh = utils.MeshUtils.createMesh(primitives.box({
@@ -1849,6 +1849,7 @@ export class GameController extends Component {
         if (on && !this.blindBeamNode) this.createBlindBeam();
         if (this.blindBeamNode) this.blindBeamNode.active = on;
     }
+
 
     start(): void {
         if (!this.gameState) return;
@@ -2416,26 +2417,15 @@ export class GameController extends Component {
             // the final tower before the fail popup covers it. Active
             // piece + ghost keep rendering either way.
             //
-            // Light-beam reveal: when the blind-mode beam is on it
-            // uncovers the 4 columns it illuminates (matches the 4×
-            // wider beam mesh). We build a Set<number> of visible cols
-            // once per frame and pass a per-cell predicate to
-            // syncBoardCells so cells IN those cols render normally
-            // while everything else stays hidden. The beam widens
-            // symmetrically around Math.round(centerCol); at width 4
-            // we cover offsets {-1, 0, 1, 2} — matches the beam's
-            // world-X footprint (centered mesh, width 4×CELL_SIZE).
+            // 闭眼模式：默认整个塔完全隐藏；只在"下落的方块儿触塔"
+            // （piece grounded = 落到板上开始计 lock delay）那一瞬到锁定
+            // 之间把整塔显出来，锁定后立刻恢复隐藏。
             const blindMode = this.gameState.mode === 'blind'
                 && !this.blindShowTowerDebug
                 && !this.postFailRevealPending;
             let hideBoardCells: boolean | ((r: number, c: number) => boolean) = false;
             if (blindMode) {
-                const beamCenter = Math.round(centerCol);
-                const revealCols = new Set<number>();
-                for (const off of [-1, 0, 1, 2]) {
-                    revealCols.add(((beamCenter + off) % COLS + COLS) % COLS);
-                }
-                hideBoardCells = (_r, c) => !revealCols.has(c);
+                hideBoardCells = this.gameState.isGrounded ? false : true;
             }
             // 拆迁队 BlockSpin 结束后要求源方块消失 —— 在 shatter commit
             // 之前的空档，让 CubeManager 跳过这些格子。set 里存

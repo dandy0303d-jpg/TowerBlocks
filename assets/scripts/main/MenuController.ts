@@ -1067,6 +1067,16 @@ export class MenuController extends Component {
             // WITHOUT logging a new consent_accepted event (that fires
             // only from the modal path). Idempotent on the native side.
             AnalyticsApi.setEnabled(true);
+            // Play Games Achievements: 已经绑定 google 的玩家，每次冷启动
+            // 把当前徽章数同步一次到 Play Games（incremental setSteps 幂
+            // 等，到目标自动解锁）。覆盖"接入成就功能前已经绑定"的老玩
+            // 家 —— 否则他们从 0 开始累计永远拿不到 Collector 系列。
+            if (PlayerProfile.accountType === 'google') {
+                import('../channels/google/PlayGamesAchievements').then((m) => {
+                    const earnedCount = this._earnedBadgeCount(LevelProgress.maxClearedIdx);
+                    m.PlayGamesAchievements.syncBadgeCount(earnedCount);
+                }).catch(() => { /* 非 google 渠道没这个模块，忽略 */ });
+            }
             return;
         }
         const modal = this.consentModalNode.getComponent(ConsentModal);
@@ -1410,6 +1420,17 @@ export class MenuController extends Component {
      *    1.35 s  — destroy temp sprite + refresh the case (the new
      *             badge appears as a real child of the case root). */
     private _playBadgeEarnedFx(earnedGroupIdx: number): void {
+        // Play Games 成就上报：第 1 枚 → unlock "First Steps"，之后每一枚
+        // 都让四个 incremental collector 成就 +1（SDK 自己到目标解锁）。
+        // earnedGroupIdx 是 0-based，+1 得到"目前第几枚"。
+        //
+        // 用 dynamic import 隔离——其它渠道（app-store/onestore/beta）
+        // 没有 PlayGamesAchievements 这个文件，静态 import 会在那些分支
+        // 编译失败。channel/google-play 独有的模块必须这样引。
+        import('../channels/google/PlayGamesAchievements').then((m) => {
+            m.PlayGamesAchievements.onBadgeEarned(earnedGroupIdx + 1);
+        }).catch(() => { /* 非 google 渠道没这个模块，忽略 */ });
+
         const icon = this.authoredBadgeIcons[earnedGroupIdx];
         const collectionBtn = this.authoredBadgeCollectionButton;
         const caseRoot = this.authoredBadgesRoot;

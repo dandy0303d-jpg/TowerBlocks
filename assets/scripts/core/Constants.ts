@@ -317,7 +317,7 @@ export const LEVEL_MULTI_CLEAR_THRESHOLD = 2; // clearing ≥2 rows at once → 
 // gets a 2-of-N magic item picker. The "1 free refresh" / "watch ad for
 // another refresh" gating lives in the UI layer; the game state just
 // exposes `pickEnergyReward(key)` and `refreshEnergyPicker()`.
-export const ENERGY_FULL_THRESHOLD = 5;
+export const ENERGY_FULL_THRESHOLD = 4;
 export const ENERGY_PICKER_CHOICE_COUNT = 2;
 /** Pool the picker draws from. Same 5 magic items as the chest reward pool. */
 export const ENERGY_PICKER_POOL: MagicItemKey[] = ITEM_KEYS;
