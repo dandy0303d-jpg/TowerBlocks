@@ -6108,7 +6108,14 @@ export class HudController extends Component {
         // Hide during tutorial — new players are learning the base
         // mechanics; showing quick-use items on top of that adds
         // buttons the tutorial doesn't mention and can trap them.
-        const inGame = !!(gs && gs.running && !gs.gameOver && !gs.tutorialActive);
+        //
+        // Also hide for level mode Fate Piece 1 (levels 1-1 .. 1-9,
+        // idx 0..8) — on-ramp tutorial-feel levels where we don't want
+        // the player distracted by consumables. Endless (idx = -1) and
+        // level ≥ 2-1 (idx ≥ 9) show them normally.
+        const activeLevelIdx = this.gameController?.activeLevelIdx ?? -1;
+        const inFatePiece1 = activeLevelIdx >= 0 && activeLevelIdx < 9;
+        const inGame = !!(gs && gs.running && !gs.gameOver && !gs.tutorialActive) && !inFatePiece1;
         const cooling = this._backpackCooldownActive();
         if (btn) {
             btn.node.active = inGame;
