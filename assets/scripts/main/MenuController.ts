@@ -386,8 +386,8 @@ export class MenuController extends Component {
     // ---- Feature-unlock FX (meta-progression celebration) ----
     // Drag a scene node that has FeatureUnlockEffect attached. The script
     // plays it when the player crosses a progression gate on this very
-    // menu refresh (level-10 clear → Endless; 50-layer run → Blind +
-    // Leaderboard pair). Empty slot = no FX, buttons still unlock
+    // menu refresh (level-10 clear → Endless; 30-layer run → Leaderboard;
+    // 50-layer run → Blind). Empty slot = no FX, buttons still unlock
     // instantly. See _refreshModeButtonLocks for the transition detection.
     @property({ type: FeatureUnlockEffect, tooltip: '功能解锁特效（主菜单在模式按钮解锁时播放）—— 全屏空节点挂 FeatureUnlockEffect 后拖进来，不拖就不播，可选' })
     featureUnlockFx: FeatureUnlockEffect | null = null;

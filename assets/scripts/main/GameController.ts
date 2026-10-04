@@ -400,17 +400,21 @@ export class GameController extends Component {
     public get activeLevelIdx(): number { return this._activeLevelIdx; }
 
     /** Every N endless layers, auto-submit the current tower height to
-     *  the leaderboard. See onEndlessMilestone. Set to 50 so a player
-     *  crossing 50 / 100 / 150 / ... floors always has a recorded
-     *  best even if the app dies before natural game-over. */
-    private static readonly ENDLESS_AUTO_SUBMIT_INTERVAL = 50;
+     *  the leaderboard. See onEndlessMilestone. Set to 30 so a player
+     *  crossing 30 / 60 / 90 / ... floors always has a recorded best
+     *  even if the app dies before natural game-over. Also matches the
+     *  Leaderboard-unlock threshold (MenuController
+     *  .LEADERBOARD_UNLOCK_ENDLESS_LAYERS = 30), so the very first run
+     *  that unlocks the leaderboard also lands a recorded best to
+     *  appear on it. */
+    private static readonly ENDLESS_AUTO_SUBMIT_INTERVAL = 30;
 
     /** Highest `endlessProgress.cumulative` value already auto-submitted
      *  in THIS run. Reset via resetEndlessAutoSubmitTracker() at the
      *  start of every fresh endless attempt so the first crossing of
-     *  50 fires. Comparing against this instead of `cumulative % 50`
-     *  survives multi-layer partial-shatter jumps that could skip past
-     *  the boundary in a single lock. */
+     *  ENDLESS_AUTO_SUBMIT_INTERVAL fires. Comparing against this
+     *  instead of `cumulative % N` survives multi-layer partial-shatter
+     *  jumps that could skip past the boundary in a single lock. */
     private _lastEndlessAutoSubmit = 0;
     /** Pending game-over popup. `null` once consumed; otherwise holds the
      *  reason code passed by GameState. Same delay logic as level-win. */
@@ -5528,8 +5532,9 @@ export class GameController extends Component {
         AnalyticsApi.logCustom('mode_start', { mode: 'blind' });
         // Blind mode shares the endless auto-submit tracker (same
         // `submitEndlessHeightIfApplicable` code path via
-        // onEndlessMilestone) — reset per run so the first 50-layer
-        // crossing of a fresh blind attempt fires.
+        // onEndlessMilestone) — reset per run so the first
+        // ENDLESS_AUTO_SUBMIT_INTERVAL-layer crossing of a fresh blind
+        // attempt fires.
         this._lastEndlessAutoSubmit = 0;
         this.gameState.newBlindGame();
         this.boardYOffsetInitialised = false;
