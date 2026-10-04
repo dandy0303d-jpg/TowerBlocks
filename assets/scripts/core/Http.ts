@@ -71,6 +71,64 @@ function latchBanned(reason: string): void {
     }
 }
 
+// ============================================================
+//  Session-expired gate — server 401 handling (bearer invalid)
+// ============================================================
+// Server rotates bearer signing keys periodically (security hygiene);
+// also, after a /player/delete the row is gone and any lingering
+// bearer is useless. In both cases every authed request returns 401.
+// Without recovery the game is stuck: profile fetches fail, scores
+// never submit, and the player sees empty / stale screens.
+//
+// Latch-once semantics (parallel to the ban gate above):
+//   1. The FIRST 401 on an authed request (bearerToken was set, status
+//      === 401, body is NOT the ban payload) latches the "session
+//      expired" state and fires the registered handler.
+//   2. The handler (MenuController) is expected to attempt recovery
+//      (re-register for anonymous accounts, prompt re-link for bound
+//      accounts) and call `clearSessionExpiredState()` when a fresh
+//      bearer is live.
+//   3. Subsequent 401s while the state is latched do NOT re-fire the
+//      handler (one recovery attempt per session) — otherwise a
+//      request storm could trigger multiple parallel re-registrations.
+//
+// We DON'T short-circuit new requests here (unlike the ban gate):
+//   - Recovery may itself need to make /player/register or
+//     /player/login/* calls, which must succeed through this same
+//     module.
+//   - Non-authed public GETs are fine to attempt regardless of 401
+//     latch state.
+export interface SessionExpiredState { expired: true; detectedAt: number; }
+let _sessionExpiredState: SessionExpiredState | null = null;
+let _onSessionExpiredHandler: ((s: SessionExpiredState) => void) | null = null;
+
+/** Poll from anywhere (boot flow, UI). Null = no 401 seen this session. */
+export function getSessionExpiredState(): SessionExpiredState | null {
+    return _sessionExpiredState;
+}
+
+/** Register the singleton handler. Fired ONCE on first detection.
+ *  If a 401 was already detected before registration, fires immediately. */
+export function setSessionExpiredHandler(fn: ((s: SessionExpiredState) => void) | null): void {
+    _onSessionExpiredHandler = fn;
+    if (fn && _sessionExpiredState) fn(_sessionExpiredState);
+}
+
+/** Called by the recovery flow once a fresh bearer has been set via
+ *  setBearerToken() — un-latches so the next 401 (future key rotation /
+ *  account deletion) can fire the handler again. */
+export function clearSessionExpiredState(): void { _sessionExpiredState = null; }
+
+function latchSessionExpired(): void {
+    if (_sessionExpiredState) return;   // already latched — one heal attempt per session
+    _sessionExpiredState = { expired: true, detectedAt: Date.now() };
+    console.warn('[Http] SESSION EXPIRED LATCHED — bearer rejected with 401, recovery handler will fire');
+    if (_onSessionExpiredHandler) {
+        try { _onSessionExpiredHandler(_sessionExpiredState); }
+        catch (e) { console.warn('[Http] session-expired handler threw:', e); }
+    }
+}
+
 // ---- Client HMAC key ----
 // KEEP IN SYNC with the server's `CLIENT_SECRET` env var. This is
 // intentionally embedded in the client — rotating it means shipping
@@ -298,6 +356,15 @@ function xhrJson<T>(
                         latchBanned(typeof obj.reason === 'string' ? obj.reason : '(no reason)');
                     }
                 } catch { /* not JSON — ignore */ }
+            }
+            // Session-expired detection — 401 on an authed request
+            // means the server rejected our bearer (signing-key rotation,
+            // deleted account, expired-and-not-refreshed, …). Latch so
+            // the recovery handler can kick off a fresh register / login.
+            // Guard with `hasAuth` so public GETs that happen to 401 for
+            // other reasons don't trigger the self-heal.
+            if (status === 401 && hasAuth && !_bannedState) {
+                latchSessionExpired();
             }
             reject(new Error(`HTTP ${status}: ${text}`));
         };

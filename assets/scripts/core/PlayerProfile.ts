@@ -25,7 +25,7 @@ import { sys } from 'cc';
 import { registerPlayer, updatePlayerProfile, fetchPlayerProfile, refreshPlayerToken } from './LeaderboardApi';
 import { AnalyticsApi } from './AnalyticsApi';
 import type { DailyFreeState } from './LeaderboardApi';
-import { setBearerToken } from './Http';
+import { setBearerToken, clearSessionExpiredState } from './Http';
 import { GameCenter } from '../channels/apple/GameCenter';
 import { loginWithGameCenter, linkGameCenterAccount } from '../channels/apple/GameCenterAuthApi';
 import { getLang, subscribe as subscribeLang } from './i18n/I18n';
@@ -335,7 +335,88 @@ class Profile {
 
         setBearerToken(bearer);
 
+        // A successful swap re-arms the Http session-expired latch —
+        // the new bearer is live, so a future 401 (next key rotation /
+        // server-side delete) should fire the handler again.
+        clearSessionExpiredState();
         console.log(`[PlayerProfile] swapped to recovered ${accountType} account: ${uuid}`);
+    }
+
+    /** Attempt to recover from a server 401 (bearer rejected). Called by
+     *  the Http session-expired handler. Returns:
+     *    - `'self-healed'`     — we re-registered as a fresh anonymous
+     *                            guest and have a working bearer again.
+     *                            Old uuid is abandoned (guest accounts
+     *                            can't be recovered without a bound
+     *                            provider — that's the inherent trade-
+     *                            off of staying unbound).
+     *    - `'needs-rebind'`    — this player is bound to Apple / Google /
+     *                            etc.; the id_token flows we'd need to
+     *                            call /player/login/* can't run from
+     *                            Http.ts (they need UI). Caller surfaces
+     *                            a "please re-link your account in
+     *                            Settings" prompt and lets the player
+     *                            drive the recovery via the existing
+     *                            Settings bind buttons (which hit the
+     *                            same /player/login/* endpoints on 409
+     *                            and persist via swapToRecoveredAccount
+     *                            above).
+     *    - `'failed'`          — the self-register call failed
+     *                            (offline / server down); nothing to
+     *                            do but let the player retry later.
+     *
+     *  Guard: once a bound-player prompt has fired, the Http latch
+     *  stays set so repeated 401s don't spam the UI. Clearing happens
+     *  via swapToRecoveredAccount (set above) or a fresh register. */
+    async attemptSessionHeal(): Promise<'self-healed' | 'needs-rebind' | 'failed'> {
+        const providers = this.linkedProviders;
+        const isBound = providers.has('apple') || providers.has('google') || providers.has('email');
+        if (isBound) {
+            // Can't silently restore a bound account from Http.ts — the
+            // id_token / authCode flows live in native bridges and need
+            // UI (Chrome Custom Tabs / WebView / SIWA sheet / Play Games
+            // overlay). Leave the Http latch set; MenuController's
+            // handler will show a toast + nudge the player to Settings.
+            console.warn('[PlayerProfile] session heal: bound account, needs manual re-link');
+            return 'needs-rebind';
+        }
+        // Anonymous guest — the old uuid is lost (no provider to anchor
+        // it back). Mint a fresh one via /player/register. Local progress
+        // (level clears, endless best, wallet) is DEVICE-scoped under the
+        // old uuid; after a re-register the server shows a fresh profile
+        // and the player effectively loses everything. This is the
+        // documented downside of staying unbound and is why the
+        // "needs-rebind" case above is important for bound players.
+        console.warn('[PlayerProfile] session heal: re-registering as fresh anonymous');
+        try {
+            const { uuid, nickname, avatarIdx, token, expEpochSec } = await registerPlayer(getLang());
+            sys.localStorage.setItem(UUID_KEY, uuid);
+            sys.localStorage.setItem(NAME_KEY, nickname);
+            sys.localStorage.setItem(ACCOUNT_KEY, 'anonymous');
+            sys.localStorage.setItem(TOKEN_KEY, token);
+            sys.localStorage.setItem(TOKEN_EXP_KEY, String(expEpochSec));
+            if (typeof avatarIdx === 'number' && Number.isFinite(avatarIdx)) {
+                sys.localStorage.setItem(AVATAR_KEY, String(avatarIdx));
+                this._avatarIdx = avatarIdx;
+            }
+            setBearerToken(token);
+            this._uuid = uuid;
+            this._name = nickname;
+            this._accountType = 'anonymous';
+            // Re-arm the Http latch so a future 401 fires the handler
+            // again (next key rotation, next delete, etc.).
+            clearSessionExpiredState();
+            AnalyticsApi.setUserId(uuid);
+            AnalyticsApi.logCustom('session_heal', { outcome: 'reregister' });
+            console.log('[PlayerProfile] session heal: re-registered as', uuid);
+            return 'self-healed';
+        } catch (err) {
+            console.warn('[PlayerProfile] session heal: register failed', err);
+            AnalyticsApi.logError(err instanceof Error ? err : String(err), {
+                where: 'PlayerProfile.attemptSessionHeal',
+            });
+            return 'failed';
+        }
     }
 
     /** Persist a new display name. Server-side validates for

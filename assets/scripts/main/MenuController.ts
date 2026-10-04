@@ -43,7 +43,7 @@ import { fetchNewbie14Status } from '../core/EventNewbie14Api';
 import { BackKeyManager } from './BackKeyManager';
 import { PlayerProfile } from '../core/PlayerProfile';
 import type { EmbedProp } from '../core/Types';
-import { setBannedHandler, getBannedState, setBearerToken, type BannedState } from '../core/Http';
+import { setBannedHandler, getBannedState, setBearerToken, setSessionExpiredHandler, type BannedState, type SessionExpiredState } from '../core/Http';
 import { fetchWallet, subscribeBalance, emitBalance } from '../core/WalletApi';
 import { BadgeClaims } from '../core/BadgeClaims';
 import { claimBadgeReward, fetchBadgeClaims } from '../core/BadgeClaimApi';
@@ -948,6 +948,13 @@ export class MenuController extends Component {
         // and the modal appears without waiting for the player to
         // navigate somewhere.
         setBannedHandler((s) => this.showBannedModal(s));
+        // Register the session-expired handler BEFORE any Http calls fire
+        // for the same reason as the ban handler — a cold boot that hits
+        // a stale bearer (server-side key rotation, deleted account) will
+        // 401 on the first authed request, and we want the recovery flow
+        // to start immediately rather than waiting for the player to
+        // navigate somewhere.
+        setSessionExpiredHandler((s) => { void this.handleSessionExpired(s); });
         void (async () => {
             // Step 1: register / recover the player identity
             await PlayerProfile.ensureRegistered().catch((e) => {
@@ -4804,6 +4811,73 @@ export class MenuController extends Component {
             try { game.end(); } catch { /* ignore */ }
             await new Promise<void>((r) => setTimeout(r, 300));
         }
+    }
+
+    /** Session-expired handler — registered on Http via
+     *  setSessionExpiredHandler from beginBootAfterLoading. Fires on the
+     *  FIRST authed 401 of the session (server-side key rotation /
+     *  account deletion / stale bearer). Flow:
+     *
+     *    - Anonymous guest → delegate to PlayerProfile.attemptSessionHeal
+     *      which calls /player/register, mints a fresh uuid+bearer, and
+     *      silently continues. Player loses their device-scoped progress
+     *      (that's the guest-account trade-off they implicitly accepted
+     *      by not binding).
+     *    - Bound account (apple/google/email) → show a toast directing
+     *      the player to Settings to re-link. We can't call
+     *      /player/login/* silently from here (the id_token / authCode
+     *      flows need UI the Settings bind buttons already provide).
+     *    - Register call fails → silent (we've already warned in console;
+     *      the player will see empty / stale screens and try again).
+     *
+     *  Guarded against re-fire by the Http module (one handler fire per
+     *  session until clearSessionExpiredState — which PlayerProfile calls
+     *  after a successful re-register / swapToRecoveredAccount).
+     */
+    private _sessionExpiredToastShown = false;
+    private async handleSessionExpired(_state: SessionExpiredState): Promise<void> {
+        console.warn('[MenuController] session expired — attempting self-heal');
+        const outcome = await PlayerProfile.attemptSessionHeal();
+        if (outcome === 'self-healed') {
+            // Fresh anonymous session minted; nothing to show the player.
+            // The in-flight request that triggered this will have
+            // rejected with 401 by now; whichever UI depended on it will
+            // retry (fetchWallet / fetchProfile are re-fired on panel
+            // open) and succeed against the new bearer.
+            log('[MenuController] session self-healed via re-register');
+            return;
+        }
+        if (outcome === 'needs-rebind') {
+            // Bound account — the player must re-link via Settings. One
+            // toast per session is enough; latch locally so a request
+            // storm (ban check retries, panel refreshes) doesn't spam.
+            if (this._sessionExpiredToastShown) return;
+            this._sessionExpiredToastShown = true;
+            // Prefer the generic toast surface so this doesn't require
+            // a specific panel to be open. If the settings panel is
+            // open use its toast; otherwise fall back to the main toast.
+            const msg = t('session.expired.rebind');
+            try {
+                if (this.authoredSettingsPanel?.active) {
+                    // Settings is already open — reuse its in-panel toast
+                    // which lives in the right place visually.
+                    this.showSettingsToast(msg, 'error');
+                } else {
+                    // Any other screen → use the global ToastManager if
+                    // the scene wired one (same surface as the revive /
+                    // lock-tip toasts above).
+                    ToastManager.instance?.show(msg);
+                }
+            } catch (e) {
+                console.warn('[MenuController] session-expired toast failed:', e);
+            }
+            return;
+        }
+        // outcome === 'failed' — register network error. Nothing to do
+        // beyond the console warn already emitted. On the next request
+        // the player's /player/register will still succeed if the
+        // network comes back; the Http latch stays set so the handler
+        // can fire exactly one more time next session.
     }
 
     /** Lazily resolve the scene's LoadingController. Cached on first

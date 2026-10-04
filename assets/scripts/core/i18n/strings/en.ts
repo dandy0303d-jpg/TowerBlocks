@@ -280,6 +280,9 @@ export const EN: Record<string, string> = {
     'banned.desc':       'This account has been banned. Reason: {reason}\n\nContact support if you believe this is a mistake.',
     'banned.ok':         'OK',
 
+    // ---------- Session expired (bearer rejected / server key rotation) ----------
+    'session.expired.rebind': 'Your session has expired. Please re-link your account in Settings.',
+
     // ---------- Account deletion (App Store 5.1.1(v) required) ----------
     'settings.deleteAccount':         'Delete Account',
     'settings.deleteAccount.title':   'Delete account?',

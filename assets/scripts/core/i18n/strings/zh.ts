@@ -287,6 +287,9 @@ export const ZH: Record<string, string> = {
     'banned.desc':       '此账号已被封禁。原因：{reason}\n\n如有疑问请联系客服。',
     'banned.ok':         '我知道了',
 
+    // ---------- 会话过期 (bearer 失效 / 服务器轮换签名密钥) ----------
+    'session.expired.rebind': '登录已过期，请在"设置"中重新绑定账号',
+
     // ---------- 删除账号 (App Store 5.1.1(v) 硬性要求) ----------
     'settings.deleteAccount':         '删除账号',
     'settings.deleteAccount.title':   '删除账号？',
