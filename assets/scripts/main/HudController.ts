@@ -4016,6 +4016,18 @@ export class HudController extends Component {
         // Belt: hide the embed picker root if a prior Lvl 16+ open left
         // it visible (fresh interactive fate modal should never show it).
         if (this.authoredEmbedPickerRoot) this.authoredEmbedPickerRoot.active = false;
+        // Belt-and-suspenders reset of state owned by showFateEmbedPicker
+        // / showFatePreview — those paths hide `fateButtonsGroup` and
+        // raise `_fateEmbedModeActive`, and hideFateModal normally
+        // restores them. When the player aborts a Lvl 16+ run via scene
+        // reload / back / mode-select bypassing hideFateModal, the
+        // standard Start-button row stays hidden; next endless entry
+        // calls showFateModal and the modal opens with NO Start button,
+        // leaving the player stuck. Force the correct state here.
+        if (this.fateButtonsGroup) this.fateButtonsGroup.active = true;
+        this._fateEmbedModeActive = false;
+        this._embedResolve = null;
+        this._embedPickedSet.clear();
         this.refreshFateTitle();
         this.refreshFateSubtitle();
         this.drawFateShape();
