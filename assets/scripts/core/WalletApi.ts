@@ -160,17 +160,53 @@ export async function topupWallet(
     platformReceipt?: string,
 ): Promise<TopupResult> {
     const url = `${BACKEND_BASE_URL}/player/wallet/topup`;
-    const res = await httpPostJson<TopupResult>(url, {
-        uuid: PlayerProfile.uuid,
-        sku,
-        paymentKind,
-        transactionId,
-        platformReceipt,
-    }, BACKEND_TIMEOUT_MS);
-    // Broadcast the post-topup balance so main-page / settings / HUD
-    // labels repaint without waiting for the next fetchWallet.
-    emitBalance(res.balance);
-    return res;
+    try {
+        const res = await httpPostJson<TopupResult>(url, {
+            uuid: PlayerProfile.uuid,
+            sku,
+            paymentKind,
+            transactionId,
+            platformReceipt,
+        }, BACKEND_TIMEOUT_MS);
+        // Broadcast the post-topup balance so main-page / settings / HUD
+        // labels repaint without waiting for the next fetchWallet.
+        emitBalance(res.balance);
+        return res;
+    } catch (err: any) {
+        // Server returns 409 {error:'receipt already redeemed'} when THIS
+        // receipt (Apple transactionId / Google orderId / ONE Store
+        // purchaseId) was already applied to a DIFFERENT account. Per
+        // INBOX_CLIENT.md 2026-10-04 message from claude-5d: the caller
+        // must still consume / acknowledge / finishTransaction (don't
+        // leave the receipt stuck in the Play Store queue retrying
+        // forever) and surface a specific "redeemed on another account"
+        // message. Throw a typed subclass so the caller can distinguish
+        // it from generic HTTP 409 / network / credit failures.
+        const msg = String(err?.message ?? err);
+        if (msg.startsWith('HTTP 409') && /receipt already redeemed/i.test(msg)) {
+            throw new ReceiptAlreadyRedeemedError(sku, transactionId);
+        }
+        throw err;
+    }
+}
+
+/** Thrown by `topupWallet` when the server rejects a receipt with 409
+ *  'receipt already redeemed' — the receipt was previously applied to a
+ *  DIFFERENT account. Callers should still consume/acknowledge the
+ *  platform receipt (otherwise Play Store will keep redelivering it to
+ *  the client on every launch) and show the player an informative
+ *  message rather than a generic 'topup failed'. */
+export class ReceiptAlreadyRedeemedError extends Error {
+    readonly sku: string;
+    readonly transactionId: string | undefined;
+    constructor(sku: string, transactionId: string | undefined) {
+        super(`receipt already redeemed (sku=${sku}, txn=${transactionId ?? '?'})`);
+        this.name = 'ReceiptAlreadyRedeemedError';
+        this.sku = sku;
+        this.transactionId = transactionId;
+        // Keep instanceof working across TS → native V8 transpilation.
+        Object.setPrototypeOf(this, ReceiptAlreadyRedeemedError.prototype);
+    }
 }
 
 /**

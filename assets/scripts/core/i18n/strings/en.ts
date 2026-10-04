@@ -179,6 +179,7 @@ export const EN: Record<string, string> = {
     'topup.failBody':       '{reason}',
     'topup.processing':     'Processing...',
     'topup.mockNotice':     '(Test mode — no real charge)',
+    'topup.receiptAlreadyRedeemed': 'This purchase has been redeemed on another account.',
 
     // ---------- Leaderboard ----------
     'leaderboard.title':       'Leaderboard',

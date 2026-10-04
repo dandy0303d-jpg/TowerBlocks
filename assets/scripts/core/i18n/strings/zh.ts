@@ -182,6 +182,7 @@ export const ZH: Record<string, string> = {
     'topup.failBody':       '{reason}',
     'topup.processing':     '正在处理...',
     'topup.mockNotice':     '（当前为测试模式，无真实扣款）',
+    'topup.receiptAlreadyRedeemed': '此购买已在其他账号使用，无法重复到账',
 
     // ---------- 排行榜 ----------
     'leaderboard.title':       '排行榜',

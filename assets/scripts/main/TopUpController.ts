@@ -56,6 +56,7 @@ import {
     formatPrice,
     overrideSkuDisplayPrice,
     WalletSku,
+    ReceiptAlreadyRedeemedError,
 } from '../core/WalletApi';
 import { Providers } from '../core/channels/Providers';
 import { AnalyticsApi } from '../core/AnalyticsApi';
@@ -444,6 +445,33 @@ export class TopUpController extends Component {
                         .catch((consumeErr) => {
                             console.warn(`[TopUp] consume failed (gems already credited): ${consumeErr.message}`);
                         });
+                }).catch((topupErr) => {
+                    // Server rejected the receipt. Only the "already
+                    // redeemed on another account" case gets special
+                    // handling: we still MUST consume the receipt (per
+                    // claude-5d's note — otherwise Play Store keeps
+                    // redelivering it on every launch, and the player
+                    // sees "pending purchase" forever) and show a
+                    // specific toast so the player understands why no
+                    // gems appeared. Any other topup error re-throws to
+                    // the outer catch which shows the generic failure
+                    // toast and does NOT consume (receipt stays live for
+                    // a retry on the next launch).
+                    if (topupErr instanceof ReceiptAlreadyRedeemedError) {
+                        console.warn(`[TopUp] receipt already redeemed — consuming anyway to clear queue: sku=${sku.id} txn=${topupErr.transactionId}`);
+                        this.showToast(t('topup.receiptAlreadyRedeemed'), 'error');
+                        AnalyticsApi.logCustom('purchase_already_redeemed', {
+                            sku:            sku.id,
+                            transaction_id: topupErr.transactionId ?? '',
+                        });
+                        Providers.purchase
+                            .consume(receipt.platformReceipt)
+                            .catch((consumeErr) => {
+                                console.warn(`[TopUp] consume after redeemed-elsewhere failed: ${consumeErr.message}`);
+                            });
+                        return;   // handled — don't re-throw to outer catch
+                    }
+                    throw topupErr;
                 });
             })
             .catch((err) => {
