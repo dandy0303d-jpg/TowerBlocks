@@ -50,6 +50,8 @@ import { PlayerProfile } from '../core/PlayerProfile';
 import { fetchBackpack, consumeBackpackItem, getCachedBackpack } from '../core/BackpackApi';
 import { IS_DEV_BUILD } from '../core/BuildConfig';
 import { MagicHourglassEffect } from '../../effects/magic-hourglass/MagicHourglassEffect';
+import { MagicGatlingEffect } from '../../effects/magic-gatling/MagicGatlingEffect';
+import { MagicTransformEffect } from '../../effects/magic-transform/MagicTransformEffect';
 
 /** 5-row × 3-col pixel-font bitmap patterns for digits 0-9. Each row is
  *  a 3-char bitmask ('1' = lit pixel, '0' = empty). Rows are top → bottom.
@@ -491,6 +493,12 @@ export class HudController extends Component {
 
     @property({ type: MagicHourglassEffect, tooltip: '魔法沙漏特效（选择沙漏道具时播放：沙漏从道具卡飞到中央 → 翻转流沙 → "+Ns" 飞到右上角倒计时）。全屏空节点挂上 MagicHourglassEffect 后拖进来，留空则回退到现有的像素数字飞行动画。' })
     magicHourglassFx: MagicHourglassEffect | null = null;
+
+    @property({ type: MagicGatlingEffect, tooltip: '魔法加特林特效（选择加特林道具时播放：枪管圈旋转 → 「×N」计数 → 子弹飞到弹药区域）。全屏空节点挂上 MagicGatlingEffect 后拖进来，留空则回退到现有的像素数字飞行动画。' })
+    magicGatlingFx: MagicGatlingEffect | null = null;
+
+    @property({ type: MagicTransformEffect, tooltip: '魔法变形特效（选择变形道具 → 选目标形状时播放：魔法阵 + 彩虹漩涡 → 形状轮换定格 → 飞到 NEXT 预览区）。全屏空节点挂上 MagicTransformEffect 后拖进来，留空则不播特效直接应用形状。' })
+    magicTransformFx: MagicTransformEffect | null = null;
 
     @property({ type: Node, tooltip: 'NEXT 预览框容器（脚本内在里面动态画形状）' })
     authoredNextPreviewBox: Node | null = null;
@@ -2905,6 +2913,10 @@ export class HudController extends Component {
                 this._playHourglassFx(key, idx);
                 return;
             }
+            if (key.startsWith('gatling') && this.magicGatlingFx) {
+                this._playGatlingFx(key, idx);
+                return;
+            }
             this._flyNumberThenPick(key);
             return;
         }
@@ -2987,6 +2999,43 @@ export class HudController extends Component {
             onArrive:    () => {
                 const ok = g.pickEnergyReward(key);
                 console.log(`[Picker] magicHourglassFx landed, fired '${key}' -> ${ok}`);
+                this.syncPickupCountdowns(g);
+            },
+        });
+    }
+
+    /** Gatling path via the authored MagicGatlingEffect. Same shape as
+     *  `_playHourglassFx` — intercept the picker tap, fly the FX from
+     *  the tapped card to the gatling countdown root, then fire
+     *  pickEnergyReward in onArrive so the real pixel countdown pops
+     *  the same frame the FX's bullet-string lands. */
+    private _playGatlingFx(key: MagicItemKey, slotIdx: number): void {
+        const g = this.gameController?.gameState;
+        const fx = this.magicGatlingFx;
+        if (!g || !fx) {
+            this._flyNumberThenPick(key);
+            return;
+        }
+        const count = this._initialCountFor(key);
+        if (count <= 0) {
+            this._flyNumberThenPick(key);
+            return;
+        }
+        const fromNode: Node | null = this.authoredPickerSlotButtons?.[slotIdx]?.node ?? null;
+        const targetWrap = this.gatlingCountRoot;
+        this.hidePicker();
+        fx.node.active = true;
+        void fx.play({
+            from:         fromNode,
+            target:       () => targetWrap,
+            count,
+            // Our countdown widget uses Graphics-painted pixel digits,
+            // not a Label — pass null so the FX skips rolling-digits.
+            counterLabel: null,
+            fromCount:    0,
+            onArrive:     () => {
+                const ok = g.pickEnergyReward(key);
+                console.log(`[Picker] magicGatlingFx landed, fired '${key}' -> ${ok}`);
                 this.syncPickupCountdowns(g);
             },
         });
@@ -5357,13 +5406,50 @@ export class HudController extends Component {
 
     private onShapeshifterPick(type: PieceType): void {
         const apply = this.shapeshifterApply;
+        // Snapshot the tapped card BEFORE hideShapeshifterPicker() tears
+        // the overlay down — MagicTransformEffect needs its world position
+        // as the FX fly-out origin.
+        const slotIdx = this.SHAPESHIFTER_ORDER.indexOf(type);
+        const fromNode: Node | null = slotIdx >= 0
+            ? (this.authoredShapeshifterSlotButtons?.[slotIdx]?.node ?? null)
+            : null;
         this.hideShapeshifterPicker();
         if (!apply) return;
+        // Prefer the authored MagicTransform FX when wired — magic-array
+        // + rainbow swirl + shape shuffle + fly to NEXT. Fallback is
+        // the existing pop-and-fly pixel animation.
+        if (this.magicTransformFx) {
+            this._playTransformFx(type, fromNode, apply);
+            return;
+        }
         // Cinematic: chosen shape pops at screen center 3×, holds, then
         // flies + shrinks to the piece-spawn Y (top of the play field).
         // The actual transform (apply(type)) fires when the shape lands,
         // so the player sees the shape "arrive" before the piece changes.
         this._flyShapeThenApply(type, apply);
+    }
+
+    /** MagicTransformEffect path for the shapeshifter picker. target is
+     *  the NEXT preview box so the chosen shape visually lands IN the
+     *  "upcoming piece" slot — same reading as the legacy fly: "this
+     *  is now your next piece". onArrive fires apply() so the real
+     *  transform happens the frame the shape settles. */
+    private _playTransformFx(type: PieceType, fromNode: Node | null, apply: (t: PieceType) => void): void {
+        const fx = this.magicTransformFx;
+        if (!fx) {
+            this._flyShapeThenApply(type, apply);
+            return;
+        }
+        const targetNode = this.authoredNextPreviewBox ?? null;
+        fx.node.active = true;
+        void fx.play({
+            shape:    type,
+            from:     fromNode,
+            target:   () => targetNode,
+            onArrive: () => {
+                apply(type);
+            },
+        });
     }
 
     /** Fly the chosen tetromino shape from screen center to the piece-
