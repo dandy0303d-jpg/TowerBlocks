@@ -4557,7 +4557,17 @@ export class MenuController extends Component {
             return;
         }
         // ---- 2) Try to bind to CURRENT uuid ----
-        let link;
+        //
+        // Server returns:
+        //   200 { linked: true, alreadyLinked: false } — happy path
+        //   200 { linked: true, alreadyLinked: true  } — idempotent replay (same uuid+apple)
+        //   409 "apple already linked"                 — this Apple owns ANOTHER uuid → recovery
+        //   409 "uuid already linked"                  — this uuid is bound to ANOTHER Apple → block
+        // httpPostJson throws Error('HTTP 409: {...}') on non-2xx, so the
+        // "already linked" conflict lands in catch — route it to recovery
+        // instead of showing a generic error toast.
+        let link: { linked: boolean; alreadyLinked: boolean } | null = null;
+        let appleAlreadyLinkedConflict = false;
         try {
             link = await linkAppleAccount(
                 cred.identityToken,
@@ -4565,11 +4575,20 @@ export class MenuController extends Component {
                 cred.authorizationCode,
             );
         } catch (err: any) {
-            console.warn('[Settings] /link/apple FAILED:', err?.message ?? err);
-            this.showSettingsToast(t('settings.apple.error'), 'error');
-            return;
+            const msg = String(err?.message ?? err);
+            if (/apple already linked/i.test(msg)) {
+                appleAlreadyLinkedConflict = true;
+            } else if (/uuid already linked/i.test(msg)) {
+                console.warn('[Settings] /link/apple — current uuid already bound to another Apple account:', msg);
+                this.showSettingsToast(t('settings.apple.error'), 'error');
+                return;
+            } else {
+                console.warn('[Settings] /link/apple FAILED:', msg);
+                this.showSettingsToast(t('settings.apple.error'), 'error');
+                return;
+            }
         }
-        if (link.linked) {
+        if (link && link.linked && !link.alreadyLinked) {
             // Happy path — flip profile to apple so the button sprite
             // reads "bound" on next repaint.
             PlayerProfile.setAccountType('apple');
@@ -4578,8 +4597,17 @@ export class MenuController extends Component {
             log('[Settings] Apple linked to current uuid');
             return;
         }
+        if (link && link.linked && link.alreadyLinked) {
+            // Idempotent replay — same (uuid, appleSub) already existed.
+            // Nothing to do beyond flipping local state.
+            PlayerProfile.setAccountType('apple');
+            this.showSettingsToast(t('settings.apple.linked'), 'info');
+            this.refreshAuthoredSettingsValues();
+            log('[Settings] Apple already linked to current uuid (idempotent)');
+            return;
+        }
         // ---- 3) Conflict — this appleSub owns ANOTHER uuid ----
-        if (link.alreadyLinked) {
+        if (appleAlreadyLinkedConflict) {
             // Server didn't give us the recovery payload inline (unlike
             // google-games which returns bearer in the 409). Have to do
             // a separate /player/login/apple call with the SAME

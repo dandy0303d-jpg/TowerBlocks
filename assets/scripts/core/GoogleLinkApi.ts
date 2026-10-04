@@ -72,12 +72,21 @@ export async function linkGoogleToCurrentAccount(idToken: string): Promise<Googl
         // MenuController's `link.alreadyLinked` branch (which opens the
         // recovery-confirm modal → loginWithGoogle) still runs.
         //
+        // ONLY reshape the "google already linked" variant. The server
+        // also returns 409 'uuid already linked' when the CURRENT uuid
+        // is already bound to a DIFFERENT Google — recovery wouldn't
+        // help (loginWithGoogle would succeed into the OTHER Google
+        // account, losing the current progress silently), so we let that
+        // one throw up to the handler's catch which surfaces an error
+        // toast. Previously a loose /already[\s_-]?linked/ regex caught
+        // both, which was wrong.
+        //
         // Server doesn't include the other uuid in its 409 payload, so
         // linkedUuid stays undefined — the recovery dialog copy doesn't
         // rely on it, and loginWithGoogle will resolve to the correct
         // uuid on its own.
         const msg = String(err?.message ?? err);
-        if (msg.startsWith('HTTP 409') && /already[\s_-]?linked/i.test(msg)) {
+        if (msg.startsWith('HTTP 409') && /google already linked/i.test(msg)) {
             return { linked: false, alreadyLinked: true };
         }
         throw err;
@@ -128,8 +137,13 @@ export async function linkGoogleGamesToCurrentAccount(authCode: string): Promise
     try {
         return await httpPostJson<GoogleLinkResult>(url, { authCode }, BACKEND_TIMEOUT_MS);
     } catch (err: any) {
+        // Same shape as linkGoogleToCurrentAccount: only reshape the
+        // "google already linked" 409 (recoverable via loginWithGoogleGames);
+        // let "uuid already linked" fall through to the handler's catch
+        // so it surfaces an error toast rather than silently swapping
+        // the player into the other Google-Games account.
         const msg = String(err?.message ?? err);
-        if (msg.startsWith('HTTP 409') && /already[\s_-]?linked/i.test(msg)) {
+        if (msg.startsWith('HTTP 409') && /google already linked/i.test(msg)) {
             return { linked: false, alreadyLinked: true };
         }
         throw err;
