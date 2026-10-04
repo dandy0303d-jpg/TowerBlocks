@@ -307,9 +307,10 @@ export class MenuController extends Component {
 
     // ---- Locked-state (gray) sprites ----
     // Endless button uses label-only graying (unlocks quickly at level 10),
-    // so no sprite swap for it. Blind + Leaderboard stay locked until
-    // BLIND_UNLOCK_ENDLESS_LAYERS endless layers, so they get authored
-    // gray art via these slots.
+    // so no sprite swap for it. Blind stays locked until
+    // BLIND_UNLOCK_ENDLESS_LAYERS endless layers; Leaderboard stays locked
+    // until LEADERBOARD_UNLOCK_ENDLESS_LAYERS (independent, lower
+    // threshold), so both get authored gray art via these slots.
     @property({ type: SpriteFrame, tooltip: '闭眼模式按钮 — 锁定态灰色图（拖 SpriteFrame 进来；留空则不换图）' })
     authoredBlindLockedSprite: SpriteFrame | null = null;
 
@@ -367,12 +368,17 @@ export class MenuController extends Component {
      *  "clear fate piece 1 to unlock" rather than "clear 9 levels",
      *  tying the unlock to the progression unit players see on screen. */
     private static readonly ENDLESS_UNLOCK_LEVEL_COUNT = 9;
-    /** Endless best-height needed to unlock Blind mode + Leaderboard.
-     *  Both gates share this single threshold — bumping / lowering it
-     *  moves both unlocks together, and the `lock.blind` / `lock.leaderboard`
-     *  i18n strings both template on `{n}` so the toast text follows
-     *  the constant without touching translations. */
+    /** Endless best-height needed to unlock Blind mode. The `lock.blind`
+     *  i18n string templates on `{n}` so the toast text follows the
+     *  constant without touching translations. */
     private static readonly BLIND_UNLOCK_ENDLESS_LAYERS = 50;
+    /** Endless best-height needed to unlock the Leaderboard. Independent
+     *  of the Blind-mode gate so the social-ranking entry opens earlier
+     *  than the hardest game mode — a 30-layer run is comfortably within
+     *  reach for a mid-game player, while Blind at 50 remains the
+     *  "late-progression" meta reward. `lock.leaderboard` i18n templates
+     *  on `{n}` so the toast follows this constant. */
+    private static readonly LEADERBOARD_UNLOCK_ENDLESS_LAYERS = 30;
 
     @property({ type: Button, tooltip: '设置按钮' })
     modeBtnSettings: Button | null = null;
@@ -401,7 +407,8 @@ export class MenuController extends Component {
     // compared each _refreshModeButtonLocks to decide whether to play the
     // FeatureUnlock celebration for a just-crossed threshold.
     private _prevEndlessUnlocked = false;
-    private _prevBlindOrLbUnlocked = false;
+    private _prevBlindUnlocked = false;
+    private _prevLeaderboardUnlocked = false;
 
     // ============================================================
     //  Authored 关卡失败 / 游戏结束 弹窗
@@ -1049,8 +1056,9 @@ export class MenuController extends Component {
                 // 50) is treated as "already unlocked at boot" and does
                 // NOT replay the unlock celebration. Only genuine mid-
                 // session transitions (play a run, cross the gate) fire.
-                this._prevEndlessUnlocked   = this._isEndlessUnlocked();
-                this._prevBlindOrLbUnlocked = this._isBlindOrLbUnlocked();
+                this._prevEndlessUnlocked      = this._isEndlessUnlocked();
+                this._prevBlindUnlocked        = this._isBlindUnlocked();
+                this._prevLeaderboardUnlocked  = this._isLeaderboardUnlocked();
                 this._refreshModeButtonLocks();
             } catch (err) {
                 if (!getBannedState()) {
@@ -2950,8 +2958,10 @@ export class MenuController extends Component {
     /** DEV-only cheat: unlock all mode buttons in one tap.
      *   • Marks level 10 cleared (satisfies ENDLESS_UNLOCK_LEVEL_COUNT
      *     gate so Endless becomes tappable).
-     *   • Sets endless-best layers to 100 (satisfies
-     *     BLIND_UNLOCK_ENDLESS_LAYERS so Blind + Leaderboard unlock).
+     *   • Sets endless-best layers to BLIND_UNLOCK_ENDLESS_LAYERS, which
+     *     is the higher of the two endless-based gates (Leaderboard is
+     *     LEADERBOARD_UNLOCK_ENDLESS_LAYERS = 30, Blind = 50), so BOTH
+     *     unlock in one shot.
      *  Persists both to localStorage and repaints the lock overlays
      *  so the change is visible immediately. */
     /** Show / hide the two DEV entry buttons on the main menu based
@@ -3013,15 +3023,15 @@ export class MenuController extends Component {
         });
         bindBtn(this.modeBtnLevel,         'menu.levels',      () => this.showLevelSelect());
         bindBtn(this.modeBtnBlind,         'menu.blind', () => {
-            if (this._isBlindOrLbUnlocked()) this.enterBlindMode();
+            if (this._isBlindUnlocked()) this.enterBlindMode();
             else this._showLockToast(t('lock.blind', { n: MenuController.BLIND_UNLOCK_ENDLESS_LAYERS }));
         });
         // Locked-state Blind Sprite is decoration-only — clicks are
         // still handled by the regular modeBtnBlind Button (which sits
         // behind or beside it) and shows the lock toast when locked.
         bindBtn(this.modeBtnLeaderboard,   'menu.leaderboard', () => {
-            if (this._isBlindOrLbUnlocked()) this.onLeaderboardClicked();
-            else this._showLockToast(t('lock.leaderboard', { n: MenuController.BLIND_UNLOCK_ENDLESS_LAYERS }));
+            if (this._isLeaderboardUnlocked()) this.onLeaderboardClicked();
+            else this._showLockToast(t('lock.leaderboard', { n: MenuController.LEADERBOARD_UNLOCK_ENDLESS_LAYERS }));
         });
         bindBtn(this.modeBtnSettings,      'settings.button',  () => this.openSettingsPanel());
         // Main-page top-up (recharge) button — opens the TopUp panel.
@@ -3076,25 +3086,31 @@ export class MenuController extends Component {
         // initial lock paint so booting straight into a fully-unlocked
         // menu doesn't spam three celebration animations on first frame.
         // Session-scoped — a fresh app launch always starts "silent", only
-        // mid-session transitions (reach 10 clears / 50 endless layers)
-        // trigger the FX.
-        this._prevEndlessUnlocked   = this._isEndlessUnlocked();
-        this._prevBlindOrLbUnlocked = this._isBlindOrLbUnlocked();
+        // mid-session transitions (reach 10 clears / 30 endless layers for
+        // Leaderboard / 50 for Blind) trigger the FX.
+        this._prevEndlessUnlocked      = this._isEndlessUnlocked();
+        this._prevBlindUnlocked        = this._isBlindUnlocked();
+        this._prevLeaderboardUnlocked  = this._isLeaderboardUnlocked();
         this._refreshModeButtonLocks();
     }
 
     // ============================================================
     //  Progressive-unlock helpers
-    //  Endless mode gated behind 10 Level clears.
-    //  Blind mode + Leaderboard gated behind 100 endless layers.
+    //  Endless mode gated behind Fate Piece 1 (9 Level clears).
+    //  Leaderboard gated behind 30 endless layers.
+    //  Blind mode gated behind 50 endless layers.
     // ============================================================
 
     private _isEndlessUnlocked(): boolean {
         return LevelProgress.maxClearedIdx >= (MenuController.ENDLESS_UNLOCK_LEVEL_COUNT - 1);
     }
 
-    private _isBlindOrLbUnlocked(): boolean {
+    private _isBlindUnlocked(): boolean {
         return this._endlessBestLayers >= MenuController.BLIND_UNLOCK_ENDLESS_LAYERS;
+    }
+
+    private _isLeaderboardUnlocked(): boolean {
+        return this._endlessBestLayers >= MenuController.LEADERBOARD_UNLOCK_ENDLESS_LAYERS;
     }
 
     private _loadEndlessBestFromStorage(): void {
@@ -3163,27 +3179,34 @@ export class MenuController extends Component {
         };
         const COL_ENDLESS = new Color(0xD6, 0xD7, 0xE4, 255);   // #D6D7E4
         const COL_BLIND   = new Color(0xD8, 0xDB, 0xE7, 255);   // #D8DBE7
-        const nowEndless  = this._isEndlessUnlocked();
-        const nowBlindLb  = this._isBlindOrLbUnlocked();
-        paintLock(this.modeBtnEndless,     nowEndless,     this.modeBtnEndlessLocked,          COL_ENDLESS);
-        paintLock(this.modeBtnBlind,       nowBlindLb,     this.authoredBlindLockedSprite,     COL_BLIND);
-        paintLock(this.modeBtnLeaderboard, nowBlindLb,     this.authoredLeaderboardLockedSprite);
+        const nowEndless      = this._isEndlessUnlocked();
+        const nowBlind        = this._isBlindUnlocked();
+        const nowLeaderboard  = this._isLeaderboardUnlocked();
+        paintLock(this.modeBtnEndless,     nowEndless,      this.modeBtnEndlessLocked,          COL_ENDLESS);
+        paintLock(this.modeBtnBlind,       nowBlind,        this.authoredBlindLockedSprite,     COL_BLIND);
+        paintLock(this.modeBtnLeaderboard, nowLeaderboard,  this.authoredLeaderboardLockedSprite);
         // Trigger FeatureUnlock celebration on the exact frame a gate flips
         // from locked → unlocked. Guarded by _prevXxx so idle re-paints
         // (language switch, revisits) don't spam. Fire-and-forget — the FX
         // controls its own node and promise, we just kick it off.
-        this._maybePlayUnlockFx(nowEndless, nowBlindLb);
-        this._prevEndlessUnlocked   = nowEndless;
-        this._prevBlindOrLbUnlocked = nowBlindLb;
+        this._maybePlayUnlockFx(nowEndless, nowBlind, nowLeaderboard);
+        this._prevEndlessUnlocked      = nowEndless;
+        this._prevBlindUnlocked        = nowBlind;
+        this._prevLeaderboardUnlocked  = nowLeaderboard;
     }
 
     /** Kick a FeatureUnlock celebration whenever an unlock gate just
      *  flipped (locked → unlocked) relative to the last refresh. No-op
-     *  when the FX node isn't wired. Blind + Leaderboard share one gate
-     *  so they fire in parallel on the same transition. The FX manages
-     *  its own node (fades out and self-hides after ~2.4s), so repeat
-     *  calls just stack. */
-    private _maybePlayUnlockFx(nowEndless: boolean, nowBlindLb: boolean): void {
+     *  when the FX node isn't wired. Leaderboard (30) and Blind (50)
+     *  have independent thresholds so each fires on its own transition
+     *  (a single personal-best run from 20→45 will fire LB only; a run
+     *  from 45→55 will fire Blind only). The FX manages its own node
+     *  (fades out and self-hides after ~2.4s), so repeat calls stack. */
+    private _maybePlayUnlockFx(
+        nowEndless:     boolean,
+        nowBlind:       boolean,
+        nowLeaderboard: boolean,
+    ): void {
         if (!this.featureUnlockFx) return;
         if (nowEndless && !this._prevEndlessUnlocked && this.modeBtnEndless) {
             this.featureUnlockFx.play({
@@ -3193,23 +3216,21 @@ export class MenuController extends Component {
                 title:  t('unlock.endless'),
             }).catch(e => console.warn('[MenuController] endless unlock fx threw:', e?.message ?? e));
         }
-        if (nowBlindLb && !this._prevBlindOrLbUnlocked) {
-            if (this.modeBtnBlind) {
-                this.featureUnlockFx.play({
-                    button: this.modeBtnBlind.node,
-                    lock:   this.blindLockNode,
-                    theme:  'blind',
-                    title:  t('unlock.blind'),
-                }).catch(e => console.warn('[MenuController] blind unlock fx threw:', e?.message ?? e));
-            }
-            if (this.modeBtnLeaderboard) {
-                this.featureUnlockFx.play({
-                    button: this.modeBtnLeaderboard.node,
-                    lock:   this.leaderboardLockNode,
-                    theme:  'leaderboard',
-                    title:  t('unlock.leaderboard'),
-                }).catch(e => console.warn('[MenuController] leaderboard unlock fx threw:', e?.message ?? e));
-            }
+        if (nowLeaderboard && !this._prevLeaderboardUnlocked && this.modeBtnLeaderboard) {
+            this.featureUnlockFx.play({
+                button: this.modeBtnLeaderboard.node,
+                lock:   this.leaderboardLockNode,
+                theme:  'leaderboard',
+                title:  t('unlock.leaderboard'),
+            }).catch(e => console.warn('[MenuController] leaderboard unlock fx threw:', e?.message ?? e));
+        }
+        if (nowBlind && !this._prevBlindUnlocked && this.modeBtnBlind) {
+            this.featureUnlockFx.play({
+                button: this.modeBtnBlind.node,
+                lock:   this.blindLockNode,
+                theme:  'blind',
+                title:  t('unlock.blind'),
+            }).catch(e => console.warn('[MenuController] blind unlock fx threw:', e?.message ?? e));
         }
     }
 
