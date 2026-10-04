@@ -409,6 +409,16 @@ export class GameController extends Component {
      *  appear on it. */
     private static readonly ENDLESS_AUTO_SUBMIT_INTERVAL = 30;
 
+    /** First level idx eligible for per-level top-time leaderboard
+     *  submission. = 9 → first level of Fate Piece 2 ("stage 2-1").
+     *  Fate Piece 1 (levels 1-9, idx 0-8) is the on-ramp and its clear
+     *  times are dominated by UI-discovery pauses rather than skill;
+     *  submitting them floods the per-level top-10 board with 1st-
+     *  session noise. Levels before this still mark progress + fire
+     *  AnalyticsApi.logLevelEnd — only the competitive top-time submit
+     *  is gated. */
+    private static readonly LEADERBOARD_FIRST_LEVEL_IDX = 9;
+
     /** Highest `endlessProgress.cumulative` value already auto-submitted
      *  in THIS run. Reset via resetEndlessAutoSubmitTracker() at the
      *  start of every fresh endless attempt so the first crossing of
@@ -844,17 +854,38 @@ export class GameController extends Component {
                         // running=false is set in maybeFireLevelWin, so
                         // reading it here (or later in MenuController for
                         // the timer display) both see the same value.
+                        //
+                        // Skip Fate Piece 1 (levels 1-9, idx 0-8). Those
+                        // are the on-ramp — teaching bricks + first-touch
+                        // mechanics — and the per-level time distribution
+                        // there is dominated by tutorial-reading / UI-
+                        // discovery pauses rather than skill. Submitting
+                        // them floods the top-10 board with low-signal
+                        // 1st-session times and buries real competitive
+                        // runs. Start reporting at idx 9 (stage 2-1), the
+                        // first level of Fate Piece 2. idx and clear-FX
+                        // local state are still updated above so progression
+                        // / unlock behaviour is unaffected.
+                        const LEADERBOARD_FIRST_LEVEL_IDX =
+                            GameController.LEADERBOARD_FIRST_LEVEL_IDX;
                         const elapsedSec = this.gameState?.levelElapsedSec ?? 0;
-                        log(`[TowerBlocks] submitting level clear — idx=${this._activeLevelIdx} elapsedSec=${elapsedSec}`);
-                        submitLevelTime(this._activeLevelIdx, elapsedSec).catch(err => {
-                            console.warn('[TowerBlocks] level time submit failed:', err.message);
-                        });
+                        if (this._activeLevelIdx >= LEADERBOARD_FIRST_LEVEL_IDX) {
+                            log(`[TowerBlocks] submitting level clear — idx=${this._activeLevelIdx} elapsedSec=${elapsedSec}`);
+                            submitLevelTime(this._activeLevelIdx, elapsedSec).catch(err => {
+                                console.warn('[TowerBlocks] level time submit failed:', err.message);
+                            });
+                        } else {
+                            log(`[TowerBlocks] level clear idx=${this._activeLevelIdx} elapsedSec=${elapsedSec} — pre-2-1, skipping leaderboard submit`);
+                        }
                         // Report Game Center achievement progress
-                        // (channel-specific — Apple only). percentComplete
-                        // = maxClearedIdx+1 / total * 100. GC handles
-                        // idempotency + monotonic progress server-side;
-                        // reporting 100% shows the native "Achievement
-                        // Unlocked" banner.
+                        // (channel-specific — Apple only). Fire for ALL
+                        // levels (not gated) — the Game Center achievement
+                        // % should reflect the player's TOTAL progression,
+                        // not just competitive-eligible levels.
+                        // percentComplete = maxClearedIdx+1 / total * 100.
+                        // GC handles idempotency + monotonic progress
+                        // server-side; reporting 100% shows the native
+                        // "Achievement Unlocked" banner.
                         const clearedCount = LevelProgress.maxClearedIdx + 1;
                         const totalLevels = this.flatLevels.length || 1;
                         const pct = Math.min(100, (clearedCount / totalLevels) * 100);
@@ -864,6 +895,9 @@ export class GameController extends Component {
                         });
                         // Firebase predefined event — populates Progression
                         // report in the console (stage-N clear rate + time).
+                        // Fire for ALL levels including Fate Piece 1 so the
+                        // on-ramp funnel is still measurable; only the
+                        // competitive leaderboard submit is gated above.
                         AnalyticsApi.logLevelEnd('level', this._activeLevelIdx + 1, elapsedSec, true);
                     }
                     // `level_win` SFX intentionally NOT played here —
