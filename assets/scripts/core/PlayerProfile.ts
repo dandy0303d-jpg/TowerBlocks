@@ -36,6 +36,12 @@ const ACCOUNT_KEY = 'tt.player.accountType';
 const AVATAR_KEY  = 'tt.player.avatarIdx';
 const TOKEN_KEY   = 'tt.player.token';
 const TOKEN_EXP_KEY = 'tt.player.tokenExpEpochSec';
+/** Comma-separated list of providers the current uuid is bound to on
+ *  the server. Distinct from ACCOUNT_KEY (which is a SINGLE "primary"
+ *  value): a player can be linked to Apple AND Google simultaneously,
+ *  and the Settings UI must render both as "bound". Hydrated from
+ *  GET /player/accounts; see Profile.setLinkedProviders. */
+const LINKED_PROVIDERS_KEY = 'tt.player.linkedProviders';
 
 /** Refresh the bearer if less than this many seconds until expiry.
  *  Default 7d — small enough that a normal player who opens the
@@ -140,11 +146,98 @@ class Profile {
     /** Persist a change to the player's linked-account kind. Called
      *  by channel-specific link handlers after a successful bind
      *  (e.g. Sign in with Apple returns → set to 'apple'). Also used
-     *  on unbind flows to demote back to 'anonymous'. */
+     *  on unbind flows to demote back to 'anonymous'.
+     *
+     *  NOTE: this is the "primary" / most-recently-bound provider for
+     *  the account-row label and for legacy single-value checks. A
+     *  player can be linked to multiple providers simultaneously —
+     *  callers should ALSO call `addLinkedProvider(provider)` so the
+     *  Settings bind-buttons repaint correctly for both. */
     setAccountType(next: AccountType): void {
         this._accountType = next;
         sys.localStorage.setItem(ACCOUNT_KEY, next);
         console.log(`[PlayerProfile] setAccountType → ${next}`);
+    }
+
+    // ============================================================
+    // Multi-provider link state
+    // ============================================================
+    /** Set of providers the server says this uuid is currently bound
+     *  to. Hydrated by `setLinkedProviders` after a GET /player/accounts
+     *  call. `null` means we haven't fetched yet since boot — callers
+     *  that care about correctness (e.g. the Settings panel) should
+     *  await a fetch before trusting `isLinked`. */
+    private _linkedProviders: Set<AccountType> | null = null;
+
+    /** Read-only snapshot of the server-known linked providers. See
+     *  setLinkedProviders for the hydration contract. */
+    get linkedProviders(): ReadonlySet<AccountType> {
+        if (this._linkedProviders === null) {
+            // Fall back to the comma-separated localStorage cache from
+            // the last session so a fresh boot's first paint doesn't
+            // regress to "nothing bound" before the first server fetch
+            // lands. Guards against the server call being slow / offline.
+            const stored = sys.localStorage.getItem(LINKED_PROVIDERS_KEY);
+            const set = new Set<AccountType>();
+            if (stored && stored.length > 0) {
+                for (const p of stored.split(',')) {
+                    const trimmed = p.trim();
+                    if (trimmed === 'apple' || trimmed === 'google' || trimmed === 'email') {
+                        set.add(trimmed as AccountType);
+                    }
+                }
+            }
+            // Back-compat: if the previous session only ever used
+            // accountType (never populated linkedProviders), include
+            // that one provider so the Settings panel doesn't look
+            // empty on first upgrade. Harmless if it's already in the set.
+            const acct = this.accountType;
+            if (acct === 'apple' || acct === 'google' || acct === 'email') {
+                set.add(acct);
+            }
+            this._linkedProviders = set;
+        }
+        return this._linkedProviders;
+    }
+
+    /** Server-authoritative hydration — callers (Settings panel open,
+     *  post-bind, post-recovery) fetch GET /player/accounts and pass
+     *  the returned providers list here. Persisted so a cold boot's
+     *  first paint comes from the last known-good set, before the next
+     *  server fetch confirms. */
+    setLinkedProviders(providers: ReadonlyArray<AccountType>): void {
+        const set = new Set<AccountType>();
+        for (const p of providers) {
+            if (p === 'apple' || p === 'google' || p === 'email') set.add(p);
+        }
+        this._linkedProviders = set;
+        sys.localStorage.setItem(LINKED_PROVIDERS_KEY, Array.from(set).join(','));
+        console.log(`[PlayerProfile] setLinkedProviders → [${Array.from(set).join(',')}]`);
+    }
+
+    /** Mark `provider` as linked locally. Used by the bind handlers
+     *  immediately after a successful link call, before the next
+     *  fetchLinkedAccounts round-trip returns, so the Settings UI
+     *  repaints without waiting on the network. Idempotent. */
+    addLinkedProvider(provider: AccountType): void {
+        if (provider !== 'apple' && provider !== 'google' && provider !== 'email') return;
+        // Force the getter path so _linkedProviders is initialised
+        // (reads any cached value from storage).
+        void this.linkedProviders;
+        this._linkedProviders!.add(provider);
+        sys.localStorage.setItem(
+            LINKED_PROVIDERS_KEY,
+            Array.from(this._linkedProviders!).join(','),
+        );
+    }
+
+    /** True if the current uuid is bound to `provider` on the server
+     *  (per the last hydration). Used by Settings bind-buttons to
+     *  render the "已绑定 / 未绑定" state for Google / Apple
+     *  independently — unlike `accountType === provider`, this doesn't
+     *  flip to false when the player binds a SECOND provider. */
+    isLinked(provider: AccountType): boolean {
+        return this.linkedProviders.has(provider);
     }
 
     /** Wipe ALL in-memory state — used by the delete-account flow.
@@ -162,6 +255,7 @@ class Profile {
         this._name = null;
         this._accountType = undefined;   // force reload from localStorage on next read
         this._avatarIdx = null;
+        this._linkedProviders = null;
         setBearerToken(null);
         console.log('[PlayerProfile] in-memory state wiped');
     }
@@ -219,6 +313,14 @@ class Profile {
         // response.
         this._name = null;
         this._accountType = accountType;
+        // Linked-providers set belongs to the OUTGOING guest — the
+        // recovered uuid has its own list on the server. Seed with
+        // `accountType` as a lower bound (we know THIS provider is
+        // bound since we just logged in with it) and let the next
+        // fetchLinkedAccounts fill in any others (e.g. an account
+        // bound to BOTH Apple and Google).
+        this._linkedProviders = new Set<AccountType>([accountType]);
+        sys.localStorage.setItem(LINKED_PROVIDERS_KEY, accountType);
         // Avatar intentionally kept — see docstring.
         // Nickname cooldown is per-account and lives server-side; clear
         // the local cache so the settings panel doesn't lie until the

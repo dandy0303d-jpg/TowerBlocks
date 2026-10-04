@@ -99,7 +99,7 @@ import { linkGoogleToCurrentAccount, loginWithGoogle } from '../core/GoogleLinkA
 // branch; on other channels the files don't exist and this file is only
 // built on app-store, so no gate needed.
 import { AppleAuth } from '../channels/apple/AppleAuth';
-import { linkAppleAccount, loginWithApple } from '../channels/apple/AppleAuthApi';
+import { linkAppleAccount, loginWithApple, fetchLinkedAccounts } from '../channels/apple/AppleAuthApi';
 
 const { ccclass, property } = _decorator;
 
@@ -4408,7 +4408,12 @@ export class MenuController extends Component {
         // Already bound → tell the player, do nothing else. Unlink is
         // a separate feature the server doesn't support yet; the UI
         // sprite already reads "bound" for their state.
-        if (PlayerProfile.accountType === 'google') {
+        //
+        // Check isLinked (multi-provider) rather than accountType ===
+        // 'google' so that binding Google AFTER Apple still short-circuits
+        // on a second tap. accountType can be 'apple' here while
+        // isLinked('google') is still true from an earlier bind.
+        if (PlayerProfile.isLinked('google')) {
             this.showSettingsToast(t('settings.google.alreadyLinked'), 'info');
             return;
         }
@@ -4446,8 +4451,11 @@ export class MenuController extends Component {
         }
         if (link.linked) {
             // Happy path — mark the profile as google-linked so the
-            // button flips to "bound" state on next repaint.
+            // button flips to "bound" state on next repaint. Both the
+            // single-value accountType (account-row label) and the
+            // multi-provider set (bind-button sprites) get updated.
             PlayerProfile.setAccountType('google');
+            PlayerProfile.addLinkedProvider('google');
             this.showSettingsToast(t('settings.google.linked'), 'info');
             this.refreshAuthoredSettingsValues();
             log('[Settings] Google linked to current uuid');
@@ -4526,9 +4534,12 @@ export class MenuController extends Component {
      *   3. Conflict (this appleSub owns another uuid) → confirm recovery,
      *      POST /player/login/apple, swap identity + reload scene. */
     private async handleAppleBindClick(): Promise<void> {
-        // Already bound → toast + bail. Unlink isn't a feature yet
-        // (server has no unbind endpoint).
-        if (PlayerProfile.accountType === 'apple') {
+        // isLinked (multi-provider) rather than accountType === 'apple'
+        // — a player who binds Apple then Google would have accountType
+        // flip to 'google', but Apple is still linked server-side; a
+        // second tap on the Apple button should still short-circuit.
+        // Unlink isn't a feature yet (server has no unbind endpoint).
+        if (PlayerProfile.isLinked('apple')) {
             this.showSettingsToast(t('settings.apple.alreadyLinked'), 'info');
             return;
         }
@@ -4592,6 +4603,7 @@ export class MenuController extends Component {
             // Happy path — flip profile to apple so the button sprite
             // reads "bound" on next repaint.
             PlayerProfile.setAccountType('apple');
+            PlayerProfile.addLinkedProvider('apple');
             this.showSettingsToast(t('settings.apple.linked'), 'info');
             this.refreshAuthoredSettingsValues();
             log('[Settings] Apple linked to current uuid');
@@ -4601,6 +4613,7 @@ export class MenuController extends Component {
             // Idempotent replay — same (uuid, appleSub) already existed.
             // Nothing to do beyond flipping local state.
             PlayerProfile.setAccountType('apple');
+            PlayerProfile.addLinkedProvider('apple');
             this.showSettingsToast(t('settings.apple.linked'), 'info');
             this.refreshAuthoredSettingsValues();
             log('[Settings] Apple already linked to current uuid (idempotent)');
@@ -5015,9 +5028,14 @@ export class MenuController extends Component {
         }
         // Google / Apple binding buttons — swap their Sprite between
         // "未绑定"（灰）和 "已绑定"（绿）based on the real bind state.
-        // Until real OAuth is wired every player is `anonymous`, so
-        // both buttons show the unbound (gray) variant.
-        const acct = PlayerProfile.accountType;
+        //
+        // Read from PlayerProfile.isLinked rather than accountType ===,
+        // because a player can be bound to BOTH providers simultaneously
+        // and accountType is single-valued (it holds only the "primary"
+        // / most-recently-bound provider for the account-row label).
+        // Previously, binding Apple on top of Google overwrote
+        // accountType to 'apple' and the Google button regressed to
+        // "未绑定" visually even though the server still had it linked.
         const setBtnState = (btn: Button | null, sf: SpriteFrame | null, bound: boolean): void => {
             if (!btn) return;
             if (sf) {
@@ -5031,19 +5049,45 @@ export class MenuController extends Component {
             const lab = btn.getComponentInChildren(Label);
             if (lab) lab.string = t(bound ? 'settings.bound' : 'settings.unbound');
         };
+        const googleLinked = PlayerProfile.isLinked('google');
+        const appleLinked  = PlayerProfile.isLinked('apple');
         setBtnState(this.authoredSettingsGoogleButton,
-                    acct === 'google' ? this.googleBoundSprite : this.googleUnboundSprite,
-                    acct === 'google');
+                    googleLinked ? this.googleBoundSprite : this.googleUnboundSprite,
+                    googleLinked);
         setBtnState(this.authoredSettingsAppleButton,
-                    acct === 'apple'  ? this.appleBoundSprite  : this.appleUnboundSprite,
-                    acct === 'apple');
+                    appleLinked  ? this.appleBoundSprite  : this.appleUnboundSprite,
+                    appleLinked);
         // Legacy toggle version (kept for backward compat).
         if (this.authoredSettingsGoogleToggle) {
-            this.authoredSettingsGoogleToggle.isChecked = (acct === 'google');
+            this.authoredSettingsGoogleToggle.isChecked = googleLinked;
         }
         if (this.authoredSettingsAppleToggle) {
-            this.authoredSettingsAppleToggle.isChecked = (acct === 'apple');
+            this.authoredSettingsAppleToggle.isChecked = appleLinked;
         }
+        // Kick off an async refresh of the server-authoritative linked-
+        // providers list so a subsequent repaint reflects reality (e.g.
+        // another device linked a second provider, or an admin un-linked
+        // one server-side). Fire-and-forget — the paint above has
+        // already used the cached set, so the user sees SOMETHING
+        // immediately; the repaint below lands when the network does.
+        fetchLinkedAccounts()
+            .then((r) => {
+                PlayerProfile.setLinkedProviders(r.providers);
+                // Repaint only the two bind buttons / toggles — don't
+                // re-run the whole refreshAuthoredSettingsValues to
+                // avoid flickering other async-painted fields.
+                const g = PlayerProfile.isLinked('google');
+                const a = PlayerProfile.isLinked('apple');
+                setBtnState(this.authoredSettingsGoogleButton,
+                            g ? this.googleBoundSprite : this.googleUnboundSprite, g);
+                setBtnState(this.authoredSettingsAppleButton,
+                            a ? this.appleBoundSprite  : this.appleUnboundSprite,  a);
+                if (this.authoredSettingsGoogleToggle) this.authoredSettingsGoogleToggle.isChecked = g;
+                if (this.authoredSettingsAppleToggle)  this.authoredSettingsAppleToggle.isChecked  = a;
+            })
+            .catch((err) => {
+                console.warn('[Settings] fetchLinkedAccounts failed:', err?.message ?? err);
+            });
         // Haptic toggle — reflect Settings state each open (may have
         // been changed by another entry point, though today it's only
         // touched from this panel).
