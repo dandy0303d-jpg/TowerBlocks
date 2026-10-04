@@ -46,10 +46,47 @@ export async function fetchBadgeClaims(): Promise<BadgeClaimListResult> {
  *  does NOT double-credit.
  *
  *  Broadcasts the new balance to subscribers on success so the topup
- *  chip / gem badge repaint without a fresh fetchWallet round-trip. */
+ *  chip / gem badge repaint without a fresh fetchWallet round-trip.
+ *
+ *  Under the run-token anti-cheat regime (INBOX_CLIENT.md 2026-10-05)
+ *  the server rejects claims for groupIdx > floor((maxClearedIdx+1)/9) - 1
+ *  with 403 `{ reason: 'not-earned' }`. httpPostJson throws on non-2xx
+ *  so we catch and reshape into the same `{ ok: false, reason }` shape
+ *  as the server's logical rejection — callers already branch on
+ *  `res.ok`, so no extra try/catch needed at the call site. */
 export async function claimBadgeReward(groupIdx: number): Promise<BadgeClaimResult> {
     const url = `${BACKEND_BASE_URL}/player/badge/claim`;
-    const res = await httpPostJson<BadgeClaimResult>(url, { groupIdx }, BACKEND_TIMEOUT_MS);
-    if (res.ok) emitBalance(res.balance);
-    return res;
+    try {
+        const res = await httpPostJson<BadgeClaimResult>(url, { groupIdx }, BACKEND_TIMEOUT_MS);
+        if (res.ok) emitBalance(res.balance);
+        return res;
+    } catch (err: any) {
+        const msg = String(err?.message ?? err);
+        // Parse the server's error body (format: `HTTP <status>: <json>`)
+        // so we can propagate `reason` to the caller — 'not-earned' is
+        // the server's run-token anti-cheat rejection, other reasons
+        // may surface for future gates (banned, rate-limit, etc.).
+        let reason = 'network-error';
+        const match = /^HTTP (\d+): (.*)$/.exec(msg);
+        if (match) {
+            const status = parseInt(match[1], 10);
+            try {
+                const body = JSON.parse(match[2]);
+                if (typeof body?.reason === 'string') reason = body.reason;
+                else if (typeof body?.error === 'string') reason = body.error;
+                else reason = `http-${status}`;
+            } catch {
+                reason = `http-${status}`;
+            }
+        }
+        console.warn(`[BadgeClaim] claim ${groupIdx} rejected: ${reason} (${msg.slice(0, 120)})`);
+        return {
+            ok:             false,
+            groupIdx,
+            gemsAwarded:    0,
+            balance:        0,
+            alreadyClaimed: false,
+            reason,
+        };
+    }
 }

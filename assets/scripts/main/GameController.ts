@@ -48,6 +48,7 @@ import { submitScore, submitLevelTime } from '../core/LeaderboardApi';
 import { GameCenter, GC_LEADERBOARD, GC_ACHIEVEMENT } from '../channels/apple/GameCenter';
 import { AnalyticsApi } from '../core/AnalyticsApi';
 import { ActivityProgressReporter, ActivityProgressKeys } from '../core/ActivityProgressReporter';
+import { RunApi } from '../core/RunApi';
 import { buildTutorialLevel } from '../core/TutorialLevelData';
 // Settings.gestureMode currently unused — the gesture system was simplified
 // to "left-half tap/hold/drag" (no flick branch). Import kept commented for
@@ -431,6 +432,21 @@ export class GameController extends Component {
      *  endless-best locally; only the leaderboard submit is gated. */
     private static readonly LEADERBOARD_MIN_ENDLESS_SCORE = 30;
 
+    /** Master kill switch for the server-authoritative /run/start +
+     *  /run/finish pair. When true (default), modes open a run on entry,
+     *  the server scores + awards badges + updates activity progress
+     *  at finish time, and the LEGACY paths (submitScore, submitLevelTime,
+     *  ActivityProgressReporter.report, mid-run auto-submits) are SKIPPED
+     *  to avoid double-counting. When false, legacy paths run as before
+     *  (useful rollback switch if the server-side opts us out of enforce).
+     *  Per INBOX_CLIENT.md 2026-10-05 claude-5d has set RUN_TOKEN_ENFORCE=false
+     *  server-side during the transition — old submits still work in
+     *  parallel — but we switch the CLIENT off those paths now so the
+     *  double-count window is a non-issue.
+     *
+     *  See INBOX_CLIENT.md 2026-10-04 for the full anti-cheat rationale. */
+    private static readonly RUN_TOKEN_ENABLED = true;
+
     /** Highest `endlessProgress.cumulative` value already auto-submitted
      *  in THIS run. Reset via resetEndlessAutoSubmitTracker() at the
      *  start of every fresh endless attempt so the first crossing of
@@ -787,6 +803,13 @@ export class GameController extends Component {
                     } else {
                         SoundManager.instance?.play('piece_lock');
                     }
+                    // Server-authoritative anti-cheat: count every piece
+                    // lock in the active run so /run/finish's `piecesPlaced`
+                    // field matches reality. No-op outside an active run
+                    // (menu, tutorial, offline run).
+                    if (GameController.RUN_TOKEN_ENABLED) {
+                        RunApi.recordPieceLock();
+                    }
                 },
                 onScoreChanged: (_s) => { /* silent */ },
                 onGameOver:     (r) => {
@@ -809,12 +832,13 @@ export class GameController extends Component {
                             if (!res.success) log(`[Ads] interstitial not shown — ${res.kind}: ${res.error}`);
                         })();
                     }
-                    // Activity progress: flush any accumulated deltas so
-                    // the game-over popup (if it shows activity progress)
-                    // reflects THIS run's contribution. Fire-and-forget —
-                    // network failure just leaves the batch pending for
-                    // the 60s tick or the next flush.
-                    void ActivityProgressReporter.flush('game-over');
+                    // Activity progress flush (LEGACY) — only when run-
+                    // token is off. Server auto-counts via /run/finish's
+                    // linesCleared when enabled, making this flush a
+                    // double-count hazard.
+                    if (!GameController.RUN_TOKEN_ENABLED) {
+                        void ActivityProgressReporter.flush('game-over');
+                    }
                     // ---- Firebase: stage_fail (custom event) ----
                     // Firebase's predefined `level_end` doesn't cover
                     // "failed with a distinct reason", so we log a
@@ -825,17 +849,29 @@ export class GameController extends Component {
                         level:  this._activeLevelIdx + 1,
                         reason: String(r ?? 'unknown'),
                     });
-                    // ---- Leaderboard submission ----
-                    // Endless / blind: submit the tower height reached this run.
-                    // Level mode game-over is a FAIL, not a completion — skip.
-                    this.submitEndlessHeightIfApplicable('game-over');
+                    // ---- Server-authoritative finish ----
+                    // Both endless/blind (`failed`) and level-mode
+                    // game-overs (`failed`) send finish so the server
+                    // can validate the run + award any eligible stuff
+                    // (endless top-10, badge groups unlocked mid-run).
+                    // For level mode `cleared`, see onLevelWin below.
+                    if (GameController.RUN_TOKEN_ENABLED) {
+                        this.sendRunFinishForFailure();
+                    } else {
+                        // Legacy: endless / blind height submit only
+                        // (level fail doesn't go to a per-level time
+                        // board — those are completion-only).
+                        this.submitEndlessHeightIfApplicable('game-over');
+                    }
                 },
                 onLevelWin:     ()  => {
                     log('[TowerBlocks] LEVEL WIN (deferred until effects clear)');
-                    // Activity progress: same reasoning as onGameOver —
-                    // flush THIS level's line-clear tally before the
-                    // level-win popup can pull activity status.
-                    void ActivityProgressReporter.flush('level-win');
+                    // Activity progress flush (LEGACY). Same reasoning as
+                    // onGameOver: skip when server does it via /run/finish's
+                    // linesCleared field.
+                    if (!GameController.RUN_TOKEN_ENABLED) {
+                        void ActivityProgressReporter.flush('level-win');
+                    }
                     // Fire the pending flag immediately — drainPendingPopups
                     // still gates on fxStillPlaying (colored-block shatter
                     // animation), so MenuController.showLevelWin only runs
@@ -881,7 +917,21 @@ export class GameController extends Component {
                         const LEADERBOARD_FIRST_LEVEL_IDX =
                             GameController.LEADERBOARD_FIRST_LEVEL_IDX;
                         const elapsedSec = this.gameState?.levelElapsedSec ?? 0;
-                        if (this._activeLevelIdx >= LEADERBOARD_FIRST_LEVEL_IDX) {
+                        if (GameController.RUN_TOKEN_ENABLED) {
+                            // Server picks up the level-time via /run/finish's
+                            // {result:'cleared', elapsedSec}; it already
+                            // gates on levelIdx ≥ 9 server-side (matches
+                            // LEADERBOARD_FIRST_LEVEL_IDX) so there's no
+                            // need to pre-filter here. Fire-and-forget via
+                            // RunApi — it handles retry queue + offline.
+                            void RunApi.finishRun({
+                                result:     'cleared',
+                                score:      0,   // level mode: server ignores
+                                elapsedSec,
+                            });
+                            log(`[TowerBlocks] /run/finish cleared — idx=${this._activeLevelIdx} elapsedSec=${elapsedSec}`);
+                        } else if (this._activeLevelIdx >= LEADERBOARD_FIRST_LEVEL_IDX) {
+                            // Legacy path (RUN_TOKEN_ENABLED=false).
                             log(`[TowerBlocks] submitting level clear — idx=${this._activeLevelIdx} elapsedSec=${elapsedSec}`);
                             submitLevelTime(this._activeLevelIdx, elapsedSec).catch(err => {
                                 console.warn('[TowerBlocks] level time submit failed:', err.message);
@@ -1096,10 +1146,29 @@ export class GameController extends Component {
                 onNaturalRowClears: (count) => {
                     if (count >= 3) this._shakeBoardRoot(440, 0.075);
                     if (count >= 1) {
-                        ActivityProgressReporter.report(
-                            ActivityProgressKeys.LINES_CLEARED_TOTAL,
-                            count,
-                        );
+                        if (GameController.RUN_TOKEN_ENABLED) {
+                            // Server tallies lines_cleared_total activity
+                            // progress from /run/finish's `linesCleared`
+                            // field — do NOT call ActivityProgressReporter
+                            // here or the server will double-count during
+                            // the overlap window. Just feed the per-run
+                            // counter so finishRun can report an accurate
+                            // total. Includes ALL natural clears across
+                            // the run (not just the ones from this lock);
+                            // RunApi keeps the running sum.
+                            RunApi.recordLineClears(count);
+                        } else {
+                            // Legacy path (RUN_TOKEN_ENABLED=false): batch
+                            // reporter sends deltas directly to the activity
+                            // endpoint and flushes on game-over / level-win /
+                            // 60s tick. Only reach this branch if we've
+                            // intentionally rolled the client back off
+                            // run-tokens, e.g. during a server-side outage.
+                            ActivityProgressReporter.report(
+                                ActivityProgressKeys.LINES_CLEARED_TOTAL,
+                                count,
+                            );
+                        }
                     }
                 },
                 // Backpack `bomb_block` (kind 'box3') — fires 9 times
@@ -1144,25 +1213,22 @@ export class GameController extends Component {
                 },
                 onEndlessMilestone: (_milestone, cumulative) => {
                     this.playMilestoneShatter();
-                    // Auto-report the tower height to the leaderboard on
-                    // every ENDLESS_AUTO_SUBMIT_INTERVAL layers so a
-                    // player who gets killed by app crash / OS-kill /
-                    // battery-out mid-run still has SOMETHING recorded.
-                    // Without this, only pause-quit and natural game-
-                    // over submit — so a 200-layer run that dies to a
-                    // background kill loses everything.
-                    //
-                    // We compare against the last submitted cumulative
-                    // instead of using `cumulative % N === 0`, because
-                    // a single row-lock can clear multiple layers in
-                    // one hop (partial-shatter chains); modulo would
-                    // step over the boundary silently in that case.
-                    // Fire-and-forget: network failures just log, next
-                    // milestone will retry.
-                    if (cumulative - this._lastEndlessAutoSubmit >=
-                            GameController.ENDLESS_AUTO_SUBMIT_INTERVAL) {
-                        this._lastEndlessAutoSubmit = cumulative;
-                        this.submitEndlessHeightIfApplicable('milestone-auto');
+                    // Legacy mid-run crash-recovery hack — see history
+                    // for the ENDLESS_AUTO_SUBMIT_INTERVAL doc. Under
+                    // run-tokens the server scores only at /run/finish
+                    // and there's no equivalent per-milestone endpoint,
+                    // so we drop the mid-run submits. Trade-off: a
+                    // mid-run crash loses the whole run. Acceptable in
+                    // practice (crashes are rare + the finish retry
+                    // queue covers the vast majority of lost-finish
+                    // cases). If the server ever adds /run/checkpoint
+                    // we can revive this.
+                    if (!GameController.RUN_TOKEN_ENABLED) {
+                        if (cumulative - this._lastEndlessAutoSubmit >=
+                                GameController.ENDLESS_AUTO_SUBMIT_INTERVAL) {
+                            this._lastEndlessAutoSubmit = cumulative;
+                            this.submitEndlessHeightIfApplicable('milestone-auto');
+                        }
                     }
                 },
             },
@@ -4526,6 +4592,14 @@ export class GameController extends Component {
         }
         // Firebase predefined event — populates Progression report.
         AnalyticsApi.logLevelStart('level', idx + 1);
+        // Open a server-authoritative run (anti-cheat). Fire-and-forget —
+        // start failures (offline / 5xx) just mean this run won't be
+        // counted on the leaderboard / badge / activity side; the player
+        // still gets to play. See RunApi for the offline / counted:false
+        // semantics.
+        if (GameController.RUN_TOKEN_ENABLED) {
+            void RunApi.startRun('level', idx);
+        }
         try {
             const lvl = validateLevelData(this.flatLevels[idx]);
             this.clearPendingPopups();
@@ -4983,6 +5057,14 @@ export class GameController extends Component {
     public playReviveWipe(onDone: () => void): void {
         const gs = this.gameState;
         if (!gs) { onDone(); return; }
+        // Anti-cheat bookkeeping: notify RunApi that a revive just
+        // happened. Server widens the serverElapsed tolerance by
+        // revivedCount × reviveIntervalMax so the lengthened wall-clock
+        // doesn't fail the time-rate check at finish time. No-op outside
+        // an active run (offline / tutorial).
+        if (GameController.RUN_TOKEN_ENABLED) {
+            RunApi.recordRevive();
+        }
         // Clear the falling piece IMMEDIATELY — it's the one that
         // just spawn-collided (or was mid-fall when game-over
         // fired) and stays visible as a floating tetromino above
@@ -5485,6 +5567,11 @@ export class GameController extends Component {
         // we add it there) can match. Not counted in Progression
         // funnel since 'endless:0' won't match any level_start row.
         AnalyticsApi.logCustom('mode_start', { mode: 'endless' });
+        // Server-authoritative run (anti-cheat). See loadLevelByIndex
+        // for the semantics; endless doesn't need a levelIdx so pass none.
+        if (GameController.RUN_TOKEN_ENABLED) {
+            void RunApi.startRun('endless');
+        }
         // Reset the per-run auto-submit tracker so the first
         // ENDLESS_AUTO_SUBMIT_INTERVAL boundary of the NEW run fires
         // even if the previous run had already submitted at higher
@@ -5576,6 +5663,10 @@ export class GameController extends Component {
         this.clearPendingPopups();
         this._activeLevelIdx = -1;
         AnalyticsApi.logCustom('mode_start', { mode: 'blind' });
+        // Server-authoritative run (anti-cheat). See loadLevelByIndex.
+        if (GameController.RUN_TOKEN_ENABLED) {
+            void RunApi.startRun('blind');
+        }
         // Blind mode shares the endless auto-submit tracker (same
         // `submitEndlessHeightIfApplicable` code path via
         // onEndlessMilestone) — reset per run so the first
@@ -5654,18 +5745,37 @@ export class GameController extends Component {
      *  mode_end analytics still fires for ALL runs (including sub-min)
      *  so the engagement / drop-off funnel stays measurable; only the
      *  leaderboard submit is gated. */
-    public submitEndlessHeightIfApplicable(reason: 'game-over' | 'pause-quit' | 'mode-select-return'): void {
+    public submitEndlessHeightIfApplicable(reason: 'game-over' | 'pause-quit' | 'mode-select-return' | 'milestone-auto'): void {
         const mode = this.gameState?.mode;
         if (mode !== 'endless' && mode !== 'blind') return;
         const score = this.gameState?.endlessProgress?.cumulative ?? 0;
+        // Always fire mode_end analytics (even for height=0 or
+        // sub-threshold runs) so the funnel data stays complete.
         if (score <= 0) {
             log(`[TowerBlocks] skip ${mode} submit (${reason}) — height=0`);
             return;
         }
+        if (GameController.RUN_TOKEN_ENABLED) {
+            // New world: send finish regardless of score — server does
+            // the threshold gating itself (and will log sub-threshold
+            // runs for calibration). Only pause-quit / mode-select-return
+            // reach this path during gameplay; game-over flows through
+            // sendRunFinishForFailure above. For both, the `result` is
+            // 'quit' because the player chose to exit a still-live run.
+            const result: 'quit' | 'failed' =
+                reason === 'game-over' ? 'failed' : 'quit';
+            void RunApi.finishRun({
+                result,
+                score,
+                linesClearedOverride: score,   // endless/blind: score === linesCleared
+            });
+            log(`[TowerBlocks] /run/finish ${result} — mode=${mode} score=${score} reason=${reason}`);
+            AnalyticsApi.logCustom('mode_end', { mode, score, reason });
+            return;
+        }
+        // ---- Legacy path (RUN_TOKEN_ENABLED=false) ----
         if (score < GameController.LEADERBOARD_MIN_ENDLESS_SCORE) {
             log(`[TowerBlocks] skip ${mode} leaderboard submit (${reason}) — height=${score} < min=${GameController.LEADERBOARD_MIN_ENDLESS_SCORE}`);
-            // Still fire mode_end so the funnel analytics (how far short
-            // runs got, quit vs die reasons) stay complete.
             AnalyticsApi.logCustom('mode_end', { mode, score, reason });
             return;
         }
@@ -5673,16 +5783,43 @@ export class GameController extends Component {
         submitScore(mode as 'endless' | 'blind', score).catch(err => {
             console.warn('[TowerBlocks] leaderboard submit failed:', err.message);
         });
-        // Firebase mode-run summary event. Carries the final height +
-        // exit reason so we can look at engagement (avg run height per
-        // mode) and drop-off (quits vs deaths). Not the Firebase
-        // predefined `post_score` because we want the mode filter
-        // baked into a single event name.
         AnalyticsApi.logCustom('mode_end', {
             mode,
             score,
             reason,
         });
+    }
+
+    /** Fire /run/finish for a game-over failure — used by the onGameOver
+     *  hook when RUN_TOKEN_ENABLED. Covers all modes:
+     *    - endless/blind: score = endlessProgress.cumulative (which is
+     *      the tower height = linesCleared)
+     *    - level mode   : score = 0 (server ignores level score); the
+     *                     elapsedSec is the per-level timer which is
+     *                     paused on modal overlays so represents actual
+     *                     play time, not wall-clock
+     *  Fire-and-forget via RunApi (which handles retry queue + offline). */
+    private sendRunFinishForFailure(): void {
+        const mode = this.gameState?.mode;
+        if (mode !== 'level' && mode !== 'endless' && mode !== 'blind') return;
+        if (mode === 'level') {
+            const elapsedSec = this.gameState?.levelElapsedSec ?? 0;
+            void RunApi.finishRun({
+                result:     'failed',
+                score:      0,
+                elapsedSec,
+            });
+            log(`[TowerBlocks] /run/finish failed — level idx=${this._activeLevelIdx} elapsedSec=${elapsedSec}`);
+            return;
+        }
+        // endless / blind
+        const score = this.gameState?.endlessProgress?.cumulative ?? 0;
+        void RunApi.finishRun({
+            result:                'failed',
+            score,
+            linesClearedOverride:  score,
+        });
+        log(`[TowerBlocks] /run/finish failed — mode=${mode} score=${score}`);
     }
 
     /** DEBUG-only cheat: instantly complete the currently-loaded level.
