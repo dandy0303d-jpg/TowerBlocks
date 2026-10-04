@@ -8,7 +8,7 @@ const { ccclass, property } = _decorator;
  * 魔法道具「加特林」特效：弹药数量在屏幕中央计数，再飞向弹药区域（Cocos Creator 3.8.x，2D UI）
  *
  * 流程（默认约 2.3 秒）：
- *   0.00  中央展开橙红色魔法阵，6 颗红色子弹方块排成枪管圈开始旋转，越转越快，枪口喷火花
+ *   0.00  中央展开橙红色魔法阵（可关），6 颗红色子弹方块排成一圈开始旋转，越转越快
  *   0.45  数字「×0」弹出并快速计数到「×20」，每跳一下数字跟着抖一下、甩出一颗子弹火花
  *   1.15  计数完成：闪光 + 冲击波 + 火星四溅，数字放大停顿
  *   1.40  数字沿弧线飞向弹药区域，拖着火焰尾迹；子弹方块排成一串紧随其后
@@ -65,6 +65,7 @@ export class MagicGatlingEffect extends Component {
     @property({ tooltip: '数字字号' }) numberFontSize = 104;
     @property({ tooltip: '数字颜色' }) numberColor = new Color(255, 240, 150, 255);
     @property({ tooltip: '数字描边颜色' }) numberOutline = new Color(140, 30, 10, 255);
+    @property({ tooltip: '显示背后的魔法阵圆圈' }) showMagicCircle = true;
     @property({ tooltip: '魔法阵颜色' }) magicColor = new Color(255, 130, 60, 255);
 
     private _fx: Graphics | null = null;
@@ -236,7 +237,7 @@ export class MagicGatlingEffect extends Component {
         const g = this._fx!, gt = this._top!;
         g.clear(); gt.clear();
         const c = this._circle, b = this._barrel;
-        if (c.a > 0.01) { c.rot += dt * 1.2; drawMagicCircle(g, b.x, b.y, c.r, c.rot, this.magicColor, c.a); }
+        if (this.showMagicCircle && c.a > 0.01) { c.rot += dt * 1.2; drawMagicCircle(g, b.x, b.y, c.r, c.rot, this.magicColor, c.a); }
         // 枪管圈：6 颗子弹绕中心旋转，带运动残影
         if (b.on && b.a > 0.01) {
             b.rot += b.speed * dt;
@@ -250,9 +251,6 @@ export class MagicGatlingEffect extends Component {
                 }
                 drawBullet(gt, b.x + Math.cos(a) * b.r, b.y + Math.sin(a) * b.r, S * b.a, a, this._bulletColor);
             }
-            // 枪管中轴
-            gt.fillColor = alpha(new Color(70, 60, 70), b.a); gt.circle(b.x, b.y, b.r * 0.32); gt.fill();
-            gt.lineWidth = 4; gt.strokeColor = alpha(new Color(30, 20, 30), b.a); gt.circle(b.x, b.y, b.r * 0.32); gt.stroke();
         }
         // 跟飞子弹
         if (this._bullets.length && this._endFn) {
