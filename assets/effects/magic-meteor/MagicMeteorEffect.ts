@@ -59,7 +59,7 @@ export class MagicMeteorEffect extends Component {
     @property({ tooltip: '中央大陨石半径（像素）' }) meteorRadius = 80;
     @property({ tooltip: '小陨石大小（像素）' }) smallSize = 40;
     @property({ tooltip: '展示位置 Y 偏移（相对本节点中心）' }) centerOffsetY = 60;
-    @property({ tooltip: '计数时长（秒）' }) countTime = 0.7;
+    @property({ tooltip: '计数时长（秒）' }) countTime = 0.3;
     @property({ tooltip: '飞行时长（秒）' }) flyTime = 0.55;
     @property({ tooltip: '跟飞的小陨石最多几颗' }) maxFollowers = 6;
     @property({ tooltip: '数字字号' }) numberFontSize = 104;
