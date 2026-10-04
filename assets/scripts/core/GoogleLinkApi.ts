@@ -38,6 +38,20 @@ export interface GoogleLinkResult {
      *  account — only set when `alreadyLinked` is true. Useful for
      *  the confirmation dialog if you want to show a hint. */
     linkedUuid?:    string;
+    /** When present (currently only on the google-games 409 response),
+     *  the server has pre-minted a recovery session for the OTHER uuid
+     *  this Google account owns. The caller just proved it holds this
+     *  Google (the server did the token exchange), so handing out the
+     *  recovery bearer in the same response saves an extra sign-in round-
+     *  trip (`authCode` is one-shot — recovering via loginWithGoogleGames
+     *  afterwards would need a fresh code from Play Games).
+     *
+     *  Callers that have a "no local progress" early-exit (fresh install
+     *  / PlayGamesAutoBind) should use this to silently swap identity;
+     *  callers with existing progress should prompt before applying
+     *  (`PlayerProfile.swapToRecoveredAccount(recovery.uuid, recovery.bearer,
+     *  recovery.expEpochSec, 'google')`). */
+    recovery?: GoogleLoginResult;
 }
 
 export interface GoogleLoginResult {
@@ -137,17 +151,60 @@ export async function linkGoogleGamesToCurrentAccount(authCode: string): Promise
     try {
         return await httpPostJson<GoogleLinkResult>(url, { authCode }, BACKEND_TIMEOUT_MS);
     } catch (err: any) {
-        // Same shape as linkGoogleToCurrentAccount: only reshape the
-        // "google already linked" 409 (recoverable via loginWithGoogleGames);
-        // let "uuid already linked" fall through to the handler's catch
-        // so it surfaces an error toast rather than silently swapping
-        // the player into the other Google-Games account.
+        // Server shape (per INBOX_CLIENT.md 2026-10-04 message from
+        // claude-5d):
+        //   409 { error: "google already linked",
+        //         linkedUuid: "...",
+        //         recovery: { uuid, bearer, expEpochSec } }
+        //   409 { error: "uuid already linked" }   — this uuid is bound
+        //                                            to ANOTHER Google;
+        //                                            recovery can't help
+        //
+        // httpPostJson throws `Error('HTTP 409: <body>')` so we parse the
+        // body back out of err.message. Only reshape 'google already linked'
+        // (recoverable via the attached recovery session, or via a fresh
+        // loginWithGoogleGames round-trip); let 'uuid already linked' fall
+        // through to the handler's catch so it surfaces an error toast
+        // rather than silently swapping the player into the OTHER Google-
+        // Games account they just signed into. Attach `recovery` + `linkedUuid`
+        // when the server includes them so callers can silently swap
+        // (fresh install / no progress case) without burning a second
+        // Play Games authCode.
         const msg = String(err?.message ?? err);
-        if (msg.startsWith('HTTP 409') && /google already linked/i.test(msg)) {
-            return { linked: false, alreadyLinked: true };
+        if (msg.startsWith('HTTP 409')) {
+            const parsed = _tryParse409Body(msg);
+            if (parsed && /google already linked/i.test(parsed.error ?? '')) {
+                const out: GoogleLinkResult = { linked: false, alreadyLinked: true };
+                if (typeof parsed.linkedUuid === 'string') out.linkedUuid = parsed.linkedUuid;
+                if (parsed.recovery
+                    && typeof parsed.recovery.uuid === 'string'
+                    && typeof parsed.recovery.bearer === 'string'
+                    && typeof parsed.recovery.expEpochSec === 'number') {
+                    out.recovery = {
+                        uuid:        parsed.recovery.uuid,
+                        bearer:      parsed.recovery.bearer,
+                        expEpochSec: parsed.recovery.expEpochSec,
+                    };
+                }
+                return out;
+            }
+            // Non-JSON body / unknown error / 'uuid already linked' falls
+            // through to the generic throw so the handler shows an error.
         }
         throw err;
     }
+}
+
+/** Extract the JSON body from Http.ts's `HTTP <status>: <body>` error
+ *  message so we can inspect fields like `error`, `linkedUuid`, `recovery`.
+ *  Returns null if the body isn't JSON (shouldn't happen with the
+ *  current server but keep the parse defensive). */
+function _tryParse409Body(msg: string): any | null {
+    const colonIdx = msg.indexOf(': ');
+    if (colonIdx < 0) return null;
+    const body = msg.slice(colonIdx + 2);
+    try { return JSON.parse(body); }
+    catch { return null; }
 }
 
 export async function loginWithGoogleGames(authCode: string): Promise<GoogleLoginResult> {
