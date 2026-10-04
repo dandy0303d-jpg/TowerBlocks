@@ -1251,6 +1251,14 @@ export class MenuController extends Component {
      *  once (guarded by `_eventNewbie14Wired`). Silent no-op if
      *  either the button or the panel component isn't wired in the
      *  editor. */
+    /** Master kill switch for the Newbie-14 (7-day sign-in reward) feature.
+     *  When true, the main-menu entry button + red dot never appear and
+     *  no /player/event/newbie14/status fetch is made. Scene wiring +
+     *  @property slots are intentionally left in place so the feature can
+     *  be re-enabled by flipping this one flag (no scene re-authoring
+     *  needed). Dandy turned the activity off per 2026-10 product call. */
+    private static readonly NEWBIE14_FEATURE_ENABLED = false;
+
     private _eventNewbie14Wired = false;
     private _refreshEventNewbie14Button(): void {
         const btn = this.authoredEventNewbie14Button;
@@ -1264,6 +1272,12 @@ export class MenuController extends Component {
         // there's an unclaimed reward waiting today.
         if (this.authoredEventNewbie14RedDot) {
             this.authoredEventNewbie14RedDot.node.active = false;
+        }
+        // Feature-flagged OFF — bail BEFORE wiring the click handler /
+        // idle FX / fetch. Leaves the button hidden (set above) and
+        // nothing else runs; no network calls, no tween loops.
+        if (!MenuController.NEWBIE14_FEATURE_ENABLED) {
+            return;
         }
         if (!this._eventNewbie14Wired) {
             btn.node.on(Button.EventType.CLICK, () => {
