@@ -51,6 +51,7 @@ import { fetchBackpack, consumeBackpackItem, getCachedBackpack } from '../core/B
 import { IS_DEV_BUILD } from '../core/BuildConfig';
 import { MagicHourglassEffect } from '../../effects/magic-hourglass/MagicHourglassEffect';
 import { MagicGatlingEffect } from '../../effects/magic-gatling/MagicGatlingEffect';
+import { MagicMeteorEffect } from '../../effects/magic-meteor/MagicMeteorEffect';
 import { MagicTransformEffect } from '../../effects/magic-transform/MagicTransformEffect';
 
 /** 5-row × 3-col pixel-font bitmap patterns for digits 0-9. Each row is
@@ -496,6 +497,9 @@ export class HudController extends Component {
 
     @property({ type: MagicGatlingEffect, tooltip: '魔法加特林特效（选择加特林道具时播放：枪管圈旋转 → 「×N」计数 → 子弹飞到弹药区域）。全屏空节点挂上 MagicGatlingEffect 后拖进来，留空则回退到现有的像素数字飞行动画。' })
     magicGatlingFx: MagicGatlingEffect | null = null;
+
+    @property({ type: MagicMeteorEffect, tooltip: '魔法陨石特效（选择陨石道具时播放：陨石砸进中央 → 「×N」计数 → 流星飞到陨石倒计时区域）。全屏空节点挂上 MagicMeteorEffect 后拖进来（可以和沙漏/加特林共用一个节点），留空则回退到现有的像素数字飞行动画。' })
+    magicMeteorFx: MagicMeteorEffect | null = null;
 
     @property({ type: MagicTransformEffect, tooltip: '魔法变形特效（选择变形道具 → 选目标形状时播放：魔法阵 + 彩虹漩涡 → 形状轮换定格 → 飞到 NEXT 预览区）。全屏空节点挂上 MagicTransformEffect 后拖进来，留空则不播特效直接应用形状。' })
     magicTransformFx: MagicTransformEffect | null = null;
@@ -2917,6 +2921,10 @@ export class HudController extends Component {
                 this._playGatlingFx(key, idx);
                 return;
             }
+            if (key.startsWith('meteor') && this.magicMeteorFx) {
+                this._playMeteorFx(key, idx);
+                return;
+            }
             this._flyNumberThenPick(key);
             return;
         }
@@ -3036,6 +3044,39 @@ export class HudController extends Component {
             onArrive:     () => {
                 const ok = g.pickEnergyReward(key);
                 console.log(`[Picker] magicGatlingFx landed, fired '${key}' -> ${ok}`);
+                this.syncPickupCountdowns(g);
+            },
+        });
+    }
+
+    /** Meteor path via the authored MagicMeteorEffect. Same shape as
+     *  the hourglass / gatling helpers above. Fires pickEnergyReward on
+     *  arrival so the real pixel countdown pops when the FX lands. */
+    private _playMeteorFx(key: MagicItemKey, slotIdx: number): void {
+        const g = this.gameController?.gameState;
+        const fx = this.magicMeteorFx;
+        if (!g || !fx) {
+            this._flyNumberThenPick(key);
+            return;
+        }
+        const count = this._initialCountFor(key);
+        if (count <= 0) {
+            this._flyNumberThenPick(key);
+            return;
+        }
+        const fromNode: Node | null = this.authoredPickerSlotButtons?.[slotIdx]?.node ?? null;
+        const targetWrap = this.meteorCountRoot;
+        this.hidePicker();
+        fx.node.active = true;
+        void fx.play({
+            from:         fromNode,
+            target:       () => targetWrap,
+            count,
+            counterLabel: null,
+            fromCount:    0,
+            onArrive:     () => {
+                const ok = g.pickEnergyReward(key);
+                console.log(`[Picker] magicMeteorFx landed, fired '${key}' -> ${ok}`);
                 this.syncPickupCountdowns(g);
             },
         });
