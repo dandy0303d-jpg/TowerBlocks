@@ -95,6 +95,11 @@ import { fetchConsentStatus } from '../core/ConsentApi';
 import { ConsentModal } from './ConsentModal';
 import { GoogleWebOAuth } from '../channels/google/GoogleWebOAuth';
 import { linkGoogleToCurrentAccount, loginWithGoogle } from '../core/GoogleLinkApi';
+// Sign in with Apple (channel/app-store only). Imports resolve on this
+// branch; on other channels the files don't exist and this file is only
+// built on app-store, so no gate needed.
+import { AppleAuth } from '../channels/apple/AppleAuth';
+import { linkAppleAccount, loginWithApple } from '../channels/apple/AppleAuthApi';
 
 const { ccclass, property } = _decorator;
 
@@ -3816,10 +3821,7 @@ export class MenuController extends Component {
         if (this.authoredSettingsAppleButton) {
             const btn = this.authoredSettingsAppleButton;
             btn.node.off('click');
-            btn.node.on('click', () => {
-                log('[Settings] Apple button clicked — bind/unbind flow TODO');
-                this.refreshAuthoredSettingsValues();
-            }, this);
+            btn.node.on('click', () => this.handleAppleBindClick(), this);
         }
         // Legacy toggle bindings kept for backward compat — a scene that
         // still uses the Toggle version will still update on click.
@@ -4510,6 +4512,120 @@ export class MenuController extends Component {
         // Neither linked nor alreadyLinked — shouldn't happen per spec.
         console.warn('[Settings] /link/google returned unexpected shape:', JSON.stringify(link));
         this.showSettingsToast(t('settings.google.error'), 'error');
+    }
+
+    /** Settings-panel Apple button handler. Mirrors handleGoogleBindClick
+     *  1:1 — same three branches (already-linked / happy-path link /
+     *  recovery-on-conflict), same toast / confirm / scene-reload flow.
+     *  Only differences are the SIWA auth path and the apple backend
+     *  endpoints.
+     *
+     *   1. Already apple-linked → toast "already linked", done.
+     *   2. Guest → present SIWA sheet via AppleAuth.signIn().
+     *      Server POST /player/link/apple binds (uuid, appleSub).
+     *   3. Conflict (this appleSub owns another uuid) → confirm recovery,
+     *      POST /player/login/apple, swap identity + reload scene. */
+    private async handleAppleBindClick(): Promise<void> {
+        // Already bound → toast + bail. Unlink isn't a feature yet
+        // (server has no unbind endpoint).
+        if (PlayerProfile.accountType === 'apple') {
+            this.showSettingsToast(t('settings.apple.alreadyLinked'), 'info');
+            return;
+        }
+        // iOS-only. Editor preview / macOS / Android gets a clean
+        // "not supported" toast rather than a cryptic native throw.
+        if (sys.os !== sys.OS.IOS) {
+            this.showSettingsToast(t('settings.apple.unsupported'), 'error');
+            return;
+        }
+        // ---- 1) Present the SIWA sheet, wait for identityToken ----
+        let cred;
+        try {
+            log('[Settings] Apple bind — presenting SIWA sheet');
+            this.showSettingsToast(t('settings.apple.pending'), 'info');
+            cred = await AppleAuth.signIn();
+        } catch (err: any) {
+            const msg = err?.message ?? String(err);
+            // AppleAuthBridge returns 'user-cancelled' when the user
+            // dismisses the sheet — don't nag them with an error toast.
+            if (/user-cancelled|cancel/i.test(msg)) {
+                log(`[Settings] Apple sign-in cancelled: ${msg}`);
+                return;
+            }
+            console.warn('[Settings] Apple sign-in FAILED:', msg);
+            this.showSettingsToast(t('settings.apple.error'), 'error');
+            return;
+        }
+        // ---- 2) Try to bind to CURRENT uuid ----
+        let link;
+        try {
+            link = await linkAppleAccount(
+                cred.identityToken,
+                cred.appleSub,
+                cred.authorizationCode,
+            );
+        } catch (err: any) {
+            console.warn('[Settings] /link/apple FAILED:', err?.message ?? err);
+            this.showSettingsToast(t('settings.apple.error'), 'error');
+            return;
+        }
+        if (link.linked) {
+            // Happy path — flip profile to apple so the button sprite
+            // reads "bound" on next repaint.
+            PlayerProfile.setAccountType('apple');
+            this.showSettingsToast(t('settings.apple.linked'), 'info');
+            this.refreshAuthoredSettingsValues();
+            log('[Settings] Apple linked to current uuid');
+            return;
+        }
+        // ---- 3) Conflict — this appleSub owns ANOTHER uuid ----
+        if (link.alreadyLinked) {
+            // Server didn't give us the recovery payload inline (unlike
+            // google-games which returns bearer in the 409). Have to do
+            // a separate /player/login/apple call with the SAME
+            // identityToken we just got from SIWA (still fresh — Apple's
+            // tokens are good for the lifetime of this sheet).
+            log('[Settings] Apple already linked to another uuid — offering recovery');
+            const ok = await this.showConfirm(
+                t('settings.apple.recover.title'),
+                t('settings.apple.recover.desc'),
+                t('common.confirm'),
+                t('common.cancel'),
+            );
+            if (!ok) {
+                log('[Settings] Apple recovery declined by user');
+                return;
+            }
+            try {
+                const rec = await loginWithApple(cred.identityToken);
+                // Pass accountType='apple'. swapToRecoveredAccount lazily
+                // decodes exp from the bearer JWT when expEpochSec isn't
+                // supplied — Apple login contract doesn't return it.
+                PlayerProfile.swapToRecoveredAccount(
+                    rec.uuid, rec.bearer, undefined, 'apple',
+                );
+                // Scene-reload cleanup — same reasoning as Google's path:
+                // the recovered account has a completely different
+                // profile / wallet / progress / event state than the
+                // outgoing guest. Wipe device-scoped progress caches so
+                // boot's max-merge doesn't mix the two.
+                LevelProgress.reset();
+                sys.localStorage.removeItem(MenuController.ENDLESS_BEST_KEY);
+                this._endlessBestLayers = 0;
+                log(`[Settings] Recovered Apple-linked account: ${rec.uuid} — reloading scene`);
+                this.showSettingsToast(t('settings.apple.recovered'), 'info');
+                this.scheduleOnce(() => {
+                    director.loadScene('Game');
+                }, 0.4);
+            } catch (err: any) {
+                console.warn('[Settings] /login/apple FAILED:', err?.message ?? err);
+                this.showSettingsToast(t('settings.apple.error'), 'error');
+            }
+            return;
+        }
+        // Neither linked nor alreadyLinked — shouldn't happen per spec.
+        console.warn('[Settings] /link/apple returned unexpected shape:', JSON.stringify(link));
+        this.showSettingsToast(t('settings.apple.error'), 'error');
     }
 
     // ============================================================
