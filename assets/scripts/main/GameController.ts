@@ -419,6 +419,18 @@ export class GameController extends Component {
      *  is gated. */
     private static readonly LEADERBOARD_FIRST_LEVEL_IDX = 9;
 
+    /** Minimum endless/blind tower height required for a game-over
+     *  (or pause-quit) submit to actually hit the leaderboard. = 30 →
+     *  matches both the Leaderboard-unlock gate
+     *  (MenuController.LEADERBOARD_UNLOCK_ENDLESS_LAYERS) and the
+     *  ENDLESS_AUTO_SUBMIT_INTERVAL above. Short runs (fresh install
+     *  tutorial fumbles, player dying in the first 30 layers) are
+     *  excluded so the top-10 board isn't flooded with sub-30 noise
+     *  from players who haven't learned the mode. Natural game-overs
+     *  below the threshold still fire mode_end analytics + persist
+     *  endless-best locally; only the leaderboard submit is gated. */
+    private static readonly LEADERBOARD_MIN_ENDLESS_SCORE = 30;
+
     /** Highest `endlessProgress.cumulative` value already auto-submitted
      *  in THIS run. Reset via resetEndlessAutoSubmitTracker() at the
      *  start of every fresh endless attempt so the first crossing of
@@ -5635,13 +5647,26 @@ export class GameController extends Component {
      *  via the pause overlay's "Home" button so partial progress still
      *  counts. Server does best-of merging so re-submitting a lower
      *  height after a higher one is safe. No-op outside endless/blind
-     *  or when height is 0 (nothing to report). Fire-and-forget. */
+     *  or when height is below LEADERBOARD_MIN_ENDLESS_SCORE (short
+     *  runs are learning-curve noise, excluded from the competitive
+     *  board — matches the Leaderboard-unlock gate). Fire-and-forget.
+     *
+     *  mode_end analytics still fires for ALL runs (including sub-min)
+     *  so the engagement / drop-off funnel stays measurable; only the
+     *  leaderboard submit is gated. */
     public submitEndlessHeightIfApplicable(reason: 'game-over' | 'pause-quit' | 'mode-select-return'): void {
         const mode = this.gameState?.mode;
         if (mode !== 'endless' && mode !== 'blind') return;
         const score = this.gameState?.endlessProgress?.cumulative ?? 0;
         if (score <= 0) {
             log(`[TowerBlocks] skip ${mode} submit (${reason}) — height=0`);
+            return;
+        }
+        if (score < GameController.LEADERBOARD_MIN_ENDLESS_SCORE) {
+            log(`[TowerBlocks] skip ${mode} leaderboard submit (${reason}) — height=${score} < min=${GameController.LEADERBOARD_MIN_ENDLESS_SCORE}`);
+            // Still fire mode_end so the funnel analytics (how far short
+            // runs got, quit vs die reasons) stay complete.
+            AnalyticsApi.logCustom('mode_end', { mode, score, reason });
             return;
         }
         log(`[TowerBlocks] submitting ${mode} score ${score} to leaderboard (${reason})`);
