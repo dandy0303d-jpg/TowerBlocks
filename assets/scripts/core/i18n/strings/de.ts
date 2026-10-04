@@ -114,6 +114,7 @@ export const DE: Record<string, string> = {
 
     'level.name':        'Level {n}',
     'level.floorName':   'Etage {n}',
+    'level.stageNameNM': 'Level {g}-{f}',
     'level.clearTime':   'Zeit: {time}',
     'level.congrats':    'Level geschafft!',
     'level.enter':       'Level starten',

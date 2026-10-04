@@ -123,6 +123,7 @@ export const ES: Record<string, string> = {
     // ---------- Level select ----------
     'level.name':        'Nivel {n}',
     'level.floorName':   'Piso {n}',
+    'level.stageNameNM': 'Nivel {g}-{f}',
     'level.clearTime':   'Tiempo: {time}',
     'level.congrats':    '¡Nivel superado!',
     'level.enter':       'Entrar al nivel',

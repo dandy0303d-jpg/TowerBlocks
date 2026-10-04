@@ -125,6 +125,7 @@ export const EN: Record<string, string> = {
     // ---------- Level select ----------
     'level.name':        'Level {n}',
     'level.floorName':   'Floor {n}',
+    'level.stageNameNM': 'Level {g}-{f}',
     'level.clearTime':   'Clear time: {time}',
     'level.congrats':    'Level Cleared!',
     'level.enter':       'Enter Level',

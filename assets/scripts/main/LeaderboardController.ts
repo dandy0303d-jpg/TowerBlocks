@@ -663,9 +663,13 @@ export class LeaderboardController extends Component {
         const hasPB = typeof secs === 'number';
         const mm = hasPB ? Math.floor(secs! / 60).toString().padStart(2, '0') : '';
         const ss = hasPB ? (secs! % 60).toString().padStart(2, '0') : '';
+        // "스테이지 N-M" / "关卡 N-M" —— N = 本命方块组号 (1..220)，
+        // M = 组内第几关 (1..9)。idx 是 0-based 关卡序号。
+        const stageG = Math.floor(idx / 9) + 1;
+        const stageF = (idx % 9) + 1;
         row.populate({
             rank:       idx + 1,
-            rankLabel:  t('level.floorName', { n: idx + 1 }),
+            rankLabel:  t('level.stageNameNM', { g: stageG, f: stageF }),
             name:       PlayerProfile.name,
             score:      hasPB ? secs! : 0,
             scoreLabel: hasPB ? `${mm}:${ss}` : '—',
@@ -822,11 +826,9 @@ export class LeaderboardController extends Component {
                 byIdx.set(e.levelIdx, e);
                 if (e.levelIdx > maxIdx) maxIdx = e.levelIdx;
             }
-            // Total-floor count — fall back to 99 (Tetri Tower's authored
-            // level count). If a future version bumps flatLevels.length
-            // we could route it through here, but a static 99 is fine
-            // for now — extra empty rows just render "—".
-            const TOTAL_LEVELS = 99;
+            // Total-floor count — 1980 关（220 组 × 9 层）。原来写死 99，
+            // 导致 idx > 98 的通关记录（例如 31-6 = idx 275）从不展示。
+            const TOTAL_LEVELS = 1980;
             const out: LeaderboardEntry[] = [];
             // Iterate HIGH → LOW so the first array item is Stage 99
             // (levelIdx 98) and the last is Stage 1. The scene's
@@ -851,9 +853,11 @@ export class LeaderboardController extends Component {
                 if (!top) continue;   // skip floors with no clear yet
                 const mm = Math.floor(top.elapsedSec / 60).toString().padStart(2, '0');
                 const ss = (top.elapsedSec % 60).toString().padStart(2, '0');
+                const stageG = Math.floor(idx / 9) + 1;
+                const stageF = (idx % 9) + 1;
                 out.push({
-                    rank:       idx + 1,   // floor number (1..99)
-                    rankLabel:  t('level.floorName', { n: idx + 1 }),
+                    rank:       idx + 1,   // floor number (1..1980)
+                    rankLabel:  t('level.stageNameNM', { g: stageG, f: stageF }),
                     name:       top.name,
                     score:      top.elapsedSec,     // raw seconds — honest sort field
                     scoreLabel: `${mm}:${ss}`,     // painter-facing display

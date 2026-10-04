@@ -127,6 +127,7 @@ export const JA: Record<string, string> = {
     // ---------- ステージ選択 ----------
     'level.name':        'ステージ {n}',
     'level.floorName':   'ステージ {n}階',
+    'level.stageNameNM': 'ステージ {g}-{f}',
     'level.clearTime':   'クリア時間：{time}',
     'level.congrats':    'ステージクリア！',
     'level.enter':       'ステージ開始',

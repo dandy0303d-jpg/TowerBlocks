@@ -128,6 +128,7 @@ export const ZH: Record<string, string> = {
     // ---------- 关卡选择 ----------
     'level.name':        '关卡 {n}',
     'level.floorName':   '关卡 {n} 层',
+    'level.stageNameNM': '关卡 {g}-{f}',
     'level.clearTime':   '通关时间：{time}',
     'level.congrats':    '恭喜通关',
     'level.enter':       '进入关卡',

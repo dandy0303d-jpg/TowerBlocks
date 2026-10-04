@@ -116,7 +116,7 @@ export const KO: Record<string, string> = {
     'endless.milestone':     '{n}층 달성!',
 
     // ---------- Fate piece modal ----------
-    'fate.modalTitle':   '본명 블록 {n}',
+    'fate.modalTitle':   '운명의 블록 {n}',
     'fate.reroll':       '운명을 바꿔라 ({n}/3)',
     'fate.reroll.ad':    '🎬 광고 보고 운명 바꾸기',
     'fate.start':        '시작',
@@ -131,6 +131,7 @@ export const KO: Record<string, string> = {
     'level.name':        '스테이지 {n}',
     // 排行榜关卡模式专用（塔层数格式）—— 与 level.name 分开，避免影响其它 UI
     'level.floorName':   '스테이지 {n}층',
+    'level.stageNameNM': '스테이지 {g}-{f}',
     'level.clearTime':   '클리어 시간: {time}',
     'level.congrats':    '스테이지 클리어!',
     'level.enter':       '스테이지 진입',

@@ -112,6 +112,7 @@ export const FR: Record<string, string> = {
 
     'level.name':        'Niveau {n}',
     'level.floorName':   'Étage {n}',
+    'level.stageNameNM': 'Niveau {g}-{f}',
     'level.clearTime':   'Temps : {time}',
     'level.congrats':    'Niveau terminé !',
     'level.enter':       'Entrer',
