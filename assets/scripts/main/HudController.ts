@@ -49,6 +49,7 @@ import { consumeDailyFree } from '../core/DailyFreeApi';
 import { PlayerProfile } from '../core/PlayerProfile';
 import { fetchBackpack, consumeBackpackItem, getCachedBackpack } from '../core/BackpackApi';
 import { IS_DEV_BUILD } from '../core/BuildConfig';
+import { MagicHourglassEffect } from '../../effects/magic-hourglass/MagicHourglassEffect';
 
 /** 5-row × 3-col pixel-font bitmap patterns for digits 0-9. Each row is
  *  a 3-char bitmask ('1' = lit pixel, '0' = empty). Rows are top → bottom.
@@ -487,6 +488,9 @@ export class HudController extends Component {
 
     @property({ type: Button, tooltip: '取消按钮（点击 → 关闭弹窗，道具不消耗）' })
     authoredShapeshifterCancelButton: Button | null = null;
+
+    @property({ type: MagicHourglassEffect, tooltip: '魔法沙漏特效（选择沙漏道具时播放：沙漏从道具卡飞到中央 → 翻转流沙 → "+Ns" 飞到右上角倒计时）。全屏空节点挂上 MagicHourglassEffect 后拖进来，留空则回退到现有的像素数字飞行动画。' })
+    magicHourglassFx: MagicHourglassEffect | null = null;
 
     @property({ type: Node, tooltip: 'NEXT 预览框容器（脚本内在里面动态画形状）' })
     authoredNextPreviewBox: Node | null = null;
@@ -2893,6 +2897,14 @@ export class HudController extends Component {
         // slowdown don't kick in until the number is at rest. Everything
         // else fires instantly.
         if (this._isFlyingPickKey(key)) {
+            // Prefer the authored MagicHourglass FX for hourglass items
+            // when wired — it has the sand-flow + magic-array visuals
+            // the pixel-digit fallback can't match. For gatling / meteor,
+            // keep the legacy pixel-digit fly.
+            if (key.startsWith('hourglass') && this.magicHourglassFx) {
+                this._playHourglassFx(key, idx);
+                return;
+            }
             this._flyNumberThenPick(key);
             return;
         }
@@ -2934,6 +2946,52 @@ export class HudController extends Component {
      *  actual effect (bullets / meteors / slowdown) starts AFTER the
      *  number lands. On landing the fake cross-fades into the real
      *  countdown widget for a seamless handoff. */
+    /** Hourglass path via the authored MagicHourglassEffect. Mirrors the
+     *  flow of `_flyNumberThenPick` (close picker, wait for the FX to
+     *  land, then fire pickEnergyReward so the real countdown appears
+     *  the frame after sand arrives) but delegates the visuals to the
+     *  FX component. `from` is the tapped picker card so the sand-timer
+     *  flies out of it; `target` is the hourglass countdown's root so
+     *  the "+Ns" number lands on top of the pixel digits. `timerLabel`
+     *  is null because our countdown is drawn with Graphics, not a
+     *  Label — the real widget's own repaint picks up the new value
+     *  the frame pickEnergyReward fires. */
+    private _playHourglassFx(key: MagicItemKey, slotIdx: number): void {
+        const g = this.gameController?.gameState;
+        const fx = this.magicHourglassFx;
+        if (!g || !fx) {
+            this._flyNumberThenPick(key);
+            return;
+        }
+        const seconds = this._initialCountFor(key);
+        if (seconds <= 0) {
+            this._flyNumberThenPick(key);
+            return;
+        }
+        const fromNode: Node | null = this.authoredPickerSlotButtons?.[slotIdx]?.node ?? null;
+        const targetWrap = this.hourglassCountRoot;
+        // Close the picker immediately — same visual timing as the
+        // pixel-digit path. The FX runs on top of whatever's underneath.
+        this.hidePicker();
+        fx.node.active = true;
+        void fx.play({
+            from:        fromNode,
+            target:      () => targetWrap,
+            seconds,
+            // Our countdown widget uses Graphics-painted pixel digits,
+            // not a Label — pass null so the FX skips its own rolling-
+            // digits step. The real widget repaints via syncPickupCountdowns
+            // the frame after pickEnergyReward fires.
+            timerLabel:  null,
+            fromSeconds: Math.ceil(g.hourglass.remainingMs() / 1000),
+            onArrive:    () => {
+                const ok = g.pickEnergyReward(key);
+                console.log(`[Picker] magicHourglassFx landed, fired '${key}' -> ${ok}`);
+                this.syncPickupCountdowns(g);
+            },
+        });
+    }
+
     private _flyNumberThenPick(key: MagicItemKey): void {
         const g = this.gameController?.gameState;
         if (!g) return;
