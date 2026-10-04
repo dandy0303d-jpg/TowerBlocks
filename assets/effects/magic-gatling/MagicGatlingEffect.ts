@@ -249,7 +249,7 @@ export class MagicGatlingEffect extends Component {
                     g.fillColor = alpha(this._bulletColor, 0.15 * b.a);
                     g.roundRect(b.x + Math.cos(ag) * b.r - S / 2, b.y + Math.sin(ag) * b.r - S / 2, S, S, S * 0.2); g.fill();
                 }
-                drawBullet(gt, b.x + Math.cos(a) * b.r, b.y + Math.sin(a) * b.r, S * b.a, a, this._bulletColor);
+                drawBullet(g, b.x + Math.cos(a) * b.r, b.y + Math.sin(a) * b.r, S * b.a, a, this._bulletColor);
             }
         }
         // 跟飞子弹
@@ -257,7 +257,7 @@ export class MagicGatlingEffect extends Component {
             const end = this._endFn();
             for (const bl of this._bullets) {
                 if (bl.done) continue;
-                if (bl.delay > 0) { bl.delay -= dt; if (bl.delay <= 0) { bl.sx = bl.x; bl.sy = bl.y; } else { drawBullet(gt, bl.x, bl.y, this.bulletSize, bl.rot, this._bulletColor); continue; } }
+                if (bl.delay > 0) { bl.delay -= dt; if (bl.delay <= 0) { bl.sx = bl.x; bl.sy = bl.y; } else { drawBullet(g, bl.x, bl.y, this.bulletSize, bl.rot, this._bulletColor); continue; } }
                 bl.t = Math.min(1, bl.t + dt / (this.flyTime * 0.8));
                 const t = bl.t * bl.t, u = 1 - t;
                 const dx = end.x - bl.sx, dy = end.y - bl.sy, len = Math.max(1, Math.hypot(dx, dy));
