@@ -280,7 +280,7 @@ export const RU: Record<string, string> = {
     'settings.google.error':          'Не удалось войти через Google, попробуйте снова',
     'settings.google.recover.title':  'Аккаунт Google привязан к другому игроку',
     'settings.google.recover.desc':   'Этот аккаунт Google уже привязан к другому игровому аккаунту. Восстановление заменит текущий гостевой аккаунт. Продолжить?',
-    'settings.google.recovered':      'Аккаунт Google восстановлен',
+    'settings.google.recovered':      'Привязка выполнена — перезапуск игры…',
     'settings.deleteAccount.pending': 'Удаление...',
     'settings.deleteAccount.failed':  'Ошибка, попробуйте ещё раз',
 

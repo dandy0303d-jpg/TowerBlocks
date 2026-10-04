@@ -301,7 +301,7 @@ export const ES: Record<string, string> = {
     'settings.google.error':          'Fallo al iniciar sesión con Google, inténtalo de nuevo',
     'settings.google.recover.title':  'Cuenta de Google vinculada a otro jugador',
     'settings.google.recover.desc':   'Esta cuenta de Google ya está vinculada a otra cuenta del juego. Recuperarla reemplazará tu cuenta de invitado actual. ¿Continuar?',
-    'settings.google.recovered':      'Cuenta vinculada a Google recuperada',
+    'settings.google.recovered':      'Vinculación correcta — reiniciando el juego…',
     'settings.deleteAccount.pending': 'Eliminando...',
     'settings.deleteAccount.failed':  'Fallo, intenta de nuevo',
 

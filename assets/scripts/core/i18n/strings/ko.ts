@@ -304,7 +304,7 @@ export const KO: Record<string, string> = {
     'settings.google.error':          'Google 로그인 실패, 다시 시도해 주세요',
     'settings.google.recover.title':  '이 Google 계정은 다른 계정에 연결되어 있습니다',
     'settings.google.recover.desc':   '이 Google 계정은 이미 다른 게임 계정에 연결되어 있습니다. 복구하면 현재 게스트 계정이 폐기됩니다. 계속하시겠습니까?',
-    'settings.google.recovered':      'Google 연결 계정을 복구했습니다',
+    'settings.google.recovered':      '연결 성공 — 게임을 재시작합니다',
     'settings.deleteAccount.pending': '탈퇴 처리 중...',
     'settings.deleteAccount.failed':  '탈퇴 실패, 다시 시도',
     'settings.tos':     '이용약관',

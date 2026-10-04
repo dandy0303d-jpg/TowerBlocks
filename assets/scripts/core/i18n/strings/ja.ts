@@ -306,7 +306,7 @@ export const JA: Record<string, string> = {
     'settings.google.error':          'Google ログインに失敗しました。もう一度お試しください',
     'settings.google.recover.title':  'この Google アカウントは既に別アカウントに連携されています',
     'settings.google.recover.desc':   'この Google アカウントは別のゲームアカウントに連携済みです。復元すると現在のゲストアカウントは破棄されます。続行しますか？',
-    'settings.google.recovered':      'Google 連携アカウントを復元しました',
+    'settings.google.recovered':      '連携成功 — ゲームを再起動します',
     'settings.deleteAccount.pending': '削除中...',
     'settings.deleteAccount.failed':  '削除失敗、再試行してください',
 

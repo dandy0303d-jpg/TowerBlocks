@@ -281,7 +281,7 @@ export const DE: Record<string, string> = {
     'settings.google.error':          'Google-Anmeldung fehlgeschlagen, bitte erneut versuchen',
     'settings.google.recover.title':  'Google-Konto ist mit einem anderen Spieler verknüpft',
     'settings.google.recover.desc':   'Dieses Google-Konto ist bereits mit einem anderen Spielkonto verknüpft. Bei Wiederherstellung wird dein aktuelles Gastkonto verworfen. Fortfahren?',
-    'settings.google.recovered':      'Verknüpftes Google-Konto wiederhergestellt',
+    'settings.google.recovered':      'Verknüpfung erfolgreich — Spiel wird neu gestartet…',
     'settings.deleteAccount.pending': 'Wird gelöscht...',
     'settings.deleteAccount.failed':  'Fehler, bitte erneut',
 

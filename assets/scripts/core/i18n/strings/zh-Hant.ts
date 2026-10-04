@@ -304,7 +304,7 @@ export const ZH_HANT: Record<string, string> = {
     'settings.google.error':          'Google 登入失敗，請重試',
     'settings.google.recover.title':  '該 Google 帳號已綁定其他帳號',
     'settings.google.recover.desc':   '該 Google 帳號已綁定另一個遊戲帳號。恢復後目前遊客帳號將被丟棄。是否繼續？',
-    'settings.google.recovered':      '已恢復 Google 綁定的帳號',
+    'settings.google.recovered':      '綁定成功，即將重啟遊戲',
     'settings.deleteAccount.pending': '刪除中...',
     'settings.deleteAccount.failed':  '刪除失敗,請重試',
 

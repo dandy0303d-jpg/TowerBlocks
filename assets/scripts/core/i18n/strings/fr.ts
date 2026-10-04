@@ -279,7 +279,7 @@ export const FR: Record<string, string> = {
     'settings.google.error':          'Échec de la connexion Google, veuillez réessayer',
     'settings.google.recover.title':  "Compte Google lié à un autre joueur",
     'settings.google.recover.desc':   "Ce compte Google est déjà lié à un autre compte de jeu. La récupération remplacera votre compte invité actuel. Continuer ?",
-    'settings.google.recovered':      'Compte lié à Google récupéré',
+    'settings.google.recovered':      'Compte lié — redémarrage du jeu…',
     'settings.deleteAccount.pending': 'Suppression...',
     'settings.deleteAccount.failed':  'Échec, réessayez',
 

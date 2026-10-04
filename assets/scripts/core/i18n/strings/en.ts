@@ -311,7 +311,7 @@ export const EN: Record<string, string> = {
     'settings.google.error':          'Google sign-in failed, please try again',
     'settings.google.recover.title':  'Google account bound to another player',
     'settings.google.recover.desc':   'This Google account is already linked to a different game account. Recovering will replace your current guest account. Continue?',
-    'settings.google.recovered':      'Recovered linked Google account',
+    'settings.google.recovered':      'Linked successfully — restarting game…',
     'settings.deleteAccount.pending': 'Deleting...',
     'settings.deleteAccount.failed':  'Delete failed, please retry',
     'settings.tos':     'Terms of Service',

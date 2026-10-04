@@ -318,7 +318,7 @@ export const ZH: Record<string, string> = {
     'settings.google.error':          'Google 登录失败，请重试',
     'settings.google.recover.title':  '该 Google 账号已绑定其他账号',
     'settings.google.recover.desc':   '该 Google 账号已绑定另一个游戏账号。恢复后当前游客账号会被丢弃。是否继续？',
-    'settings.google.recovered':      '已恢复 Google 绑定的账号',
+    'settings.google.recovered':      '绑定成功，即将重启游戏',
     'settings.deleteAccount.pending': '删除中...',
     'settings.deleteAccount.failed':  '删除失败，请重试',
 
