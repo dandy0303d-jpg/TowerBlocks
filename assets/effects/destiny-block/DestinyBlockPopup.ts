@@ -184,17 +184,26 @@ export class DestinyBlockPopup extends Component {
         }
 
         // 0.50 层数：先显示上一层，0.75 翻牌
+        //
+        // level <= 0 的调用方（无尽模式入口弹窗，玩家还没进任何关）
+        // 没有有效关卡序号 —— 整个 layerLabel 节点直接隐藏，不要显
+        // 示「第 0 关」占位，也不跑翻牌动画。
         if (this.layerLabel) {
             const n = this.layerLabel.node, b = this.base(n);
-            this.layerLabel.string = this.layerFormat.replace('{n}', String(Math.max(0, level - 1)));
-            tween(this.op(n)).delay(0.5).to(0.15, { opacity: b.opacity }).start();
-            tween(n).delay(0.75)
-                .to(0.09, { scale: new Vec3(b.scale.x, 0, b.scale.z) }, { easing: 'quadIn' })
-                .call(() => { if (this.layerLabel) this.layerLabel.string = this.layerFormat.replace('{n}', String(level)); })
-                .to(0.12, { scale: new Vec3(b.scale.x * 1.15, b.scale.y * 1.25, b.scale.z) }, { easing: 'quadOut' })
-                .to(0.12, { scale: b.scale.clone() }, { easing: 'quadInOut' })
-                .call(() => { this.sparkBurst(n, 6, 1.1); this.ring(n, 0.9, 1.8, 0.4, 0.8); })
-                .start();
+            if (level <= 0) {
+                n.active = false;
+            } else {
+                n.active = true;
+                this.layerLabel.string = this.layerFormat.replace('{n}', String(Math.max(0, level - 1)));
+                tween(this.op(n)).delay(0.5).to(0.15, { opacity: b.opacity }).start();
+                tween(n).delay(0.75)
+                    .to(0.09, { scale: new Vec3(b.scale.x, 0, b.scale.z) }, { easing: 'quadIn' })
+                    .call(() => { if (this.layerLabel) this.layerLabel.string = this.layerFormat.replace('{n}', String(level)); })
+                    .to(0.12, { scale: new Vec3(b.scale.x * 1.15, b.scale.y * 1.25, b.scale.z) }, { easing: 'quadOut' })
+                    .to(0.12, { scale: b.scale.clone() }, { easing: 'quadInOut' })
+                    .call(() => { this.sparkBurst(n, 6, 1.1); this.ring(n, 0.9, 1.8, 0.4, 0.8); })
+                    .start();
+            }
         }
 
         // 0.75 本命方块逐个落下

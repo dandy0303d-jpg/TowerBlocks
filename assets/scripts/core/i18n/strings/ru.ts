@@ -317,9 +317,12 @@ export const RU: Record<string, string> = {
     'settings.googleRecovery.failed':                                       'Ошибка восстановления, попробуйте ещё раз',
     'settings.googleRecovery.success':                                       'Аккаунт восстановлен',
     // ---- Progressive unlock tips ----
-    'lock.endless':      'Достигни {n}-го этажа, чтобы открыть Бесконечный режим',
+    'lock.endless':      'Пройди Блок судьбы 1, чтобы открыть Бесконечный режим',
     'lock.blind':        'Достигни {n} слоёв в Бесконечном режиме, чтобы открыть Слепой режим',
     'lock.leaderboard':  'Достигни {n} слоёв в Бесконечном режиме, чтобы открыть Рейтинг',
+    'unlock.endless':      'Бесконечный режим открыт!',
+    'unlock.blind':        'Слепой режим открыт!',
+    'unlock.leaderboard':  'Рейтинг открыт!',
     'level.next':        'Следующий уровень',
-    'level.floor':       'Этаж {n}',
+    'level.floor':       'Уровень {n}',
 };

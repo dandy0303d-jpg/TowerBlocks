@@ -1033,8 +1033,24 @@ export class GameController extends Component {
                 // Natural row-clear ≥ 3 rows also gets the shake
                 // (Tetris-3 / Tetris-4 skill moment). Same params as
                 // box3 / boom / high-tier bomb blasts.
+                //
+                // Also the activity-system report point: ONLY count
+                // natural (24-column-filled) row clears, NOT the ones
+                // triggered by backpack items / bombs / wreckers. The
+                // onPartialShatter hook fires for every shatter visual
+                // path (items included) so it's the wrong seam; this
+                // onNaturalRowClears hook is specifically "player
+                // locked a piece and filled N rows". Batched by
+                // ActivityProgressReporter, flushed on game-over /
+                // level-win / 60s tick.
                 onNaturalRowClears: (count) => {
                     if (count >= 3) this._shakeBoardRoot(440, 0.075);
+                    if (count >= 1) {
+                        ActivityProgressReporter.report(
+                            ActivityProgressKeys.LINES_CLEARED_TOTAL,
+                            count,
+                        );
+                    }
                 },
                 // Backpack `bomb_block` (kind 'box3') — fires 9 times
                 // per bomb, once per cell in the 3×3 area. Reuse the
@@ -4837,11 +4853,12 @@ export class GameController extends Component {
         if (this.clearEffect === 1) {
             this.queueFlash(r, content);
         }
-        // Activity system — accumulate one line cleared per call.
-        // Fires for every row that shatters (level mode / endless / blind
-        // / bomb splice — every path funnels through here). Batched by
-        // ActivityProgressReporter, flushed on game-over + 60s tick.
-        ActivityProgressReporter.report(ActivityProgressKeys.LINES_CLEARED_TOTAL, 1);
+        // NOTE: activity reporting intentionally does NOT fire here any
+        // more. onPartialShatter fires for EVERY shatter visual path —
+        // natural line clears, item blasts (bomb / wrecker / excavator /
+        // row-blast), revive-wipe cleanup — and we only want to count
+        // the player's own placement clears. The report() call now lives
+        // in the `onNaturalRowClears` hook (see makeHooks above).
     }
 
     /** Queue all 24 cells on row `r` for the pre-detonation pulse.
@@ -5580,7 +5597,7 @@ export class GameController extends Component {
      *  counts. Server does best-of merging so re-submitting a lower
      *  height after a higher one is safe. No-op outside endless/blind
      *  or when height is 0 (nothing to report). Fire-and-forget. */
-    public submitEndlessHeightIfApplicable(reason: 'game-over' | 'pause-quit'): void {
+    public submitEndlessHeightIfApplicable(reason: 'game-over' | 'pause-quit' | 'mode-select-return'): void {
         const mode = this.gameState?.mode;
         if (mode !== 'endless' && mode !== 'blind') return;
         const score = this.gameState?.endlessProgress?.cumulative ?? 0;

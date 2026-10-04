@@ -346,9 +346,12 @@ export const KO: Record<string, string> = {
     'settings.googleRecovery.failed':                                       '복구 실패, 다시 시도',
     'settings.googleRecovery.success':                                       '계정 복구 완료',
     // ---- Progressive unlock tips ----
-    'lock.endless':      '{n}층에 도달하면 무한 모드 해금',
+    'lock.endless':      '운명의 블록 1을 깨면 무한 모드 해금',
     'lock.blind':        '무한 모드에서 {n}층 달성 시 블라인드 모드 해금',
     'lock.leaderboard':  '무한 모드에서 {n}층 달성 시 랭킹 해금',
+    'unlock.endless':      '무한 모드 해금!',
+    'unlock.blind':        '블라인드 모드 해금!',
+    'unlock.leaderboard':  '순위표 해금!',
     'level.next':        '다음 스테이지',
-    'level.floor':       '{n}층',
+    'level.floor':       '레벨 {n}',
 };

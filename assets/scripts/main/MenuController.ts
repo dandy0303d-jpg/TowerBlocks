@@ -53,6 +53,7 @@ import { TutorialProgress } from '../core/TutorialProgress';
 import { TutorialController } from './TutorialController';
 import { BadgeGetEffect } from '../../effects/badge-get/BadgeGetEffect';
 import { DiamondClaimEffect } from '../../effects/diamond-claim/DiamondClaimEffect';
+import { FeatureUnlockEffect } from '../../effects/feature-unlock/FeatureUnlockEffect';
 import { t, cycleLang, setLang, getLang, subscribe as subscribeLang, SUPPORTED_LANGS, Lang } from '../core/i18n/I18n';
 import {
     getBgmVolume,   setBgmVolume,   cycleBgmVolume,
@@ -355,8 +356,12 @@ export class MenuController extends Component {
      *  server-authoritative; this local copy just prevents flashes
      *  of the locked state on first frame after boot / reinstall. */
     private static readonly ENDLESS_BEST_KEY = 'cb.endlessBestLayers';
-    /** Number of Level-mode clears needed to unlock Endless mode. */
-    private static readonly ENDLESS_UNLOCK_LEVEL_COUNT = 10;
+    /** Number of Level-mode clears needed to unlock Endless mode.
+     *  = 9 → completing Fate Piece 1 (levels 1-9, idx 0-8). The gate
+     *  phrases this way deliberately so the lock-tip toast reads
+     *  "clear fate piece 1 to unlock" rather than "clear 9 levels",
+     *  tying the unlock to the progression unit players see on screen. */
+    private static readonly ENDLESS_UNLOCK_LEVEL_COUNT = 9;
     /** Endless best-height needed to unlock Blind mode + Leaderboard.
      *  Both gates share this single threshold — bumping / lowering it
      *  moves both unlocks together, and the `lock.blind` / `lock.leaderboard`
@@ -366,6 +371,32 @@ export class MenuController extends Component {
 
     @property({ type: Button, tooltip: '设置按钮' })
     modeBtnSettings: Button | null = null;
+
+    // ---- Feature-unlock FX (meta-progression celebration) ----
+    // Drag a scene node that has FeatureUnlockEffect attached. The script
+    // plays it when the player crosses a progression gate on this very
+    // menu refresh (level-10 clear → Endless; 50-layer run → Blind +
+    // Leaderboard pair). Empty slot = no FX, buttons still unlock
+    // instantly. See _refreshModeButtonLocks for the transition detection.
+    @property({ type: FeatureUnlockEffect, tooltip: '功能解锁特效（主菜单在模式按钮解锁时播放）—— 全屏空节点挂 FeatureUnlockEffect 后拖进来，不拖就不播，可选' })
+    featureUnlockFx: FeatureUnlockEffect | null = null;
+
+    // Optional per-button lock icon nodes. The FX shakes & shatters this
+    // node during play; if left empty, FX falls back to centering on the
+    // button and only drawing shards/flash (per FeatureUnlockEffect README).
+    @property({ type: Node, tooltip: '无尽模式按钮上的锁头 Node（可空，为空特效会以按钮中心代替锁位置）' })
+    endlessLockNode: Node | null = null;
+    @property({ type: Node, tooltip: '闭眼模式按钮上的锁头 Node（可空）' })
+    blindLockNode: Node | null = null;
+    @property({ type: Node, tooltip: '排行榜按钮上的锁头 Node（可空）' })
+    leaderboardLockNode: Node | null = null;
+
+    // Session-scoped unlock-transition memory. Set in wireModeSelectPanel
+    // from the current state (so initial paint doesn't trigger FX), then
+    // compared each _refreshModeButtonLocks to decide whether to play the
+    // FeatureUnlock celebration for a just-crossed threshold.
+    private _prevEndlessUnlocked = false;
+    private _prevBlindOrLbUnlocked = false;
 
     // ============================================================
     //  Authored 关卡失败 / 游戏结束 弹窗
@@ -1000,6 +1031,14 @@ export class MenuController extends Component {
                 }
                 log(`[MenuController] boot profile ready — bestScores=${JSON.stringify(p?.bestScores)}`);
                 // Repaint mode buttons in case unlock state changed.
+                // Re-seed the FX transition memory to the post-sync state
+                // FIRST so cold-boot server catch-up (e.g. this device
+                // never had the endless-best cached locally, server says
+                // 50) is treated as "already unlocked at boot" and does
+                // NOT replay the unlock celebration. Only genuine mid-
+                // session transitions (play a run, cross the gate) fire.
+                this._prevEndlessUnlocked   = this._isEndlessUnlocked();
+                this._prevBlindOrLbUnlocked = this._isBlindOrLbUnlocked();
                 this._refreshModeButtonLocks();
             } catch (err) {
                 if (!getBannedState()) {
@@ -1103,6 +1142,22 @@ export class MenuController extends Component {
         // recorded — no matter which button/gesture the player used.
         // No-op in level mode or when height is 0. Fire-and-forget.
         try {
+            // Also update local _endlessBestLayers BEFORE the submit —
+            // otherwise `_refreshModeButtonLocks()` below reads a stale
+            // value and the Blind/Leaderboard buttons stay locked until
+            // the next cold-boot fetchProfile pulls the server's record
+            // back. This bug bit when a player reached ≥50 layers and
+            // used Pause→Home to return (voluntary quit skips the
+            // _showGameOverFinal → _recordEndlessRun path that die-
+            // ending runs go through). Reads the live run's cumulative
+            // height straight off gameState; no-op in level mode / zero
+            // height, same guards as submitEndlessHeightIfApplicable.
+            const gs = this.gameController?.gameState;
+            const mode = gs?.mode;
+            if (mode === 'endless' || mode === 'blind') {
+                const layers = gs?.endlessProgress?.cumulative ?? 0;
+                if (layers > 0) this._recordEndlessRun(layers);
+            }
             this.gameController?.submitEndlessHeightIfApplicable('mode-select-return');
         } catch (e) {
             console.warn('[MenuController] submitEndlessHeightIfApplicable threw during showModeSelect:', (e as Error)?.message);
@@ -2937,13 +2992,11 @@ export class MenuController extends Component {
         bindBtn(this.modeBtnEndless,       'menu.endless', () => {
             if (this._isEndlessUnlocked()) this.enterEndless();
             else {
-                // Forward stage numbering — player needs to clear
-                // through Stage `ENDLESS_UNLOCK_LEVEL_COUNT` (default
-                // 10) to unlock endless. "Reach floor 10 to unlock
-                // Endless" reads naturally.
-                this._showLockToast(t('lock.endless', {
-                    n: MenuController.ENDLESS_UNLOCK_LEVEL_COUNT,
-                }));
+                // Unlock gate = clear Fate Piece 1 (levels 1-9,
+                // ENDLESS_UNLOCK_LEVEL_COUNT = 9). Toast references
+                // the progression unit the player sees ("clear fate
+                // piece 1 to unlock"), no numeric substitution needed.
+                this._showLockToast(t('lock.endless'));
             }
         });
         bindBtn(this.modeBtnLevel,         'menu.levels',      () => this.showLevelSelect());
@@ -3007,6 +3060,14 @@ export class MenuController extends Component {
         // Initial paint of lock state — showModeSelect will refresh on
         // subsequent shows as progress changes.
         this._loadEndlessBestFromStorage();
+        // Seed the transition memory to the CURRENT state BEFORE the
+        // initial lock paint so booting straight into a fully-unlocked
+        // menu doesn't spam three celebration animations on first frame.
+        // Session-scoped — a fresh app launch always starts "silent", only
+        // mid-session transitions (reach 10 clears / 50 endless layers)
+        // trigger the FX.
+        this._prevEndlessUnlocked   = this._isEndlessUnlocked();
+        this._prevBlindOrLbUnlocked = this._isBlindOrLbUnlocked();
         this._refreshModeButtonLocks();
     }
 
@@ -3090,9 +3151,54 @@ export class MenuController extends Component {
         };
         const COL_ENDLESS = new Color(0xD6, 0xD7, 0xE4, 255);   // #D6D7E4
         const COL_BLIND   = new Color(0xD8, 0xDB, 0xE7, 255);   // #D8DBE7
-        paintLock(this.modeBtnEndless,     this._isEndlessUnlocked(),     this.modeBtnEndlessLocked,          COL_ENDLESS);
-        paintLock(this.modeBtnBlind,       this._isBlindOrLbUnlocked(),   this.authoredBlindLockedSprite,     COL_BLIND);
-        paintLock(this.modeBtnLeaderboard, this._isBlindOrLbUnlocked(),   this.authoredLeaderboardLockedSprite);
+        const nowEndless  = this._isEndlessUnlocked();
+        const nowBlindLb  = this._isBlindOrLbUnlocked();
+        paintLock(this.modeBtnEndless,     nowEndless,     this.modeBtnEndlessLocked,          COL_ENDLESS);
+        paintLock(this.modeBtnBlind,       nowBlindLb,     this.authoredBlindLockedSprite,     COL_BLIND);
+        paintLock(this.modeBtnLeaderboard, nowBlindLb,     this.authoredLeaderboardLockedSprite);
+        // Trigger FeatureUnlock celebration on the exact frame a gate flips
+        // from locked → unlocked. Guarded by _prevXxx so idle re-paints
+        // (language switch, revisits) don't spam. Fire-and-forget — the FX
+        // controls its own node and promise, we just kick it off.
+        this._maybePlayUnlockFx(nowEndless, nowBlindLb);
+        this._prevEndlessUnlocked   = nowEndless;
+        this._prevBlindOrLbUnlocked = nowBlindLb;
+    }
+
+    /** Kick a FeatureUnlock celebration whenever an unlock gate just
+     *  flipped (locked → unlocked) relative to the last refresh. No-op
+     *  when the FX node isn't wired. Blind + Leaderboard share one gate
+     *  so they fire in parallel on the same transition. The FX manages
+     *  its own node (fades out and self-hides after ~2.4s), so repeat
+     *  calls just stack. */
+    private _maybePlayUnlockFx(nowEndless: boolean, nowBlindLb: boolean): void {
+        if (!this.featureUnlockFx) return;
+        if (nowEndless && !this._prevEndlessUnlocked && this.modeBtnEndless) {
+            this.featureUnlockFx.play({
+                button: this.modeBtnEndless.node,
+                lock:   this.endlessLockNode,
+                theme:  'endless',
+                title:  t('unlock.endless'),
+            }).catch(e => console.warn('[MenuController] endless unlock fx threw:', e?.message ?? e));
+        }
+        if (nowBlindLb && !this._prevBlindOrLbUnlocked) {
+            if (this.modeBtnBlind) {
+                this.featureUnlockFx.play({
+                    button: this.modeBtnBlind.node,
+                    lock:   this.blindLockNode,
+                    theme:  'blind',
+                    title:  t('unlock.blind'),
+                }).catch(e => console.warn('[MenuController] blind unlock fx threw:', e?.message ?? e));
+            }
+            if (this.modeBtnLeaderboard) {
+                this.featureUnlockFx.play({
+                    button: this.modeBtnLeaderboard.node,
+                    lock:   this.leaderboardLockNode,
+                    theme:  'leaderboard',
+                    title:  t('unlock.leaderboard'),
+                }).catch(e => console.warn('[MenuController] leaderboard unlock fx threw:', e?.message ?? e));
+            }
+        }
     }
 
     /** Show the lock-tip toast. Preferred path is the unified

@@ -316,9 +316,12 @@ export const FR: Record<string, string> = {
     'settings.googleRecovery.failed':                                       'Échec de la restauration, réessayez',
     'settings.googleRecovery.success':                                       'Compte restauré',
     // ---- Progressive unlock tips ----
-    'lock.endless':      'Atteins l’étage {n} pour déverrouiller le Mode Infini',
+    'lock.endless':      'Termine le Bloc du destin 1 pour déverrouiller le Mode Infini',
     'lock.blind':        'Atteins {n} étages en Mode Infini pour déverrouiller le Mode Aveugle',
     'lock.leaderboard':  'Atteins {n} étages en Mode Infini pour déverrouiller le Classement',
+    'unlock.endless':      'Mode Infini débloqué !',
+    'unlock.blind':        'Mode Aveugle débloqué !',
+    'unlock.leaderboard':  'Classement débloqué !',
     'level.next':        'Niveau suivant',
-    'level.floor':       'Étage {n}',
+    'level.floor':       'Niveau {n}',
 };

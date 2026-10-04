@@ -318,9 +318,12 @@ export const DE: Record<string, string> = {
     'settings.googleRecovery.failed':                                       'Wiederherstellung fehlgeschlagen, bitte erneut versuchen',
     'settings.googleRecovery.success':                                       'Konto wiederhergestellt',
     // ---- Progressive unlock tips ----
-    'lock.endless':      'Erreiche Stockwerk {n}, um den Endlos-Modus freizuschalten',
+    'lock.endless':      'Schließe Schicksalsblock 1 ab, um den Endlos-Modus freizuschalten',
     'lock.blind':        'Erreiche {n} Ebenen im Endlos-Modus, um den Blind-Modus freizuschalten',
     'lock.leaderboard':  'Erreiche {n} Ebenen im Endlos-Modus, um die Rangliste freizuschalten',
+    'unlock.endless':      'Endlos-Modus freigeschaltet!',
+    'unlock.blind':        'Blind-Modus freigeschaltet!',
+    'unlock.leaderboard':  'Rangliste freigeschaltet!',
     'level.next':        'Nächstes Level',
-    'level.floor':       'Etage {n}',
+    'level.floor':       'Level {n}',
 };

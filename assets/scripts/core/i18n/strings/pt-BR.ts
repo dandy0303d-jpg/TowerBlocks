@@ -322,9 +322,12 @@ export const PT_BR: Record<string, string> = {
     'settings.googleRecovery.failed':                                       'Falha na restauração, tente novamente',
     'settings.googleRecovery.success':                                       'Conta restaurada',
     // ---- Progressive unlock tips ----
-    'lock.endless':      'Alcance o andar {n} para desbloquear o Modo Infinito',
+    'lock.endless':      'Complete a Peça do destino 1 para desbloquear o Modo Infinito',
     'lock.blind':        'Alcance {n} camadas no Modo Infinito para desbloquear o Modo Cego',
     'lock.leaderboard':  'Alcance {n} camadas no Modo Infinito para desbloquear o Ranking',
+    'unlock.endless':      'Modo Infinito desbloqueado!',
+    'unlock.blind':        'Modo Cego desbloqueado!',
+    'unlock.leaderboard':  'Ranking desbloqueado!',
     'level.next':        'Próxima fase',
-    'level.floor':       'Andar {n}',
+    'level.floor':       'Nível {n}',
 };
