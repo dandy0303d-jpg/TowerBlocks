@@ -2008,7 +2008,9 @@ export class MenuController extends Component {
             const btn = cellNode?.getComponent(Button);
             if (btn) btn.interactable = false;
         }
-        SoundManager.instance?.play('item_pick');
+        // 不播 item_pick：成功时下面的 gem_claim 音效更贴切（钻石入账感），
+        // 失败时才不播（避免误导）。玩家按钮按下的即时反馈靠按钮本身的
+        // 禁用状态 + DiamondClaim 特效的喷出瞬间来兜底。
         // 记录扣款/加款前的余额，DiamondClaim 特效需要 fromValue 做数字滚动
         const gemsBefore = this._cachedGemBalance;
         claimBadgeReward(groupIdx).then((res) => {
