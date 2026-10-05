@@ -43,7 +43,8 @@ export type SfxKey =
     | 'wrecker_fire'   // 拆迁队触发（发射彩色方块儿投射物那一拍）
     | 'level_scatter'  // 通关时塔散花的音效（scatter animation）
     | 'gem_claim'      // 徽章图鉴领取钻石（DiamondClaim 特效 onComplete 时）
-    | 'count_tick';    // 魔法道具 FX 计数阶段每跳一下（陨石 / 加特林）
+    | 'count_tick'     // 魔法道具 FX 计数阶段每跳一下（陨石 / 加特林）
+    | 'sand_tick';     // 沙漏 FX 流沙阶段每撒一次沙触发一次（共 8 次）
 
 @ccclass('SoundManager')
 export class SoundManager extends Component {
@@ -115,6 +116,9 @@ export class SoundManager extends Component {
 
     @property({ type: AudioClip, tooltip: '魔法道具计数音效（陨石 / 加特林 FX 的「×0 → ×N」计数阶段，每跳一下触发一次，共 min(count, 20) 次）— 建议用短促的 "咔" 或 "叮"' })
     countTick: AudioClip | null = null;
+
+    @property({ type: AudioClip, tooltip: '沙漏流沙音效（沙漏 FX 的沙粒撒落阶段，每撒一次沙触发一次，共 8 次，总长 ~0.55s）— 建议用轻微的沙粒 / 水滴声' })
+    sandTick: AudioClip | null = null;
 
     // ---- Global tuning ----
 
@@ -226,6 +230,7 @@ export class SoundManager extends Component {
             case 'level_scatter': return this.levelScatter;
             case 'gem_claim':     return this.gemClaim;
             case 'count_tick':    return this.countTick;
+            case 'sand_tick':     return this.sandTick;
             default:              return null;
         }
     }
