@@ -359,7 +359,7 @@ export const KO: Record<string, string> = {
     'lock.leaderboard':  '무한 모드에서 {n}층 달성 시 랭킹 해금',
     'unlock.endless':      '무한 모드 해금!',
     'unlock.blind':        '블라인드 모드 해금!',
-    'unlock.leaderboard':  '순위표 해금!',
+    'unlock.leaderboard':  '랭킹 시스템 오픈!',
     'level.next':        '다음 스테이지',
     'level.floor':       '레벨 {n}',
 };
