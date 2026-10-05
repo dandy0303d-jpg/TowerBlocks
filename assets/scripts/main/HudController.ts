@@ -2994,11 +2994,15 @@ export class HudController extends Component {
         // pixel-digit path. The FX runs on top of whatever's underneath.
         this.hidePicker();
         fx.node.active = true;
-        // Sand pour is one continuous sound, so play sand_tick ONCE at
-        // FX start instead of once per rune emission. (meteor / gatling
-        // keep per-tick because their count-up has discrete number
-        // beats; hourglass's flow is one audio event.)
+        // Play sand_tick twice — once at FX start, then a second pass
+        // after the first clip finishes (schedule-based so a very long
+        // clip won't double up on itself). Clip length is read off the
+        // AudioClip's `getDuration()`; falls back to 0.6s if the slot
+        // isn't wired or duration isn't available.
         SoundManager.instance?.play('sand_tick');
+        const sandClip = (SoundManager.instance as any)?.sandTick;
+        const dur = (typeof sandClip?.getDuration === 'function' ? sandClip.getDuration() : 0.6) || 0.6;
+        this.scheduleOnce(() => SoundManager.instance?.play('sand_tick'), dur);
         void fx.play({
             from:        fromNode,
             target:      () => targetWrap,
