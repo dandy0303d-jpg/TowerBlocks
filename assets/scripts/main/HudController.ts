@@ -2994,6 +2994,11 @@ export class HudController extends Component {
         // pixel-digit path. The FX runs on top of whatever's underneath.
         this.hidePicker();
         fx.node.active = true;
+        // Sand pour is one continuous sound, so play sand_tick ONCE at
+        // FX start instead of once per rune emission. (meteor / gatling
+        // keep per-tick because their count-up has discrete number
+        // beats; hourglass's flow is one audio event.)
+        SoundManager.instance?.play('sand_tick');
         void fx.play({
             from:        fromNode,
             target:      () => targetWrap,
@@ -3004,7 +3009,6 @@ export class HudController extends Component {
             // the frame after pickEnergyReward fires.
             timerLabel:  null,
             fromSeconds: Math.ceil(g.hourglass.remainingMs() / 1000),
-            onTick:      () => SoundManager.instance?.play('sand_tick'),
             onArrive:    () => {
                 const ok = g.pickEnergyReward(key);
                 console.log(`[Picker] magicHourglassFx landed, fired '${key}' -> ${ok}`);
