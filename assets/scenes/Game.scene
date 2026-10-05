@@ -76798,6 +76798,10 @@
       "__uuid__": "3d652378-ef51-48ee-8b23-abbabd8fdfbe",
       "__expectedType__": "cc.AudioClip"
     },
+    "countTick": {
+      "__uuid__": "fdff30f4-3ff6-4fd1-b8bf-7ca36493d72c",
+      "__expectedType__": "cc.AudioClip"
+    },
     "masterVolume": 0.8,
     "sfxEnabled": true,
     "_id": "bdnPzawvxOkomC9/RidvEW"

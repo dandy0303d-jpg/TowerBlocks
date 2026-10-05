@@ -46,6 +46,9 @@ export interface MagicHourglassOptions {
     sign?: 1 | -1;
     /** 数字到达的瞬间调用 */
     onArrive?: () => void;
+    /** 流沙阶段每撒一次沙时调用（i = 1..steps，steps = 8，总时长约 0.55s）。
+     *  可用来按节奏播沙粒 / tick 音效，匹配陨石 / 加特林的 onTick 语义。 */
+    onTick?: (i: number, steps: number) => void;
 }
 
 interface P { kind: 0 | 1 | 2; x: number; y: number; vx: number; vy: number; age: number; life: number; size: number; rot: number; vr: number; drag: number; grav: number; color: Color; ch?: number; }
@@ -136,7 +139,16 @@ export class MagicHourglassEffect extends Component {
         await this.wait(0.35);
         st.top = 1; st.flow = 1;
         tween(st).to(0.55, { top: 0.55 }).start();
-        this.schedule(() => this.emitRunes(center, H), 0.06, 8, 0);
+        // 沙粒撒落 + onTick 同拍：每 60ms 一次，共 8 次（跟陨石 / 加特林
+        // 的 onTick 一样是「可见的离散脉冲触发音效」）。i 从 1 起数到匹配
+        // 其它 FX 的 onTick 约定。
+        let tickI = 0;
+        const TICK_STEPS = 8;
+        this.schedule(() => {
+            this.emitRunes(center, H);
+            tickI += 1;
+            try { o.onTick?.(tickI, TICK_STEPS); } catch (e) { console.warn('[MagicHourglass] onTick threw:', e); }
+        }, 0.06, TICK_STEPS - 1, 0);
         await this.wait(0.55);
 
         // 3. 闪光，数字爆出

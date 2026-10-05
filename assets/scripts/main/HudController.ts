@@ -3004,6 +3004,7 @@ export class HudController extends Component {
             // the frame after pickEnergyReward fires.
             timerLabel:  null,
             fromSeconds: Math.ceil(g.hourglass.remainingMs() / 1000),
+            onTick:      () => SoundManager.instance?.play('count_tick'),
             onArrive:    () => {
                 const ok = g.pickEnergyReward(key);
                 console.log(`[Picker] magicHourglassFx landed, fired '${key}' -> ${ok}`);
