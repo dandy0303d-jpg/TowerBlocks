@@ -2101,6 +2101,15 @@ export class MenuController extends Component {
         SoundManager.instance?.play('gem_claim');
         const fx = this.diamondClaimFx;
         if (!fx || !fromNode) return;
+        // Force the FX overlay above every sibling in its parent so the
+        // gem shower draws on top of whatever modal is currently open
+        // (topup panel, badge panel, Newbie14, etc.). Without this the
+        // overlay sits where the artist placed it in the scene and a
+        // full-screen panel above it would hide the FX.
+        if (fx.node?.isValid && fx.node.parent) {
+            fx.node.active = true;
+            fx.node.setSiblingIndex(fx.node.parent.children.length - 1);
+        }
         const before = Number.isFinite(gemsBefore) ? (gemsBefore as number) : this._cachedGemBalance;
         const counter = counterOverride === null
             ? undefined
