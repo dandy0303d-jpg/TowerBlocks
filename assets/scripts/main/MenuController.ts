@@ -2035,6 +2035,12 @@ export class MenuController extends Component {
                 this._paintBadgePanelCell(cellNode, groupIdx, groupIdx < earnedCount);
             }
 
+            // 钻石入账音效：alreadyClaimed 或 0 奖励时不播。配合
+            // DiamondClaim 特效的 onComplete 时机就是数字滚完到账的那一拍，
+            // 听感上和"钱到账"同步。
+            if (!res.alreadyClaimed && res.gemsAwarded > 0) {
+                SoundManager.instance?.play('gem_claim');
+            }
             // DiamondClaim 特效：徽章按下 → 钻石喷出 → 沿弧线飞到钻石栏 →
             // 数字滚动到新余额。特效端只做表现，不改数据。alreadyClaimed
             // 时跳过特效（既然已经领过了，就没必要再飞一波）。

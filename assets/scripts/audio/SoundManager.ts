@@ -41,7 +41,8 @@ export type SfxKey =
     | 'meteor_fire'    // 流星雨每颗 DOT 发射
     | 'mortar_land'    // 灰泥掉落锁定（每颗落地）
     | 'wrecker_fire'   // 拆迁队触发（发射彩色方块儿投射物那一拍）
-    | 'level_scatter'; // 通关时塔散花的音效（scatter animation）
+    | 'level_scatter'  // 通关时塔散花的音效（scatter animation）
+    | 'gem_claim';     // 徽章图鉴领取钻石（DiamondClaim 特效 onComplete 时）
 
 @ccclass('SoundManager')
 export class SoundManager extends Component {
@@ -107,6 +108,9 @@ export class SoundManager extends Component {
 
     @property({ type: AudioClip, tooltip: '通关后塔散花动画音效（scatter 开始时触发一次）— 拖 AudioClip 进来' })
     levelScatter: AudioClip | null = null;
+
+    @property({ type: AudioClip, tooltip: '徽章图鉴领取钻石音效（点击已获得徽章 → 钻石飞到钻石栏的那一拍触发一次）— 拖 AudioClip 进来' })
+    gemClaim: AudioClip | null = null;
 
     // ---- Global tuning ----
 
@@ -216,6 +220,7 @@ export class SoundManager extends Component {
             case 'mortar_land':   return this.mortarLand;
             case 'wrecker_fire':  return this.wreckerFire;
             case 'level_scatter': return this.levelScatter;
+            case 'gem_claim':     return this.gemClaim;
             default:              return null;
         }
     }
