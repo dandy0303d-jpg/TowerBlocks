@@ -39,6 +39,7 @@ import { BACKEND_BASE_URL } from '../core/BackendConfig';
 import { getLang } from '../core/i18n/I18n';
 import { emitBalance } from '../core/WalletApi';
 import { BackKeyManager } from './BackKeyManager';
+import { SoundManager } from '../audio/SoundManager';
 
 const { ccclass } = _decorator;
 
@@ -253,6 +254,10 @@ export class ActivityWebView extends Component {
                 if (typeof (evt as any).gems === 'number') {
                     // gems 是"发完后的总数"，直接广播给订阅方（HUD / 主页余额）
                     emitBalance((evt as any).gems);
+                    // 播个入账音效。活动页本身有自己的奖励动画，这里不叠
+                    // FX 避免和 webview 内的视觉打架；主菜单的余额变化靠
+                    // emitBalance 的订阅自然刷新。
+                    SoundManager.instance?.play('gem_claim');
                 }
                 // 背包 items 让上层监听决定怎么刷（BackpackController.refresh() 等）
                 break;

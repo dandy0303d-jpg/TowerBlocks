@@ -359,7 +359,7 @@ export class TopUpController extends Component {
                 const btn = this.skuBuyButtons[i];
                 btn.node.off('click');
                 // Capture SKU so the click handler knows what to buy.
-                btn.node.on('click', () => this.doPurchase(sku), this);
+                btn.node.on('click', () => this.doPurchase(sku, btn.node), this);
                 const lab = btn.getComponentInChildren(Label);
                 if (lab) lab.string = formatPrice(sku);
             }
@@ -404,7 +404,7 @@ export class TopUpController extends Component {
      *  step 2 succeeded, log it but treat the purchase as successful
      *  — the gems are in the wallet; the platform will eventually
      *  re-deliver the pending consume on next `buy()` acknowledgment. */
-    private doPurchase(sku: WalletSku): void {
+    private doPurchase(sku: WalletSku, fromNode: Node | null = null): void {
         this.showToast(t('topup.processing'));
         // Firebase predefined event — signals intent to purchase.
         // Value is priceCents/100 to match Firebase's expected major
@@ -423,6 +423,7 @@ export class TopUpController extends Component {
                     receipt.transactionId,
                     receipt.platformReceipt,
                 ).then((res) => {
+                    const gemsBefore = this.cachedBalance;
                     this.cachedBalance = res.balance;
                     this.paintBalance(res.balance);
                     this.showToast(
@@ -430,6 +431,14 @@ export class TopUpController extends Component {
                         'info',
                     );
                     log(`[TopUp] purchase ok — sku=${sku.id} +${res.gemsAdded} gems, balance=${res.balance}, kind=${receipt.paymentKind}`);
+                    // Gem-arrival FX + sound: shower from the tapped SKU
+                    // card to the main-menu balance chip. Also rolls the
+                    // topup panel's own balanceLabel so the number updates
+                    // on both the panel AND the main chip.
+                    if (this.menuControllerNode) {
+                        const menu = this.menuControllerNode.getComponent('MenuController') as any;
+                        menu?.playGemClaimFx?.(fromNode, res.gemsAdded, gemsBefore, this.balanceLabel);
+                    }
                     // Firebase predefined `purchase` event — flows into
                     // Revenue / ARPU / LTV reports automatically.
                     AnalyticsApi.logPurchase({

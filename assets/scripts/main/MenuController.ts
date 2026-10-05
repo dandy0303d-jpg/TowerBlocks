@@ -2077,6 +2077,47 @@ export class MenuController extends Component {
         });
     }
 
+    /** Public helper: fire the "gems arriving" FX + sound from any node
+     *  on screen (topup SKU card, Newbie14 claim button, activity web
+     *  overlay root, etc.) to the main-menu balance chip. Centralises
+     *  the DiamondClaim config (target icon, counter label, cached-
+     *  balance snapshot) so other controllers don't need to duplicate
+     *  the setup or know about the FX internals.
+     *
+     *  `fromNode`     — world-position source of the gem shower
+     *  `amount`       — how many gems were just credited
+     *  `gemsBefore`   — balance before the credit (for the rolling
+     *                   counter); defaults to the last cached value
+     *  `counterOverride` — optional Label for scoped UIs (topup panel
+     *                   has its own balance strip; pass that so the
+     *                   number rolls on both the panel AND the main
+     *                   chip). Pass `null` to skip the counter roll.
+     *
+     *  No-op (silent) when the FX component isn't wired. Always plays
+     *  the gem_claim SFX regardless of FX availability so audio works
+     *  even in scenes that haven't been wired yet. */
+    public playGemClaimFx(fromNode: Node | null, amount: number, gemsBefore?: number, counterOverride?: Label | null): void {
+        if (amount <= 0) return;
+        SoundManager.instance?.play('gem_claim');
+        const fx = this.diamondClaimFx;
+        if (!fx || !fromNode) return;
+        const before = Number.isFinite(gemsBefore) ? (gemsBefore as number) : this._cachedGemBalance;
+        const counter = counterOverride === null
+            ? undefined
+            : (counterOverride ?? this.diamondClaimCounterLabel ?? undefined);
+        fx.play({
+            from:       fromNode,
+            amount,
+            gems:       Math.max(1, Math.min(12, amount)),
+            target:     this.diamondClaimTargetIcon
+                        ? () => this.diamondClaimTargetIcon
+                        : undefined,
+            counter,
+            fromValue:  before,
+            format:     (v: number) => t('topup.balance', { n: v.toString() }),
+        });
+    }
+
     /** Hydrate the local BadgeClaims cache from the server. Called from
      *  onLoad so the badge panel reflects claims made on other devices
      *  (or in previous sessions that lost their localStorage). Silent

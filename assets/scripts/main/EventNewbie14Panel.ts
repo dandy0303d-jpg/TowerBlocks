@@ -65,6 +65,9 @@ export class EventNewbie14Panel extends Component {
     @property({ type: Node, tooltip: '半透明背板 — 点击也关闭面板（可空）' })
     dimBackdrop: Node | null = null;
 
+    @property({ type: Node, tooltip: 'MenuController 挂载节点 — 用于触发 playGemClaimFx（钻石飞到主菜单余额）。留空则只播音效、不播 FX。' })
+    menuControllerNode: Node | null = null;
+
     // ---- Runtime state ----
 
     private _status: Newbie14Status | null = null;
@@ -233,6 +236,13 @@ export class EventNewbie14Panel extends Component {
             ToastManager.instance?.info(
                 t('event.newbie14.grantedToast', { gems: r.granted }),
             );
+            // Gem-arrival FX + sound: shower from the claim button to
+            // the main-menu balance chip. Fire-and-forget — falls back
+            // to just the sound if MenuController node isn't wired.
+            if (this.menuControllerNode && this.claimButton?.node) {
+                const menu = this.menuControllerNode.getComponent('MenuController') as any;
+                menu?.playGemClaimFx?.(this.claimButton.node, r.granted);
+            }
             // Fire-and-forget wallet refresh so the main-menu balance
             // updates. Errors here are non-fatal — the reward is
             // credited server-side regardless.
