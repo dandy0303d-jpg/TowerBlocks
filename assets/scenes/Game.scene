@@ -13709,6 +13709,7 @@
       "__id__": 334
     },
     "dimBackdrop": null,
+    "menuControllerNode": null,
     "_id": "08D17cVOlL3ZDgZFPdICdn"
   },
   {
@@ -75579,9 +75580,7 @@
     "diamondClaimFx": {
       "__id__": 1857
     },
-    "diamondClaimTargetIcon": {
-      "__id__": 1855
-    },
+    "diamondClaimTargetIcon": null,
     "diamondClaimCounterLabel": null,
     "authoredBadgePanelRoot": {
       "__id__": 153

@@ -42,7 +42,8 @@ export type SfxKey =
     | 'mortar_land'    // 灰泥掉落锁定（每颗落地）
     | 'wrecker_fire'   // 拆迁队触发（发射彩色方块儿投射物那一拍）
     | 'level_scatter'  // 通关时塔散花的音效（scatter animation）
-    | 'gem_claim';     // 徽章图鉴领取钻石（DiamondClaim 特效 onComplete 时）
+    | 'gem_claim'      // 徽章图鉴领取钻石（DiamondClaim 特效 onComplete 时）
+    | 'count_tick';    // 魔法道具 FX 计数阶段每跳一下（陨石 / 加特林）
 
 @ccclass('SoundManager')
 export class SoundManager extends Component {
@@ -111,6 +112,9 @@ export class SoundManager extends Component {
 
     @property({ type: AudioClip, tooltip: '徽章图鉴领取钻石音效（点击已获得徽章 → 钻石飞到钻石栏的那一拍触发一次）— 拖 AudioClip 进来' })
     gemClaim: AudioClip | null = null;
+
+    @property({ type: AudioClip, tooltip: '魔法道具计数音效（陨石 / 加特林 FX 的「×0 → ×N」计数阶段，每跳一下触发一次，共 min(count, 20) 次）— 建议用短促的 "咔" 或 "叮"' })
+    countTick: AudioClip | null = null;
 
     // ---- Global tuning ----
 
@@ -221,6 +225,7 @@ export class SoundManager extends Component {
             case 'wrecker_fire':  return this.wreckerFire;
             case 'level_scatter': return this.levelScatter;
             case 'gem_claim':     return this.gemClaim;
+            case 'count_tick':    return this.countTick;
             default:              return null;
         }
     }

@@ -3041,6 +3041,7 @@ export class HudController extends Component {
             // not a Label — pass null so the FX skips rolling-digits.
             counterLabel: null,
             fromCount:    0,
+            onTick:       () => SoundManager.instance?.play('count_tick'),
             onArrive:     () => {
                 const ok = g.pickEnergyReward(key);
                 console.log(`[Picker] magicGatlingFx landed, fired '${key}' -> ${ok}`);
@@ -3074,6 +3075,7 @@ export class HudController extends Component {
             count,
             counterLabel: null,
             fromCount:    0,
+            onTick:       () => SoundManager.instance?.play('count_tick'),
             onArrive:     () => {
                 const ok = g.pickEnergyReward(key);
                 console.log(`[Picker] magicMeteorFx landed, fired '${key}' -> ${ok}`);

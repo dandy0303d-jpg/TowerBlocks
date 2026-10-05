@@ -41,6 +41,9 @@ export interface MagicMeteorOptions {
     labelFormat?: (n: number) => string;
     /** 数字到达瞬间调用 */
     onArrive?: () => void;
+    /** 计数阶段每跳一下调用（i = 1..steps，含边界）。可用来按节奏播音效。
+     *  steps = min(count, 20)，不是 count 本身——避免 count 很大时狂刷。 */
+    onTick?: (i: number, steps: number) => void;
 }
 
 interface P { kind: 0 | 2; x: number; y: number; vx: number; vy: number; age: number; life: number; size: number; rot: number; vr: number; drag: number; grav: number; color: Color; }
@@ -123,6 +126,7 @@ export class MagicMeteorEffect extends Component {
             num.setScale(1.12, 1.12, 1);
             tween(num).to(0.05, { scale: new Vec3(1, 1, 1) }).start();
             this.streak(center, R);
+            try { o.onTick?.(i, steps); } catch (e) { console.warn('[MagicMeteor] onTick threw:', e); }
             await this.wait(this.countTime / steps);
         }
 
