@@ -93,7 +93,11 @@ const EMBED_MIN_LEVEL_ORDER = 16;
 const LEVELS_PER_FATE_PIECE = 9;
 import { fetchConsentStatus } from '../core/ConsentApi';
 import { ConsentModal } from './ConsentModal';
-import { GoogleWebOAuth } from '../channels/google/GoogleWebOAuth';
+// channel/app-store uses the native iOS Google Sign-In SDK
+// (ASWebAuthenticationSession via GoogleAuthBridge.swift) instead of
+// the Custom-Tabs flow Android uses. Link / login endpoints are the
+// same server-side.
+import { GoogleAuth } from '../channels/apple/GoogleAuth';
 import { linkGoogleToCurrentAccount, loginWithGoogle } from '../core/GoogleLinkApi';
 // Sign in with Apple (channel/app-store only). Imports resolve on this
 // branch; on other channels the files don't exist and this file is only
@@ -4526,18 +4530,20 @@ export class MenuController extends Component {
             this.showSettingsToast(t('settings.google.alreadyLinked'), 'info');
             return;
         }
-        // Web / iOS / editor preview — Custom Tabs bridge only exists
-        // on native Android. Feature-gate cleanly so no cryptic errors.
-        if (!GoogleWebOAuth.isSupported) {
+        // iOS-only on app-store channel — the native Google Sign-In
+        // bridge (ASWebAuthenticationSession) lives in GoogleAuthBridge.swift.
+        // Editor preview / macOS gets a clean "not supported" toast.
+        if (sys.os !== sys.OS.IOS) {
             this.showSettingsToast(t('settings.google.unsupported'), 'error');
             return;
         }
-        // ---- 1) Open Custom Tabs → wait for id_token ----
+        // ---- 1) Present ASWebAuthenticationSession → wait for id_token ----
         let idToken: string;
         try {
-            log('[Settings] Google bind — launching OAuth flow');
+            log('[Settings] Google bind — presenting iOS Google Sign-In sheet');
             this.showSettingsToast(t('settings.google.pending'), 'info');
-            idToken = await GoogleWebOAuth.signIn();
+            const cred = await GoogleAuth.signIn();
+            idToken = cred.idToken;
         } catch (err: any) {
             const msg = err?.message ?? String(err);
             // Silence user-cancel in the toast — that's expected UX.
