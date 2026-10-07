@@ -3203,13 +3203,22 @@ export class MenuController extends Component {
 
     /** Called from showGameOver right after an endless/blind run so a
      *  fresh personal best updates the unlock state immediately,
-     *  without waiting for the next fetchProfile round-trip. */
+     *  without waiting for the next fetchProfile round-trip.
+     *
+     *  Intentionally does NOT call `_refreshModeButtonLocks()` — that
+     *  would fire the FeatureUnlock FX (Blind / Leaderboard unlocked!)
+     *  WHILE the fail-popup DIM is still on screen, so the player sees
+     *  the celebration playing underneath the modal before even
+     *  returning to the mode-select page. All callers eventually route
+     *  through `showModeSelect` (fail-popup Home button, pause-quit,
+     *  mode-select-return), which calls `_refreshModeButtonLocks` itself
+     *  the moment the mode-select panel actually comes up — so the FX
+     *  fires at the right beat with the panel visible. */
     private _recordEndlessRun(layers: number): void {
         if (!Number.isFinite(layers) || layers <= 0) return;
         if (layers <= this._endlessBestLayers) return;
         this._endlessBestLayers = layers;
         this._persistEndlessBest();
-        this._refreshModeButtonLocks();
     }
 
     /** Repaint mode-select buttons + labels to reflect current unlock
