@@ -172,7 +172,7 @@ import StoreKit
                     // Ask to Buy / SCA pending. Transaction will arrive
                     // via Transaction.updates later — surfaced as pending.
                     completion(Self.errorJSON(kind: "unknown", detail: "pending approval"))
-                @unknown default:
+                default:
                     completion(Self.errorJSON(kind: "unknown", detail: "unknown result"))
                 }
             } catch {
@@ -277,7 +277,7 @@ import StoreKit
             case .notAvailableInStorefront: return "unknown"
             case .systemError:        return "unknown"
             case .unknown:            return "unknown"
-            @unknown default:         return "unknown"
+            default:         return "unknown"
             }
         }
         if let purchaseErr = err as? Product.PurchaseError {
@@ -288,7 +288,7 @@ import StoreKit
             case .invalidOfferIdentifier, .invalidOfferPrice, .invalidOfferSignature,
                  .missingOfferParameters:
                 return "unknown"
-            @unknown default:          return "unknown"
+            default:          return "unknown"
             }
         }
         return "unknown"
