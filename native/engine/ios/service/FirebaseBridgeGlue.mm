@@ -23,10 +23,14 @@
 
 #import "FirebaseBridgeGlue.h"
 
-@import FirebaseCore;
-@import FirebaseAnalytics;
-@import FirebaseCrashlytics;
-@import FirebaseRemoteConfig;
+// Switched from `@import FirebaseXxx` (Clang modules) to classic
+// `#import` so this file builds under Cocos's CMake-generated Xcode
+// project, which doesn't flip on CLANG_ENABLE_MODULES for the
+// CocosGame target. Both forms resolve to the same Firebase symbols.
+#import <FirebaseCore/FirebaseCore.h>
+#import <FirebaseAnalytics/FirebaseAnalytics.h>
+#import <FirebaseCrashlytics/FirebaseCrashlytics.h>
+#import <FirebaseRemoteConfig/FirebaseRemoteConfig.h>
 
 static BOOL _configured = NO;
 static FIRRemoteConfig *_remoteConfig = nil;
