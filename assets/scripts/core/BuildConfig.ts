@@ -47,12 +47,26 @@ export const IS_DEV_BUILD: boolean = false;
  *  as IS_DEV_BUILD above) — always keep the TARGET branch's value. */
 export const BUILD_CHANNEL: string = 'app_store';
 
-/** LevelPlay (Unity mediation) rewarded ad unit ID for this build.
- *  LevelPlay has SEPARATE ad units per platform — the iOS "benMingFangKuai"
- *  rewarded unit from https://platform.ironsrc.com (Ad Units → iOS).
- *  Passed to LevelPlayAdProvider at boot; it falls back to the Android
- *  default otherwise which would mis-attribute impressions. */
-export const LEVELPLAY_REWARDED_AD_UNIT: string = ''; // TODO: fill from LevelPlay dashboard (iOS)
+/** LevelPlay (Unity mediation) rewarded ad units for this build.
+ *
+ *  LevelPlay has SEPARATE ad units per PLATFORM AND per PLACEMENT so
+ *  the dashboard can report fill-rate / eCPM / reward-rate per slot.
+ *  We provision one unit per in-game ad slot so analytics stay clean:
+ *
+ *    FATE_AD_UNIT    = 本命方块 reroll (HudController fate modal)
+ *    MAGIC_AD_UNIT   = 魔法道具 refresh / endless-mode revive
+ *                      (MenuController revive, future picker refresh)
+ *
+ *  Values are the iOS unit IDs from https://platform.ironsrc.com →
+ *  Setup → Ad Units → iOS. If the dashboard regenerates a unit, update
+ *  the string here and ship a client update.
+ *
+ *  REWARDED_AD_UNIT is kept as the default fallback passed to
+ *  LevelPlayAdProvider's constructor — points at FATE_AD_UNIT so
+ *  callers that don't pass a placement land on the fate slot. */
+export const LEVELPLAY_FATE_AD_UNIT:     string = '7x8c5ui8zq5jaqct';
+export const LEVELPLAY_MAGIC_AD_UNIT:    string = '4892u9iz4uu22p0c';
+export const LEVELPLAY_REWARDED_AD_UNIT: string = LEVELPLAY_FATE_AD_UNIT;
 
 /** The LevelPlay App Key is read natively from Info.plist's
  *  `LevelPlayAppKey` entry (not from here) — iOS SDKs that fingerprint

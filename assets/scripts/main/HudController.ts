@@ -48,7 +48,7 @@ import { purchaseRefresh, RefreshType, REFRESH_COST_TIERS, MAX_PAID_REFRESHES_PE
 import { consumeDailyFree } from '../core/DailyFreeApi';
 import { PlayerProfile } from '../core/PlayerProfile';
 import { fetchBackpack, consumeBackpackItem, getCachedBackpack } from '../core/BackpackApi';
-import { IS_DEV_BUILD } from '../core/BuildConfig';
+import { IS_DEV_BUILD, LEVELPLAY_FATE_AD_UNIT } from '../core/BuildConfig';
 import { MagicHourglassEffect } from '../../effects/magic-hourglass/MagicHourglassEffect';
 import { MagicGatlingEffect } from '../../effects/magic-gatling/MagicGatlingEffect';
 import { MagicMeteorEffect } from '../../effects/magic-meteor/MagicMeteorEffect';
@@ -2709,7 +2709,9 @@ export class HudController extends Component {
             this.updateFateRerollButtonLabel();
             try {
                 AnalyticsApi.logCustom('ad_shown', { placement: 'fate_reroll' });
-                const r = await Providers.ads.showRewardedAd();
+                // Route to the dedicated 本命方块 ad unit so dashboard
+                // reporting can split fill / eCPM / reward-rate per slot.
+                const r = await Providers.ads.showRewardedAd(LEVELPLAY_FATE_AD_UNIT);
                 if (r.kind === 'rewarded') {
                     // Firebase `earn_virtual_currency` — populates the
                     // virtual-economy report. `value` here is 1 because

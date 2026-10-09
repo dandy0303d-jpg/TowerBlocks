@@ -15,7 +15,7 @@
 	     TODO: replace placeholder with the real iOS App Key once
 	     the LevelPlay dashboard app is provisioned. -->
 	<key>LevelPlayAppKey</key>
-	<string>LEVELPLAY_APP_KEY_PLACEHOLDER</string>
+	<string>289a55c25</string>
 
 	<!-- AdMob app id kept for mediation. LevelPlay's AdMob adapter
 	     still requires GADApplicationIdentifier because it initialises
