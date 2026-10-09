@@ -58,18 +58,15 @@ list(APPEND CC_ALL_SOURCES
     ${CC_PROJECT_DIR}/service/haptic/HapticBridge.swift
     ${CC_PROJECT_DIR}/service/haptic/HapticBridgeGlue.h
     ${CC_PROJECT_DIR}/service/haptic/HapticBridgeGlue.mm
-    # AppLovin MAX bridge — files kept on disk for future mediation
-    # reference but NOT compiled (Podfile does not include AppLovinSDK,
-    # so Swift can't resolve `import AppLovinSDK`). Re-add these three
-    # lines and add `pod 'AppLovinSDK'` to Podfile if switching back
-    # to AppLovin, or use AppLovin as a mediation network under AdMob.
-    #     ${CC_PROJECT_DIR}/service/ads/AppLovinBridge.swift
-    #     ${CC_PROJECT_DIR}/service/ads/AppLovinBridgeGlue.h
-    #     ${CC_PROJECT_DIR}/service/ads/AppLovinBridgeGlue.mm
-    # Google AdMob bridge — active ad provider.
-    ${CC_PROJECT_DIR}/service/ads/AdMobBridge.swift
-    ${CC_PROJECT_DIR}/service/ads/AdMobBridgeGlue.h
-    ${CC_PROJECT_DIR}/service/ads/AdMobBridgeGlue.mm
+    # Unity LevelPlay (formerly ironSource) mediation — active ad
+    # provider. AdMob, Meta, Unity Ads and AppLovin are pulled in as
+    # LevelPlay adapters via Swift Package Manager (see
+    # LevelPlayBridge.swift header for the SPM product list). Legacy
+    # standalone AdMob / AppLovin bridges were removed in favor of
+    # going through LevelPlay for all networks.
+    ${CC_PROJECT_DIR}/service/ads/LevelPlayBridge.swift
+    ${CC_PROJECT_DIR}/service/ads/LevelPlayBridgeGlue.h
+    ${CC_PROJECT_DIR}/service/ads/LevelPlayBridgeGlue.mm
     ${CC_PROJECT_DIR}/service/ClipboardBridgeGlue.h
     ${CC_PROJECT_DIR}/service/ClipboardBridgeGlue.mm
     # Firebase bridge removed — Firebase (Analytics / Crashlytics /

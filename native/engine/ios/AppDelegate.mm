@@ -37,10 +37,11 @@
 #import "service/auth/GoogleAuthBridgeGlue.h"
 #import "service/gc/GameCenterBridgeGlue.h"
 #import "service/haptic/HapticBridgeGlue.h"
-// AppLovin bridge exists but is not registered — AdMob is the active
-// provider. Left available for future mediation.
-// #import "service/ads/AppLovinBridgeGlue.h"
-#import "service/ads/AdMobBridgeGlue.h"
+// Unity LevelPlay (formerly ironSource) mediation — handles all ad
+// networks (AdMob, Meta, Unity Ads, AppLovin) as adapters pulled in
+// via Swift Package Manager. Standalone AdMob / AppLovin bridges
+// were removed in favor of unified mediation.
+#import "service/ads/LevelPlayBridgeGlue.h"
 #import "service/ClipboardBridgeGlue.h"
 // Firebase bridge removed — see CMakeLists.txt note. AnalyticsApi.ts
 // iOS branch is now a no-op; Analytics / Crashlytics / Remote Config
@@ -105,16 +106,18 @@
     // UIImpactFeedbackGenerators to avoid the first-fire lag.
     [HapticBridgeGlue registerWithCocos];
 
-    // Register the ads bridge — 'ads.*' events. JS calls ads.init
-    // with credentials on boot; the SDK initialises asynchronously
-    // and starts loading the first ad slots.
-    [AdMobBridgeGlue registerWithCocos];
+    // Register the LevelPlay mediation bridge — 'levelplay.*' events.
+    // JS calls levelplay.init with the player uuid on boot; the SDK
+    // initialises asynchronously, resolves the ad unit auction config
+    // across all enabled networks (AdMob, Meta, Unity Ads, AppLovin
+    // adapters), and starts loading the first rewarded ad.
+    [LevelPlayBridgeGlue registerWithCocos];
 
     // Request App Tracking Transparency (ATT) permission ~1 s after
     // launch. Apple guideline: don't fire ATT immediately at boot —
     // wait until UI has settled so the system sheet doesn't compete
-    // with launch animation. Without this call, AdMob can only serve
-    // non-personalized ads and IDFA stays zeroed.
+    // with launch animation. Without this call, mediation adapters
+    // can only serve non-personalized ads and IDFA stays zeroed.
     // The prompt localizes via NSUserTrackingUsageDescription in
     // each .lproj/InfoPlist.strings (already set up).
     if (@available(iOS 14.0, *)) {

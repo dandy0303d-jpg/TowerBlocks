@@ -71,6 +71,13 @@ public class AppActivity extends CocosActivity {
         // copyToClipboard returns false and the player sees
         // "复制失败".
         com.cocos.game.ClipboardBridge.install(this);
+
+        // LevelPlay (Unity mediation, formerly ironSource) rewarded-ad
+        // bridge — listens for levelplay.* events. Reads the app key
+        // from AndroidManifest meta-data `levelplay.app.key` (set per
+        // channel branch to its own key). JS calls levelplay.init with
+        // the player uuid on boot to kick off SDK init + first ad load.
+        com.cocos.game.LevelPlayBridge.install(this);
     }
 
     @Override
