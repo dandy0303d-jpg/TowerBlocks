@@ -4,35 +4,23 @@
 //  Swift side of the TS↔Native pipe for Unity LevelPlay (formerly
 //  ironSource) mediation SDK on iOS.
 //
-//  SDK is pulled via Swift Package Manager (NOT CocoaPods — see the
-//  commit that removed Firebase pods for why we avoid XCFrameworks via
-//  CocoaPods under Cocos 3.8.8's CMake-generated Xcode projects).
+//  SDK is pulled via CocoaPods. (SPM was tried first but hung at
+//  "Preparing to validate..." on adapter packages inside Cocos's
+//  CMake-generated Xcode project — see Podfile header for the full
+//  story.) The IronSource pod has been stable for years and does NOT
+//  carry the XCFramework header-search-path issues that bit Firebase.
 //
-//  SwiftPM setup — one-time, per clone. LevelPlay ships the core SDK
-//  and EACH ADAPTER as a separate SPM package (unlike the CocoaPods
-//  distribution which puts them in subspecs). So you have to add
-//  multiple packages in Xcode, one per network. Reference:
-//  https://docs.unity.com/en-us/grow/levelplay/sdk/ios/sdk-integration
+//  Setup (one-time per clone, after Cocos regen):
+//    cd build/<build-id>/proj
+//    pod install
+//    open tower_blocks.xcworkspace   # NOT the .xcodeproj
 //
-//  In Xcode (CocosGame target), File → Add Package Dependencies… for
-//  EACH of the following URLs. Dependency Rule for the core is
-//  "Branch: main"; adapters MUST use "Exact Version" at the pinned
-//  compatible version (per Unity's minimum-adapter table).
-//
-//    Core:
-//      https://github.com/ironsource-mobile/LevelPlay-Swift-Package
-//        Branch: main
-//
-//    Adapters:
-//      https://github.com/ironsource-mobile/LevelPlay-UnityAds-Adapter-Swift-Package   Exact 5.8.1
-//      https://github.com/ironsource-mobile/LevelPlay-AdMob-Adapter-Swift-Package      Exact 5.10.1
-//      https://github.com/ironsource-mobile/LevelPlay-Facebook-Adapter-Swift-Package   Exact 5.3.1
-//        (Meta Audience Network — the SPM repo still carries the old
-//         "Facebook" name even though the network rebranded to Meta.)
-//      https://github.com/ironsource-mobile/LevelPlay-AppLovin-Adapter-Swift-Package   Exact 5.7.1
-//
-//  (The old URL github.com/ironsource-mobile/iOS-sdk was the manual
-//  download repo and has no Package.swift at root — do NOT use it.)
+//  Pods added (see Podfile):
+//    IronSourceSDK       9.5.0.0    — core LevelPlay SDK
+//    ISUnityAdsAdapter   5.8.1.0.0  — Unity Ads
+//    ISAdMobAdapter      5.10.1.0.0 — Google AdMob
+//    ISFacebookAdapter   5.3.1.0.0  — Meta (pod kept Facebook name)
+//    ISAppLovinAdapter   5.7.1.0.0  — AppLovin MAX
 //
 //  App Key: add to Info.plist so this bridge can read it without a
 //  JS round-trip. The channel-specific key goes in each channel branch:
@@ -56,6 +44,8 @@
 
 import Foundation
 import UIKit
+// `IronSource` is the Swift module name of IronSource.framework
+// installed by the `IronSourceSDK` CocoaPods pod.
 import IronSource
 
 @objcMembers

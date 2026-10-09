@@ -1,37 +1,24 @@
-# Podfile — kept as a no-pod stub.
+# Podfile — Unity LevelPlay (formerly ironSource) via CocoaPods.
 #
-# The native ad SDK (Unity LevelPlay / ironSource) is now delivered via
-# Swift Package Manager, NOT CocoaPods. The previous AdMob pod and the
-# Firebase pods both caused persistent header-search-path / link-time
-# issues under Cocos 3.8.8's CMake-generated Xcode project (see commit
-# that removed Firebase pods for the full saga), so we moved iOS native
-# dependencies off CocoaPods entirely.
+# Reverted from Swift Package Manager after SPM's "Preparing to
+# validate..." step repeatedly hung on the AppLovin adapter inside
+# Cocos 3.8.8's CMake-generated Xcode project. LevelPlay's CocoaPods
+# distribution has been battle-tested for years and plays nicely with
+# CMake-generated projects, unlike the Firebase XCFramework pods which
+# caused the earlier Firebase-removal saga.
 #
-# This file is kept because the CMakeLists.txt still runs `pod install`
-# as part of the native-regen pipeline on some machines; an empty-but-
-# valid Podfile keeps that invocation harmless. If `pod install` becomes
-# a hard failure after a Cocos version bump, delete this file (and the
-# CMakeLists.txt lines that invoke it) outright.
+# One-time setup on each clone:
+#   1. Install CocoaPods:   sudo gem install cocoapods
+#   2. cd build/<build-id>/proj
+#   3. pod install
+#   4. Open "tower_blocks.xcworkspace" (NOT .xcodeproj — the workspace
+#      knows about Pods; the plain project does not).
 #
-# Swift Package Manager setup — do this ONCE in Xcode after the first
-# native regen on a new machine, inside build/<target>/proj.
-#
-# LevelPlay ships each adapter as a separate SPM package (unlike their
-# CocoaPods distribution which bundles them). Add FIVE packages via
-# File → Add Package Dependencies… in tower_blocks.xcodeproj, with
-# CocosGame as the target for each. Full URLs + pins are also in
-# service/ads/LevelPlayBridge.swift's header comment:
-#
-#   Core (Branch: main):
-#     https://github.com/ironsource-mobile/LevelPlay-Swift-Package
-#
-#   Adapters (Exact Version — Unity's minimum-adapter table):
-#     https://github.com/ironsource-mobile/LevelPlay-UnityAds-Adapter-Swift-Package  5.8.1
-#     https://github.com/ironsource-mobile/LevelPlay-AdMob-Adapter-Swift-Package     5.10.1
-#     https://github.com/ironsource-mobile/LevelPlay-Facebook-Adapter-Swift-Package  5.3.1  (Meta Audience Network — old name)
-#     https://github.com/ironsource-mobile/LevelPlay-AppLovin-Adapter-Swift-Package  5.7.1
-#
-# Package.resolved checks in and survives Cocos regens.
+# Subsequent Cocos rebuilds:
+#   Cocos may overwrite the .xcodeproj. CMakeLists.txt auto-runs
+#   `pod install` after regen (see service/ads block + the Post hook);
+#   if Xcode complains about missing IronSource framework, run it
+#   manually: `cd build/<build-id>/proj && pod install`.
 
 platform :ios, '15.0'
 use_frameworks!
@@ -57,8 +44,21 @@ project 'tower_blocks.xcodeproj',
 # project (visible via `xcodebuild -project "Tetri Tower.xcodeproj" -list`).
 # Don't change this even if you tweak APP_NAME in CMakeLists.
 target 'CocosGame' do
-  # No pods — all iOS native deps are on Swift Package Manager now.
-  # (LevelPlay + its adapters, future Firebase re-integration, etc.)
+  # Core LevelPlay SDK. Pod name is still `IronSourceSDK` even after
+  # the Unity rebrand. Pin to the exact major-point version that
+  # matches Unity's "Minimum adapter and network SDK versions" table
+  # (docs.unity.com/en-us/grow/levelplay/sdk/ios/sdk-integration) so
+  # the adapters below stay compatible.
+  pod 'IronSourceSDK', '9.5.0.0'
+
+  # Mediation adapters — one per network. Versions pulled from the
+  # same compatibility table. Each adapter pod transitively pulls its
+  # network's own SDK (e.g. the AdMob adapter pulls Google-Mobile-Ads-SDK),
+  # so no separate network pods are needed.
+  pod 'ISUnityAdsAdapter', '5.8.1.0.0'    # Unity Ads
+  pod 'ISAdMobAdapter',    '5.10.1.0.0'   # Google AdMob
+  pod 'ISFacebookAdapter', '5.3.1.0.0'    # Meta Audience Network (SDK still named Facebook)
+  pod 'ISAppLovinAdapter', '5.7.1.0.0'    # AppLovin MAX
 end
 
 # Silence Xcode 15 sandbox warnings on newer CocoaPods versions and
