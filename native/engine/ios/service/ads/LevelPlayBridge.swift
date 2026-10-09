@@ -87,28 +87,25 @@ public class LevelPlayBridge: NSObject {
             return
         }
 
-        // User id — required for S2S. Empty string allowed (pre-login),
-        // in that case server-side S2S cannot credit; the TS layer should
-        // re-init() after login once the uuid is known.
-        IronSource.setUserId(uuid)
-
         // Enable the Integration Verification Suite only on debug builds.
         // On release this is a no-op path — the suite is a dev tool that
         // overlays a diagnostic view; shipping with it would be a bug.
+        // (Moved from IronSource.setMetaDataWithKey to LevelPlay.setMetaData
+        //  — the former is a legacy 7.x API that doesn't exist in 9.x.)
         #if DEBUG
-        IronSource.setMetaDataWithKey("is_test_suite", value: "enable")
+        LevelPlay.setMetaDataWithKey("is_test_suite", value: "enable")
         #endif
 
         NSLog("[LevelPlay] init starting (appKey=\(String(appKey.prefix(6)))…, uuid=\(String(uuid.prefix(8)))…)")
 
-        // Modern LevelPlay init API — LPMInitRequestBuilder → LPMInitRequest
-        // + completion handler. Ad formats are NOT declared here anymore;
-        // each LPMRewardedAd / LPMInterstitialAd instance registers its
-        // own placement with the SDK on first loadAd(). (Older 7.x
-        // ironSource SDK used .withLegacyAdFormats([IS_REWARDED_VIDEO])
-        // — that path is removed in LevelPlay 9.x and we're on the
-        // LevelPlay-Swift-Package SPM distribution now.)
+        // LevelPlay 8.5.0+ init API — LPMInitRequestBuilder → LPMInitRequest
+        // + completion handler. User id goes through the builder's
+        // .withUserId() (required for S2S reward attribution). Older
+        // IronSource.setUserId() / .withLegacyAdFormats() paths were
+        // removed in LevelPlay 9.x. The player uuid can be empty here
+        // (pre-login boot); TS re-inits after login once uuid is known.
         let initReq = LPMInitRequestBuilder(appKey: appKey)
+            .withUserId(uuid)
             .build()
 
         LevelPlay.initWith(initReq) { [weak self] config, error in
@@ -316,8 +313,8 @@ private class RewardedDelegate: NSObject, LPMRewardedAdDelegate {
         bridge?.rewardedAd(forUnit: adUnitId)?.loadAd()
     }
 
-    func didReceiveReward(forAd adInfo: LPMAdInfo, reward: LPMReward) {
-        NSLog("[LevelPlay] rewarded didReceiveReward adUnit=\(adUnitId) \(reward.rewardName)x\(reward.rewardAmount)")
+    func didRewardAd(with adInfo: LPMAdInfo, reward: LPMReward) {
+        NSLog("[LevelPlay] rewarded didRewardAd adUnit=\(adUnitId) \(reward.name)x\(reward.amount)")
         bridge?.markEarned()
     }
 
