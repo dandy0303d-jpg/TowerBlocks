@@ -60,10 +60,10 @@ target 'CocosGame' do
   # unpinned pods resolve to the latest version that is compatible with
   # IronSourceSDK ~> 9.5; verify in Podfile.lock after each `pod install`
   # and freeze there if you want reproducibility across machines.
-  pod 'ISUnityAdsAdapter'   # Unity Ads
-  pod 'ISAdMobAdapter'      # Google AdMob
-  pod 'ISFacebookAdapter'   # Meta Audience Network (SDK still named Facebook)
-  pod 'ISAppLovinAdapter'   # AppLovin MAX
+  pod 'IronSourceUnityAdsAdapter'   # Unity Ads
+  pod 'IronSourceAdMobAdapter'      # Google AdMob
+  pod 'IronSourceFacebookAdapter'   # Meta Audience Network (pod kept 'Facebook')
+  pod 'IronSourceAppLovinAdapter'   # AppLovin MAX
 end
 
 # Silence Xcode 15 sandbox warnings on newer CocoaPods versions and
