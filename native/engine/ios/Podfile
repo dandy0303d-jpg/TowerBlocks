@@ -104,9 +104,24 @@ post_install do |installer|
     ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES
   ].freeze
 
+  # Fix 3: force-attach the Pods xcconfig as CocosGame's Base
+  # Configuration for every build config. CocoaPods normally does
+  # this automatically, but the "Can't merge user_target_xcconfig"
+  # error from Fix 1's conflicting pods makes it SKIP this step
+  # silently, which leaves pbxproj with zero baseConfigurationReference
+  # entries → FRAMEWORK_SEARCH_PATHS never flow in → Swift fails to
+  # find the IronSource module. Manually walking aggregate_targets +
+  # setting base_configuration_reference puts the integration back
+  # on the rails that CocoaPods abandoned.
   installer.aggregate_targets.each do |aggregate_target|
     aggregate_target.user_targets.each do |user_target|
       user_target.build_configurations.each do |config|
+        xcconfig_path = aggregate_target.xcconfig_relative_path(config.name)
+        group = aggregate_target.user_project.main_group['Pods'] ||
+                aggregate_target.user_project.new_group('Pods')
+        file_ref = group.files.find { |f| f.path == xcconfig_path } ||
+                   group.new_file(xcconfig_path)
+        config.base_configuration_reference = file_ref
         CLOBBERED_KEYS.each { |k| config.build_settings.delete(k) }
       end
     end
