@@ -66,16 +66,50 @@ target 'CocosGame' do
   pod 'IronSourceAppLovinAdapter'   # AppLovin MAX
 end
 
-# Ensure Pods deployment target matches app target. No other hooks —
-# the previous aggressive EXCLUDED_ARCHS[sdk=iphonesimulator*] + manual
-# baseConfigurationReference attach caused CocoaPods to abort its
-# auto-integration ("Can't merge user_target_xcconfig" error), which
-# left CocosGame target without a Base Configuration at all and
-# `import IronSource` failing with "No such module".
+# post_install does two surgical fixes, nothing more. We let CocoaPods
+# handle baseConfigurationReference attachment on its own (the previous
+# manual attach loop was fighting the default integration).
+#
+# Fix 1 — Pod-vs-Pod xcconfig conflict:
+#   FBAudienceNetwork and IronSourceAdQualitySDK both set
+#   EXCLUDED_ARCHS[sdk=iphonesimulator*] in their podspecs but to
+#   different values, which triggers "Can't merge user_target_xcconfig"
+#   4 times and causes CocoaPods to skip some xcconfig merging into
+#   the user target. Force them to the same value (arm64 — the standard
+#   exclusion when building for simulator on Apple Silicon with pods
+#   that only ship x86_64 slices).
+#
+# Fix 2 — CocosGame target overrides Pods xcconfig:
+#   Cocos's CMake writes OTHER_SWIFT_FLAGS and
+#   ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES directly into CocosGame's
+#   target-level build settings. Those override whatever the Pods
+#   xcconfig sets at config-level, so Swift module lookup for IronSource
+#   silently fails. Deleting the target-level entries lets Pods'
+#   xcconfig values win via Base Configuration inheritance.
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
+      # Fix 1: unify the conflicting simulator exclusion value across
+      # all pod targets.
+      config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64'
     end
+  end
+
+  # Fix 2: strip CocosGame's target-level overrides for the two
+  # settings the Pods xcconfig cares about. CocoaPods will warn
+  # "target overrides ..." without this.
+  CLOBBERED_KEYS = %w[
+    OTHER_SWIFT_FLAGS
+    ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES
+  ].freeze
+
+  installer.aggregate_targets.each do |aggregate_target|
+    aggregate_target.user_targets.each do |user_target|
+      user_target.build_configurations.each do |config|
+        CLOBBERED_KEYS.each { |k| config.build_settings.delete(k) }
+      end
+    end
+    aggregate_target.user_project.save
   end
 end
