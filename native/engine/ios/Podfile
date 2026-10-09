@@ -45,20 +45,25 @@ project 'tower_blocks.xcodeproj',
 # Don't change this even if you tweak APP_NAME in CMakeLists.
 target 'CocosGame' do
   # Core LevelPlay SDK. Pod name is still `IronSourceSDK` even after
-  # the Unity rebrand. Pin to the exact major-point version that
-  # matches Unity's "Minimum adapter and network SDK versions" table
-  # (docs.unity.com/en-us/grow/levelplay/sdk/ios/sdk-integration) so
-  # the adapters below stay compatible.
-  pod 'IronSourceSDK', '9.5.0.0'
+  # the Unity rebrand. `~> 9.5` pulls the latest 9.5.x so bug-fix
+  # releases land without re-pinning; bump the minor manually when
+  # jumping to 9.6/10.0.
+  pod 'IronSourceSDK', '~> 9.5'
 
-  # Mediation adapters — one per network. Versions pulled from the
-  # same compatibility table. Each adapter pod transitively pulls its
-  # network's own SDK (e.g. the AdMob adapter pulls Google-Mobile-Ads-SDK),
-  # so no separate network pods are needed.
-  pod 'ISUnityAdsAdapter', '5.8.1.0.0'    # Unity Ads
-  pod 'ISAdMobAdapter',    '5.10.1.0.0'   # Google AdMob
-  pod 'ISFacebookAdapter', '5.3.1.0.0'    # Meta Audience Network (SDK still named Facebook)
-  pod 'ISAppLovinAdapter', '5.7.1.0.0'    # AppLovin MAX
+  # Mediation adapters — one per network. Each adapter pod transitively
+  # pulls its network's own SDK (e.g. the AdMob adapter pulls
+  # Google-Mobile-Ads-SDK), so no separate network pods are needed.
+  #
+  # No version pin: IronSource's adapter versioning (A.B.C.D.E) doesn't
+  # map cleanly to CocoaPods' SemVer resolver and exact-pinning tends
+  # to hit "no spec found" because minor adapter revs land fast. The
+  # unpinned pods resolve to the latest version that is compatible with
+  # IronSourceSDK ~> 9.5; verify in Podfile.lock after each `pod install`
+  # and freeze there if you want reproducibility across machines.
+  pod 'ISUnityAdsAdapter'   # Unity Ads
+  pod 'ISAdMobAdapter'      # Google AdMob
+  pod 'ISFacebookAdapter'   # Meta Audience Network (SDK still named Facebook)
+  pod 'ISAppLovinAdapter'   # AppLovin MAX
 end
 
 # Silence Xcode 15 sandbox warnings on newer CocoaPods versions and
