@@ -66,56 +66,16 @@ target 'CocosGame' do
   pod 'IronSourceAppLovinAdapter'   # AppLovin MAX
 end
 
-# Silence Xcode 15 sandbox warnings on newer CocoaPods versions and
-# ensure Pods deployment target matches app target (avoids
-# "compiling for iOS 12.0, but module ... requires iOS 15.0" errors).
-#
-# ALSO — force the Pods xcconfig onto the user target's Base
-# Configuration for every config. Cocos-generated targets ship with
-# no base config and CocoaPods' auto-attach can miss it silently
-# (leaves Framework Search Paths empty → Swift `import GoogleMobileAds`
-# fails). This makes the integration self-healing across regens.
+# Ensure Pods deployment target matches app target. No other hooks —
+# the previous aggressive EXCLUDED_ARCHS[sdk=iphonesimulator*] + manual
+# baseConfigurationReference attach caused CocoaPods to abort its
+# auto-integration ("Can't merge user_target_xcconfig" error), which
+# left CocosGame target without a Base Configuration at all and
+# `import IronSource` failing with "No such module".
 post_install do |installer|
   installer.pods_project.targets.each do |target|
     target.build_configurations.each do |config|
       config.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '15.0'
-      # Rosetta compat on Apple Silicon Macs when building for the
-      # simulator — otherwise fat-arch link errors on some Pods.
-      config.build_settings['EXCLUDED_ARCHS[sdk=iphonesimulator*]'] = 'arm64'
     end
-  end
-
-  # Force-attach Pods xcconfig to the user target's base configuration,
-  # AND strip settings Cocos hardcoded at target level that would
-  # override Pods' xcconfig values. `OTHER_SWIFT_FLAGS` in particular
-  # carries the `-Xcc -fmodule-map-file=...` flags Swift needs to
-  # resolve `import GoogleMobileAds`; if CocosGame overrides it, the
-  # module lookup silently fails.
-  #
-  # Deleting the target-level entry lets Pods' xcconfig win. If Cocos
-  # regenerates and re-adds them, pod install runs this again and
-  # heals the target.
-  CLOBBERED_KEYS = %w[
-    OTHER_SWIFT_FLAGS
-    ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES
-  ].freeze
-
-  installer.aggregate_targets.each do |aggregate_target|
-    aggregate_target.user_targets.each do |user_target|
-      user_target.build_configurations.each do |config|
-        xcconfig_path = aggregate_target.xcconfig_relative_path(config.name)
-        # Find or create the file reference under a "Pods" group so the
-        # setting shows up in Xcode's Info → Configurations UI.
-        group = aggregate_target.user_project.main_group['Pods'] ||
-                aggregate_target.user_project.new_group('Pods')
-        file_ref = group.files.find { |f| f.path == xcconfig_path } ||
-                   group.new_file(xcconfig_path)
-        config.base_configuration_reference = file_ref
-
-        # Strip clobbering target-level settings so Pods xcconfig wins.
-        CLOBBERED_KEYS.each { |k| config.build_settings.delete(k) }
-      end
-    end
-    aggregate_target.user_project.save
   end
 end
