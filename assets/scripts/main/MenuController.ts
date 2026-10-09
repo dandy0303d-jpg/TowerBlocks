@@ -68,7 +68,7 @@ import { BgmManager } from '../audio/BgmManager';
 import { FontManager } from '../core/FontManager';
 import { LevelProgress } from '../core/LevelProgress';
 import { deletePlayerSelf } from '../core/PlayerApi';
-import { IS_DEV_BUILD, LEVELPLAY_MAGIC_AD_UNIT } from '../core/BuildConfig';
+import { IS_DEV_BUILD, LEVELPLAY_REVIVE_AD_UNIT } from '../core/BuildConfig';
 import { AnalyticsApi } from '../core/AnalyticsApi';
 import { Providers } from '../core/channels/Providers';
 import { fetchReviveCost, purchaseRevive, DEFAULT_REVIVE_COST_GEMS } from '../core/ReviveApi';
@@ -2801,10 +2801,9 @@ export class MenuController extends Component {
         void (async () => {
             try {
                 AnalyticsApi.logCustom('ad_shown', { placement: 'endless_revive' });
-                // Share the 魔法道具 ad unit (same bucket as future
-                // picker-refresh ads) — see BuildConfig for the mapping
-                // and the chat decision log for why revive lives here.
-                const r = await Providers.ads.showRewardedAd(LEVELPLAY_MAGIC_AD_UNIT);
+                // Dedicated 复活 ad unit so dashboard reporting splits
+                // revive fill / eCPM from the 魔法道具 bucket.
+                const r = await Providers.ads.showRewardedAd(LEVELPLAY_REVIVE_AD_UNIT);
                 if (r.kind === 'rewarded') {
                     AnalyticsApi.logAdReward({
                         virtualCurrencyName: 'endless_revive',

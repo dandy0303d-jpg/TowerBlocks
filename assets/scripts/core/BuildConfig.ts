@@ -54,8 +54,9 @@ export const BUILD_CHANNEL: string = 'app_store';
  *  We provision one unit per in-game ad slot so analytics stay clean:
  *
  *    FATE_AD_UNIT    = 本命方块 reroll (HudController fate modal)
- *    MAGIC_AD_UNIT   = 魔法道具 refresh / endless-mode revive
- *                      (MenuController revive, future picker refresh)
+ *    MAGIC_AD_UNIT   = 魔法道具 refresh (future picker refresh slot)
+ *    REVIVE_AD_UNIT  = 复活 — endless-mode "watch ad to revive"
+ *                      (MenuController._onReviveAdClicked)
  *
  *  Values are the iOS unit IDs from https://platform.ironsrc.com →
  *  Setup → Ad Units → iOS. If the dashboard regenerates a unit, update
@@ -66,6 +67,7 @@ export const BUILD_CHANNEL: string = 'app_store';
  *  callers that don't pass a placement land on the fate slot. */
 export const LEVELPLAY_FATE_AD_UNIT:     string = '7x8c5ui8zq5jaqct';
 export const LEVELPLAY_MAGIC_AD_UNIT:    string = '4892u9iz4uu22p0c';
+export const LEVELPLAY_REVIVE_AD_UNIT:   string = 'dko3fy1d1lewicoq';
 export const LEVELPLAY_REWARDED_AD_UNIT: string = LEVELPLAY_FATE_AD_UNIT;
 
 /** The LevelPlay App Key is read natively from Info.plist's
