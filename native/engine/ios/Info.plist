@@ -9,12 +9,26 @@
 	     our AdMob account for billing/attribution. The ad unit IDs
 	     (rewarded + interstitial) are separate and live in AdManager.ts
 	     on the JS side. -->
+	<!-- LevelPlay (Unity mediation, formerly ironSource) App Key.
+	     Read by LevelPlayBridge.swift at init(). Dashboard:
+	     https://platform.ironsrc.com (App Settings → App Key).
+	     TODO: replace placeholder with the real iOS App Key once
+	     the LevelPlay dashboard app is provisioned. -->
+	<key>LevelPlayAppKey</key>
+	<string>LEVELPLAY_APP_KEY_PLACEHOLDER</string>
+
+	<!-- AdMob app id kept for mediation. LevelPlay's AdMob adapter
+	     still requires GADApplicationIdentifier because it initialises
+	     the Google Mobile Ads SDK internally to serve AdMob demand
+	     through the mediation waterfall. If AdMob adapter is removed
+	     from the SwiftPM product list, delete this pair of keys too. -->
 	<key>GADApplicationIdentifier</key>
 	<string>ca-app-pub-4178595968044395~5248380219</string>
+
 	<!-- Apple ATT + tracking user prompt. Shown once on first app
-	     launch when Google Mobile Ads SDK requests IDFA. Wording
-	     matters for App Store review — describe WHY tracking is
-	     requested (not just "we need this"). -->
+	     launch when the mediation SDK requests IDFA. Wording matters
+	     for App Store review — describe WHY tracking is requested
+	     (not just "we need this"). -->
 	<key>NSUserTrackingUsageDescription</key>
 	<string>广告个性化，请允许我们获取匿名标识以帮助我们提供更相关的广告。此项不会影响你玩游戏。</string>
 	<!-- SKAdNetworkItems — Google's full list at

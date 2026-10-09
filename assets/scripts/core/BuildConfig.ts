@@ -46,3 +46,16 @@ export const IS_DEV_BUILD: boolean = false;
  *  Merge conflict on this file is expected and desired (same convention
  *  as IS_DEV_BUILD above) — always keep the TARGET branch's value. */
 export const BUILD_CHANNEL: string = 'app_store';
+
+/** LevelPlay (Unity mediation) rewarded ad unit ID for this build.
+ *  LevelPlay has SEPARATE ad units per platform — the iOS "benMingFangKuai"
+ *  rewarded unit from https://platform.ironsrc.com (Ad Units → iOS).
+ *  Passed to LevelPlayAdProvider at boot; it falls back to the Android
+ *  default otherwise which would mis-attribute impressions. */
+export const LEVELPLAY_REWARDED_AD_UNIT: string = ''; // TODO: fill from LevelPlay dashboard (iOS)
+
+/** The LevelPlay App Key is read natively from Info.plist's
+ *  `LevelPlayAppKey` entry (not from here) — iOS SDKs that fingerprint
+ *  the plist expect it there, and it keeps the key out of the JS
+ *  bundle which can be unpacked more easily than the signed bundle.
+ *  Set it in native/engine/ios/Info.plist. */

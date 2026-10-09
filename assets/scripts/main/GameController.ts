@@ -825,12 +825,16 @@ export class GameController extends Component {
                     this._gameOverAdCounter++;
                     if (this._gameOverAdCounter >= 3) {
                         this._gameOverAdCounter = 0;
-                        void (async () => {
-                            const { AdManager } = await import('../channels/apple/AdManager');
-                            AnalyticsApi.logCustom('ad_shown', { placement: 'game_over_interstitial' });
-                            const res = await AdManager.showInterstitial();
-                            if (!res.success) log(`[Ads] interstitial not shown — ${res.kind}: ${res.error}`);
-                        })();
+                        // Interstitial path temporarily disabled during the
+                        // AdMob → LevelPlay migration. LevelPlay interstitial
+                        // support (LPMInterstitialAd on iOS,
+                        // LevelPlayInterstitialAd on Android) will land in
+                        // a follow-up; for now the game-over popup opens
+                        // immediately without an interstitial.
+                        AnalyticsApi.logCustom('ad_skipped', {
+                            placement: 'game_over_interstitial',
+                            reason: 'migration-in-progress'
+                        });
                     }
                     // Activity progress flush (LEGACY) — only when run-
                     // token is off. Server auto-counts via /run/finish's

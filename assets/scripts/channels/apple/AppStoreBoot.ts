@@ -23,7 +23,9 @@ import { Providers } from '../../core/channels/Providers';
 import { StoreKitProvider } from './StoreKitProvider';
 import { AppleAuth } from './AppleAuth';
 import { GameCenter } from './GameCenter';
-import { AdManager } from './AdManager';
+import { LevelPlayAdProvider } from '../../core/channels/LevelPlayAdProvider';
+import { LEVELPLAY_REWARDED_AD_UNIT } from '../../core/BuildConfig';
+import { PlayerProfile } from '../../core/PlayerProfile';
 
 (function initAppStore(): void {
     if (sys.os !== sys.OS.IOS) {
@@ -54,14 +56,20 @@ import { AdManager } from './AdManager';
             console.warn('[AppStoreBoot][GC] authenticate threw:', e);
         });
 
-    // Kick off AppLovin MAX ad SDK. Async init + auto-preload
-    // rewarded + interstitial slots. Non-blocking — gameplay hooks
-    // that call showRewarded / showInterstitial will get 'not-ready'
-    // if init hasn't landed yet, and immediately trigger a load for
-    // next time.
-    AdManager.init().then((r) => {
-        console.log(`[AppStoreBoot][Ads] init result — success=${r.success}`);
+    // Register LevelPlay (Unity mediation) as the active ad provider,
+    // replacing the default MockAdProvider. SDK init is async and auto-
+    // preloads the first rewarded ad; gameplay hooks that call
+    // Providers.ads.showRewardedAd() will get kind:'error' reason:'not-ready'
+    // if init hasn't landed yet, and the native bridge will push a
+    // levelplay.rewardedAvailable event once the first ad is cached.
+    const adProvider = new LevelPlayAdProvider({
+        uuid:           PlayerProfile.uuid,          // S2S reward attribution
+        rewardedAdUnit: LEVELPLAY_REWARDED_AD_UNIT,  // iOS ad unit from BuildConfig
     });
+    Providers.setAds(adProvider);
+    adProvider.init()
+        .then(() => console.log('[AppStoreBoot][Ads] LevelPlay init OK'))
+        .catch((e) => console.warn(`[AppStoreBoot][Ads] LevelPlay init failed: ${(e as Error).message}`));
 
     // ---- DEBUG: expose SIWA to globalThis so we can trigger it from
     // Safari Web Inspector while the Settings-screen UI is still WIP.

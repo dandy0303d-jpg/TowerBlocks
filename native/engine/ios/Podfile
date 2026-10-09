@@ -1,22 +1,28 @@
-# Podfile — Google Mobile Ads (AdMob) integration.
+# Podfile — kept as a no-pod stub.
 #
-# Cocos regenerates the Xcode project at build/<target>/proj/ on each
-# native build, so this Podfile is copied there by CMakeLists.txt
-# (configure_file at generation time) — do NOT hand-edit the copy in
-# build/, edit THIS file at native/engine/ios/Podfile.
+# The native ad SDK (Unity LevelPlay / ironSource) is now delivered via
+# Swift Package Manager, NOT CocoaPods. The previous AdMob pod and the
+# Firebase pods both caused persistent header-search-path / link-time
+# issues under Cocos 3.8.8's CMake-generated Xcode project (see commit
+# that removed Firebase pods for the full saga), so we moved iOS native
+# dependencies off CocoaPods entirely.
 #
-# One-time setup on the machine that will build for TestFlight:
-#   1. Install CocoaPods:   sudo gem install cocoapods
-#   2. cd build/ios-release/proj
-#   3. pod install
-#   4. Open "Tetri Tower.xcworkspace" (NOT .xcodeproj — the workspace
-#      knows about Pods; the plain project does not).
+# This file is kept because the CMakeLists.txt still runs `pod install`
+# as part of the native-regen pipeline on some machines; an empty-but-
+# valid Podfile keeps that invocation harmless. If `pod install` becomes
+# a hard failure after a Cocos version bump, delete this file (and the
+# CMakeLists.txt lines that invoke it) outright.
 #
-# Subsequent Cocos rebuilds:
-#   Cocos may overwrite the .xcodeproj. If Xcode complains about
-#   missing GoogleMobileAds framework after a rebuild, re-run:
-#      cd build/ios-release/proj && pod install
-#   The workspace + Pods dir persist across Cocos regens.
+# Swift Package Manager setup — do this ONCE in Xcode after the first
+# native regen on a new machine, inside build/<target>/proj:
+#   1. Open tower_blocks.xcodeproj
+#   2. File → Add Package Dependencies…
+#   3. URL: https://github.com/ironsource-mobile/iOS-sdk
+#      Version: Up to Next Major → 8.0.0
+#   4. Add these products to the `CocosGame` target:
+#        IronSource, ISAdMobAdapter, ISMetaAdapter,
+#        ISUnityAdsAdapter, ISAppLovinAdapter
+# Package.resolved checks in and survives Cocos regens.
 
 platform :ios, '15.0'
 use_frameworks!
@@ -42,16 +48,8 @@ project 'tower_blocks.xcodeproj',
 # project (visible via `xcodebuild -project "Tetri Tower.xcodeproj" -list`).
 # Don't change this even if you tweak APP_NAME in CMakeLists.
 target 'CocosGame' do
-  # Core AdMob SDK. Interstitial + rewarded ad formats included in
-  # the base pod. Pin to a known-good major version to avoid surprise
-  # breaking changes; bump after testing with each Google release.
-  pod 'Google-Mobile-Ads-SDK', '~> 11.0'
-
-  # Firebase pods removed — the FirebaseAnalytics XCFramework + Cocos
-  # 3.8.8 CMake-generated project combination caused persistent
-  # header-search-path and link-time issues. Re-integrate via Swift
-  # Package Manager (Xcode's native, friendlier path for binary
-  # frameworks) when restoring Analytics / Crashlytics / Remote Config.
+  # No pods — all iOS native deps are on Swift Package Manager now.
+  # (LevelPlay + its adapters, future Firebase re-integration, etc.)
 end
 
 # Silence Xcode 15 sandbox warnings on newer CocoaPods versions and
