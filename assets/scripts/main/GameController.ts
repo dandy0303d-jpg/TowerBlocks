@@ -458,11 +458,6 @@ export class GameController extends Component {
      *  reason code passed by GameState. Same delay logic as level-win. */
     private pendingGameOverReason: number | null | undefined = undefined;
 
-    /** Counts game-overs so we can show a rewarded interstitial every
-     *  3rd death instead of every one. First two deaths = no ad, so
-     *  brand-new players don't hit an ad wall before they've committed. */
-    private _gameOverAdCounter: number = 0;
-
     /** True while the "look at your final tower, tap to continue"
      *  overlay is up (between the game-over signal firing and the
      *  actual fail popup showing). Blind mode uses this to force the
@@ -816,26 +811,10 @@ export class GameController extends Component {
                     log('[TowerBlocks] GAME OVER, reason=', r, '(deferred until effects clear)');
                     this.pendingGameOverReason = r;
                     SoundManager.instance?.play('game_over');
-                    // Interstitial ad — every 3rd game-over. Rate-
-                    // limited to avoid ad-per-death spam that would
-                    // gut retention. First 2 game-overs = no ad, so
-                    // new players don't hit ads before they've
-                    // committed. Fire-and-forget; if no ad ready,
-                    // the fail popup opens as usual.
-                    this._gameOverAdCounter++;
-                    if (this._gameOverAdCounter >= 3) {
-                        this._gameOverAdCounter = 0;
-                        // Interstitial path temporarily disabled during the
-                        // AdMob → LevelPlay migration. LevelPlay interstitial
-                        // support (LPMInterstitialAd on iOS,
-                        // LevelPlayInterstitialAd on Android) will land in
-                        // a follow-up; for now the game-over popup opens
-                        // immediately without an interstitial.
-                        AnalyticsApi.logCustom('ad_skipped', {
-                            placement: 'game_over_interstitial',
-                            reason: 'migration-in-progress'
-                        });
-                    }
+                    // Game-over interstitial ad was removed when we moved
+                    // off AdMob — product decision. Keep rewarded only
+                    // (picker refresh / fate reroll / revive); no forced
+                    // interstitials on failure.
                     // Activity progress flush (LEGACY) — only when run-
                     // token is off. Server auto-counts via /run/finish's
                     // linesCleared when enabled, making this flush a
