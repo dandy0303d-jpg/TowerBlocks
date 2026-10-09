@@ -8,16 +8,29 @@
 //  commit that removed Firebase pods for why we avoid XCFrameworks via
 //  CocoaPods under Cocos 3.8.8's CMake-generated Xcode projects).
 //
-//  SwiftPM setup — one-time, per clone:
-//    1. In Xcode: File → Add Package Dependencies…
-//    2. URL: https://github.com/ironsource-mobile/iOS-sdk
-//       Version rule: Up to Next Major → 8.0.0
-//    3. Products: tick these targets for `CocosGame`:
-//         ├─ IronSource               (core SDK)
-//         ├─ ISAdMobAdapter
-//         ├─ ISMetaAdapter
-//         ├─ ISUnityAdsAdapter
-//         └─ ISAppLovinAdapter
+//  SwiftPM setup — one-time, per clone. LevelPlay ships the core SDK
+//  and EACH ADAPTER as a separate SPM package (unlike the CocoaPods
+//  distribution which puts them in subspecs). So you have to add
+//  multiple packages in Xcode, one per network. Reference:
+//  https://docs.unity.com/en-us/grow/levelplay/sdk/ios/sdk-integration
+//
+//  In Xcode (CocosGame target), File → Add Package Dependencies… for
+//  EACH of the following URLs. Dependency Rule for the core is
+//  "Branch: main"; adapters MUST use "Exact Version" at the pinned
+//  compatible version (per Unity's minimum-adapter table).
+//
+//    Core:
+//      https://github.com/ironsource-mobile/LevelPlay-Swift-Package
+//        Branch: main
+//
+//    Adapters:
+//      https://github.com/ironsource-mobile/LevelPlay-UnityAds-Adapter-Swift-Package   Exact 5.8.1
+//      https://github.com/ironsource-mobile/LevelPlay-AdMob-Adapter-Swift-Package      Exact 5.10.1
+//      https://github.com/ironsource-mobile/LevelPlay-Meta-Adapter-Swift-Package       Exact 5.3.1
+//      https://github.com/ironsource-mobile/LevelPlay-AppLovin-Adapter-Swift-Package   Exact 5.7.1
+//
+//  (The old URL github.com/ironsource-mobile/iOS-sdk was the manual
+//  download repo and has no Package.swift at root — do NOT use it.)
 //
 //  App Key: add to Info.plist so this bridge can read it without a
 //  JS round-trip. The channel-specific key goes in each channel branch:
@@ -96,11 +109,14 @@ public class LevelPlayBridge: NSObject {
 
         NSLog("[LevelPlay] init starting (appKey=\(String(appKey.prefix(6)))…, uuid=\(String(uuid.prefix(8)))…)")
 
-        // Modern 8.x init API — LPMInitRequest + completion handler.
-        // The ad formats listed here are the ones the SDK will prepare
-        // auction config for; we only use rewarded today.
+        // Modern LevelPlay init API — LPMInitRequestBuilder → LPMInitRequest
+        // + completion handler. Ad formats are NOT declared here anymore;
+        // each LPMRewardedAd / LPMInterstitialAd instance registers its
+        // own placement with the SDK on first loadAd(). (Older 7.x
+        // ironSource SDK used .withLegacyAdFormats([IS_REWARDED_VIDEO])
+        // — that path is removed in LevelPlay 9.x and we're on the
+        // LevelPlay-Swift-Package SPM distribution now.)
         let initReq = LPMInitRequestBuilder(appKey: appKey)
-            .withLegacyAdFormats([IS_REWARDED_VIDEO])
             .build()
 
         LevelPlay.initWith(initReq) { [weak self] config, error in

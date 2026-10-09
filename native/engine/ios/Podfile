@@ -14,14 +14,23 @@
 # CMakeLists.txt lines that invoke it) outright.
 #
 # Swift Package Manager setup — do this ONCE in Xcode after the first
-# native regen on a new machine, inside build/<target>/proj:
-#   1. Open tower_blocks.xcodeproj
-#   2. File → Add Package Dependencies…
-#   3. URL: https://github.com/ironsource-mobile/iOS-sdk
-#      Version: Up to Next Major → 8.0.0
-#   4. Add these products to the `CocosGame` target:
-#        IronSource, ISAdMobAdapter, ISMetaAdapter,
-#        ISUnityAdsAdapter, ISAppLovinAdapter
+# native regen on a new machine, inside build/<target>/proj.
+#
+# LevelPlay ships each adapter as a separate SPM package (unlike their
+# CocoaPods distribution which bundles them). Add FIVE packages via
+# File → Add Package Dependencies… in tower_blocks.xcodeproj, with
+# CocosGame as the target for each. Full URLs + pins are also in
+# service/ads/LevelPlayBridge.swift's header comment:
+#
+#   Core (Branch: main):
+#     https://github.com/ironsource-mobile/LevelPlay-Swift-Package
+#
+#   Adapters (Exact Version — Unity's minimum-adapter table):
+#     https://github.com/ironsource-mobile/LevelPlay-UnityAds-Adapter-Swift-Package  5.8.1
+#     https://github.com/ironsource-mobile/LevelPlay-AdMob-Adapter-Swift-Package     5.10.1
+#     https://github.com/ironsource-mobile/LevelPlay-Meta-Adapter-Swift-Package      5.3.1
+#     https://github.com/ironsource-mobile/LevelPlay-AppLovin-Adapter-Swift-Package  5.7.1
+#
 # Package.resolved checks in and survives Cocos regens.
 
 platform :ios, '15.0'
