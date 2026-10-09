@@ -51,14 +51,19 @@ import { sys, native, log } from 'cc';
 // ────────────────────────────────────────────────────────────────
 const IS_ANDROID = sys.platform === sys.Platform.ANDROID
     || String((sys as any).os ?? '').toLowerCase().includes('android');
-const IS_IOS     = sys.platform === sys.Platform.IOS;
+// iOS Firebase bridge was removed from channel/app-store (see
+// native/engine/ios/CMakeLists.txt note) — treat iOS as non-native
+// here so every logXxx helper short-circuits to the editor/web
+// no-op branch. Re-enable this flag when Firebase is re-integrated
+// (e.g. via Swift Package Manager + a new FirebaseBridgeGlue).
+const IS_IOS     = false; // was: sys.platform === sys.Platform.IOS;
 const IS_NATIVE  = IS_ANDROID || IS_IOS;
 const HAS_JSB    = IS_NATIVE
     && typeof (native as any)?.reflection?.callStaticMethod === 'function';
 
 // Bridge class names — must stay in sync with the native code.
 const ANDROID_CLASS = 'com/cocos/game/FirebaseBridge';
-const IOS_CLASS     = 'FirebaseBridgeGlue';
+const IOS_CLASS     = 'FirebaseBridgeGlue';   // unused while IS_IOS=false
 
 // ────────────────────────────────────────────────────────────────
 // Types
