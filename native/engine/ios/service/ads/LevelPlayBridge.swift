@@ -26,7 +26,9 @@
 //    Adapters:
 //      https://github.com/ironsource-mobile/LevelPlay-UnityAds-Adapter-Swift-Package   Exact 5.8.1
 //      https://github.com/ironsource-mobile/LevelPlay-AdMob-Adapter-Swift-Package      Exact 5.10.1
-//      https://github.com/ironsource-mobile/LevelPlay-Meta-Adapter-Swift-Package       Exact 5.3.1
+//      https://github.com/ironsource-mobile/LevelPlay-Facebook-Adapter-Swift-Package   Exact 5.3.1
+//        (Meta Audience Network — the SPM repo still carries the old
+//         "Facebook" name even though the network rebranded to Meta.)
 //      https://github.com/ironsource-mobile/LevelPlay-AppLovin-Adapter-Swift-Package   Exact 5.7.1
 //
 //  (The old URL github.com/ironsource-mobile/iOS-sdk was the manual

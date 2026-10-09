@@ -28,7 +28,7 @@
 #   Adapters (Exact Version — Unity's minimum-adapter table):
 #     https://github.com/ironsource-mobile/LevelPlay-UnityAds-Adapter-Swift-Package  5.8.1
 #     https://github.com/ironsource-mobile/LevelPlay-AdMob-Adapter-Swift-Package     5.10.1
-#     https://github.com/ironsource-mobile/LevelPlay-Meta-Adapter-Swift-Package      5.3.1
+#     https://github.com/ironsource-mobile/LevelPlay-Facebook-Adapter-Swift-Package  5.3.1  (Meta Audience Network — old name)
 #     https://github.com/ironsource-mobile/LevelPlay-AppLovin-Adapter-Swift-Package  5.7.1
 #
 # Package.resolved checks in and survives Cocos regens.
