@@ -59,7 +59,7 @@ import { makeEmptyBombs, makeEmptyBooms, makeEmptyWreckers, injectRandomMagicPro
 import { collides, rotateBombs, rotateBooms, rotateWreckers } from './Pieces';
 import { Bag } from './Bag';
 import { applyColumnGravity, applyDiagonalGravity } from './ColumnGravity';
-import { clearLines, ClearLinesHooks } from './ClearLines';
+import { clearLines, ClearLinesHooks, fireStackedPropCollisionsAfterGravity } from './ClearLines';
 import { detonateBombs, DetonateHooks } from './Detonate';
 import { spawn, lock, gatherLevelBombs, gatherAdjacentBombs, gatherAdjacentBooms, gatherAdjacentWreckers } from './PieceOps';
 import { activateBoom, processClearedBooms } from './Items/Boom';
@@ -2174,6 +2174,15 @@ export class GameState {
             // act as obstacles.
             const fellMoves = applyDiagonalGravity(this.state, this.state.board.length);
             if (fellMoves.length) this.hooks.onCellsFell?.(fellMoves);
+            // Prop stacking caused by boom-driven gravity should ALSO
+            // trigger — same contract as the clearLines/Detonate hooks.
+            // Without this, a wrecker pushed onto another prop by a
+            // boom-cleared hole sat dormant until the NEXT piece landed
+            // and ran clearLines again.
+            fireStackedPropCollisionsAfterGravity(
+                this.state, fellMoves,
+                this.makeClearHooks(), this.state.board.length,
+            );
         }
 
         if (seeds.length) {
@@ -2931,6 +2940,12 @@ export class GameState {
             // back down. Skipped if no adjacent boom actually fired.
             const fellMoves = applyDiagonalGravity(this.state, this.computeReservedTop());
             if (fellMoves.length) this.hooks.onCellsFell?.(fellMoves);
+            // Mortar-path prop stacking — same reason as the lockAndNext
+            // boom-gravity branch above.
+            fireStackedPropCollisionsAfterGravity(
+                this.state, fellMoves,
+                this.makeClearHooks(), this.computeReservedTop(),
+            );
         }
         if (seeds.length) {
             detonateBombs(this.state, seeds, this.computeReservedTop(), this.makeDetonateHooks());
