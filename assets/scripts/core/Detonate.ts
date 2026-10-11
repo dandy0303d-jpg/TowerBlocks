@@ -35,6 +35,7 @@ import {
     processClearedHails,
     processClearedRockets,
     processClearedGatlings,
+    fireStackedPropCollisionsAfterGravity,
 } from './ClearLines';
 
 export interface BombSeed {
@@ -332,6 +333,11 @@ export function detonateBombs(
     const fellMoves = applyDiagonalGravity(state, reservedTop);
     const allMoves = spliceMoves.concat(fellMoves);
     if (allMoves.length && hooks.onCellsFell) hooks.onCellsFell(allMoves);
+
+    // Fallen-prop-on-prop collisions. Same purpose as the companion
+    // call in ClearLines — a wrecker/boom/etc that dropped onto
+    // another prop fires on contact instead of sitting silent.
+    fireStackedPropCollisionsAfterGravity(state, fellMoves, hooks, reservedTop);
 
     // Orphan-prop pass — anything whose host cell got nulled by a col blast.
     processClearedChests(state, hooks);
