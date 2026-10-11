@@ -2998,12 +2998,12 @@ export class HudController extends Component {
         this.hidePicker();
         fx.node.active = true;
         // Play sand_tick twice — once at FX start, then a second pass
-        // after a fixed 0.5s gap. (Previous version waited for the first
+        // after a fixed 0.7s gap. (Previous version waited for the first
         // clip to fully finish via getDuration(), which chained the two
-        // plays into a near-continuous loop; the fixed 0.5s delay gives
+        // plays into a near-continuous loop; the fixed 0.7s delay gives
         // a clear "two taps" cadence instead.)
         SoundManager.instance?.play('sand_tick');
-        this.scheduleOnce(() => SoundManager.instance?.play('sand_tick'), 0.5);
+        this.scheduleOnce(() => SoundManager.instance?.play('sand_tick'), 0.7);
         void fx.play({
             from:        fromNode,
             target:      () => targetWrap,
