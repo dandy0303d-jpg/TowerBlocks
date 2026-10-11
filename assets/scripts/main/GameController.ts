@@ -978,20 +978,14 @@ export class GameController extends Component {
                     }
                 },
                 onWreckerPrePulse: (srcR, srcC, picks, comboBoomLevel, comboBombAxis) => {
-                    HapticsManager.impact('heavy');
-                    // Wrecker combo (× boom OR × bomb) → screen-shake.
-                    // Plain sweep (both combo fields empty) skips shake
-                    // — 10 individual cube pops don't need the extra
-                    // camera motion. Same params as the other blast
-                    // shakes for consistency.
-                    if (comboBoomLevel > 0 || comboBombAxis) {
-                        this._shakeBoardRoot(440, 0.075);
-                    }
-                    // Fire the "wrecker triggered" cue at the moment
-                    // the projectiles LAUNCH from the source cell —
-                    // the flight + pulse + shatter tail play out with
-                    // their own audio (`line_clear` at commit time).
-                    SoundManager.instance?.play('wrecker_fire');
+                    // NB: haptic / shake / wrecker_fire SFX were previously
+                    // fired here, but with the other-prop busy-gate those
+                    // played immediately on trigger while the actual
+                    // projectile launch was deferred by setTimeout — a
+                    // noticeable audio-visual desync when wrecker chained
+                    // off a boom or meteor. All three cues now fire from
+                    // _runWreckerPrePulse so they land in sync with the
+                    // projectile launch regardless of delay.
                     this.queueWreckerPrePulse(
                         srcR, srcC, picks,
                         comboBoomLevel ?? 0,
@@ -3535,6 +3529,19 @@ export class GameController extends Component {
         if (!this.gameState || !picks.length) return;
         const now = Date.now();
         const pulseMs = this.wreckerPulseDuration * 1000;
+
+        // Fire haptic + wrecker_fire SFX + optional combo shake AT THE
+        // MOMENT projectiles launch — not at trigger-time. The hook
+        // (onWreckerPrePulse) may have run many frames ago if the
+        // other-prop busy-gate deferred this body; playing cues on
+        // trigger would desync audio from the visible projectile burst.
+        HapticsManager.impact('heavy');
+        if (comboBoomLevel > 0 || comboBombAxis) {
+            // Combo (× boom OR × directional bomb) earns a screen shake.
+            // Plain 10-cube sweep skips shake — enough visual on its own.
+            this._shakeBoardRoot(440, 0.075);
+        }
+        SoundManager.instance?.play('wrecker_fire');
 
         // Legacy path — no known source, spawn the marker prop right
         // away on every pick and commit at now + pulseMs.
