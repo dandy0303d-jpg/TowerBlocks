@@ -34,10 +34,16 @@ import {
     _decorator, Component, Node, WebView, UITransform, view,
     director, Canvas, sys,
 } from 'cc';
-import { fetchActivityWebViewSession, ActivityIcon } from '../core/ActivityApi';
+import {
+    fetchActivityWebViewSession, ActivityIcon,
+    purchaseActivity, ActivityPurchaseAlreadyRedeemedError,
+    ActivityPurchasePaymentKind,
+} from '../core/ActivityApi';
 import { BACKEND_BASE_URL } from '../core/BackendConfig';
 import { getLang } from '../core/i18n/I18n';
 import { emitBalance } from '../core/WalletApi';
+import { Providers } from '../core/channels/Providers';
+import { AnalyticsApi } from '../core/AnalyticsApi';
 import { BackKeyManager } from './BackKeyManager';
 import { SoundManager } from '../audio/SoundManager';
 
@@ -49,6 +55,10 @@ export type ActivityWebEvent =
     | { type: 'claimed'; gems?: number; items?: Array<{ itemId: string; count: number }> }
     | { type: 'progress-changed' }
     | { type: 'open-url'; url: string }
+    /** 活动内购（通行证 / 宝藏路线付费礼包 / 付费解锁）。
+     *  客户端拉起商店购买 → 验签 /player/activity/purchase → consume。
+     *  完成后 evalJs(`ttPurchaseResult(ok, reason?)`) 通知页面。 */
+    | { type: 'purchase'; activityId: string; productId: string }
     | { type: string; [k: string]: any };  // forward-compat
 
 /** 单例。挂在 canvas 下的固定 Node 上，或第一次 open() 时懒创建。 */
@@ -264,11 +274,145 @@ export class ActivityWebView extends Component {
             case 'open-url':
                 if ((evt as any).url && sys.openURL) sys.openURL((evt as any).url);
                 break;
+            case 'purchase':
+                this._handlePurchaseBridge(evt as { activityId: string; productId: string });
+                break;
             default:
                 // 交给上层监听者，不识别就跳过
                 break;
         }
         // 外部监听者拿全量事件
         try { this._onEvent?.(evt); } catch (e) { console.warn('[ActivityWebView] onEvent threw', e); }
+    }
+
+    // ============================================================
+    //  活动内购桥（type:"purchase"）
+    // ============================================================
+
+    /** 按当前 channel 的 Providers.purchase 跑完整的 buy → verify →
+     *  consume 流水线，然后把结果回灌给 WebView 里的 `ttPurchaseResult`。
+     *  页面本身也会每 2.5s 轮询 2 分钟，所以 evalJs 失败不会卡死 UI —
+     *  仅是把反馈从"瞬时"降级到"轮询"。 */
+    private _handlePurchaseBridge(opts: { activityId: string; productId: string }): void {
+        const { activityId, productId } = opts;
+        if (!activityId || !productId) {
+            console.warn('[ActivityWebView] purchase bridge missing fields:', opts);
+            this._notifyPurchaseResult(false, 'bad-request');
+            return;
+        }
+        const kind = this._paymentKindForChannel();
+        if (!kind) {
+            console.warn('[ActivityWebView] purchase bridge on unsupported platform (editor/mock)');
+            this._notifyPurchaseResult(false, 'unsupported-platform');
+            return;
+        }
+        console.log(`[ActivityWebView] purchase start — activity=${activityId} product=${productId} kind=${kind}`);
+        AnalyticsApi.logBeginCheckout({
+            currency: 'KRW',   // 占位；活动购买的真实货币由服务器 priceCents 决定
+            value:    0,
+            sku:      productId,
+        });
+
+        // Step 1: 商店拉起购买
+        void Providers.purchase.buy(productId)
+            .then(async (receipt) => {
+                // Step 2: 服务器验签 + 入账
+                try {
+                    const res = await purchaseActivity({
+                        activityId,
+                        productId,
+                        paymentKind:     kind,
+                        platformReceipt: receipt.platformReceipt,
+                        transactionId:   receipt.transactionId,
+                    });
+                    console.log(`[ActivityWebView] purchase ok — activity=${activityId} product=${productId} owned=${JSON.stringify(res.ownedProducts)} autoClaimed=${JSON.stringify(res.autoClaimed ?? [])}`);
+                    // Firebase purchase event
+                    AnalyticsApi.logPurchase({
+                        currency:      'KRW',
+                        value:         0,
+                        transactionId: receipt.transactionId,
+                        sku:           productId,
+                    });
+                    AnalyticsApi.logCustom('activity_purchase_ok', {
+                        activity_id: activityId,
+                        product_id:  productId,
+                    });
+                    this._notifyPurchaseResult(true);
+                } catch (serverErr) {
+                    if (serverErr instanceof ActivityPurchaseAlreadyRedeemedError) {
+                        // 收据被别的号用过。按 claude-5d 的约定仍然 consume
+                        // 把 StoreKit/Play 的 pending 清掉，否则每次冷启动
+                        // 都会重放这个收据。页面侧告知 "已被使用"。
+                        console.warn(`[ActivityWebView] purchase receipt already redeemed — consuming anyway: activity=${activityId} product=${productId}`);
+                        AnalyticsApi.logCustom('activity_purchase_already_redeemed', {
+                            activity_id:    activityId,
+                            product_id:     productId,
+                            transaction_id: serverErr.transactionId ?? '',
+                        });
+                        this._notifyPurchaseResult(false, 'already-redeemed');
+                    } else {
+                        // 其他服务器错误：不 consume，收据留着下次冷启动重试
+                        const msg = (serverErr as Error)?.message ?? 'server-error';
+                        console.warn(`[ActivityWebView] purchase server-side failed (will NOT consume): activity=${activityId} product=${productId} err=${msg}`);
+                        AnalyticsApi.logCustom('activity_purchase_server_failed', {
+                            activity_id: activityId,
+                            product_id:  productId,
+                            reason:      msg,
+                        });
+                        this._notifyPurchaseResult(false, 'error');
+                        return;  // ← 跳过 consume 让收据留在队列
+                    }
+                }
+                // Step 3: consume（成功 / already-redeemed 都要 consume）
+                Providers.purchase.consume(receipt.platformReceipt)
+                    .catch((consumeErr) => {
+                        console.warn(`[ActivityWebView] purchase consume failed (purchase itself was OK): ${consumeErr.message}`);
+                    });
+            })
+            .catch((err) => {
+                // 商店侧的失败（用户取消 / 商店 UI 错 / 网络）—— 不走服务器，不 consume
+                const errMsg = String((err as Error)?.message ?? 'unknown');
+                if (errMsg.startsWith('user-cancelled')) {
+                    console.log(`[ActivityWebView] purchase cancelled — activity=${activityId} product=${productId}`);
+                    AnalyticsApi.logCustom('activity_purchase_cancelled', {
+                        activity_id: activityId,
+                        product_id:  productId,
+                    });
+                    this._notifyPurchaseResult(false, 'user-cancelled');
+                    return;
+                }
+                console.warn(`[ActivityWebView] purchase store-side failed: activity=${activityId} product=${productId} err=${errMsg}`);
+                AnalyticsApi.logCustom('activity_purchase_store_failed', {
+                    activity_id: activityId,
+                    product_id:  productId,
+                    reason:      errMsg,
+                });
+                this._notifyPurchaseResult(false, 'error');
+            });
+    }
+
+    /** 当前渠道对应的 paymentKind。编辑器 / 非支持平台返回 null。
+     *  用 sys.os 作为简单路由 —— app-store = apple；Android 的 google-play /
+     *  onestore 由各自 cherry-pick 时需要在这里加分支。 */
+    private _paymentKindForChannel(): ActivityPurchasePaymentKind | null {
+        if (sys.os === sys.OS.IOS)     return 'apple';
+        if (sys.os === sys.OS.ANDROID) return 'google';   // 占位；onestore cherry-pick 时按 BUILD_CHANNEL 分流
+        return null;
+    }
+
+    /** 把结果回灌给 WebView 的 `ttPurchaseResult(ok, reason?)` 全局函数。
+     *  WebView 自身每 2.5s 轮询 2 分钟，所以 evalJs 失败/未加载不致命 ——
+     *  只是把反馈时效从 "瞬时" 降级到 "下次轮询"。 */
+    private _notifyPurchaseResult(ok: boolean, reason?: string): void {
+        const wv = this._webView;
+        if (!wv) return;
+        const js = reason
+            ? `window.ttPurchaseResult && window.ttPurchaseResult(${ok}, ${JSON.stringify(reason)});`
+            : `window.ttPurchaseResult && window.ttPurchaseResult(${ok});`;
+        try {
+            wv.evaluateJS(js);
+        } catch (err) {
+            console.warn('[ActivityWebView] evaluateJS(ttPurchaseResult) threw — page polling will pick it up:', (err as Error)?.message);
+        }
     }
 }

@@ -123,3 +123,79 @@ export async function fetchActivityWebViewSession(): Promise<WebViewSessionResul
     const url = `${BACKEND_BASE_URL}/player/activity/webview-session`;
     return httpPostJson<WebViewSessionResult>(url, {}, BACKEND_TIMEOUT_MS);
 }
+
+/* ================================================================
+ *  Activity purchase (bridge: tetritower://activity type:"purchase")
+ * ================================================================
+ *
+ *  Flow (see INBOX_CLIENT.md 2026-10-11):
+ *    1. ActivityWebView receives bridge msg type:"purchase" with
+ *       activityId + productId.
+ *    2. Call Providers.purchase.buy(productId) → platform receipt.
+ *    3. POST /player/activity/purchase with the receipt (bearer + sign).
+ *       Server validates against the store, grants ownership, optionally
+ *       auto-claims tier(s) depending on activity type.
+ *    4. On 200/409: consume() the platform receipt. On other errors:
+ *       don't consume (platform re-delivers on next launch for retry).
+ *    5. Optionally notify the WebView via ttPurchaseResult(ok, reason?).
+ *
+ *  Server contract — mirror of /player/wallet/topup for symmetry. */
+export type ActivityPurchasePaymentKind = 'apple' | 'google' | 'onestore';
+
+export interface ActivityPurchaseBody {
+    activityId:       string;
+    productId:        string;
+    paymentKind:      ActivityPurchasePaymentKind;
+    platformReceipt:  string;
+    /** Store transaction id (StoreKit originalTransactionId / Play
+     *  orderId / ONE Store txId). Optional — some flows don't have
+     *  one available at post time; server derives from receipt if so. */
+    transactionId?:   string;
+}
+
+export interface ActivityPurchaseResult {
+    ok:              true;
+    ownedProducts:   string[];
+    /** Tier indices the player CAN claim after this purchase (not
+     *  yet claimed, but owned/unlocked). WebView re-reads its state
+     *  via polling after `ttPurchaseResult(true)` fires, so the
+     *  client doesn't need to touch these — kept exposed for debug. */
+    canClaimTiers?:  number[];
+    /** Already-claimed tier indices (dedup record). */
+    claimedTiers?:   number[];
+    /** Tiers the server auto-granted on this purchase (e.g.
+     *  treasure_path's final paid tier). WebView re-polls to show the
+     *  reward animation; also broadcast locally if non-empty. */
+    autoClaimed?:    number[];
+}
+
+/** Thrown by `purchaseActivity` when the server returns 409 with
+ *  `reason: 'receipt already redeemed'`. Caller still MUST consume
+ *  the platform receipt (otherwise Play Store / StoreKit keeps
+ *  redelivering it on every launch), but no gems are credited and
+ *  the UI should show a specific toast. */
+export class ActivityPurchaseAlreadyRedeemedError extends Error {
+    constructor(
+        public readonly activityId:    string,
+        public readonly productId:     string,
+        public readonly transactionId: string | undefined,
+    ) {
+        super(`activity purchase receipt already redeemed: ${activityId}/${productId}`);
+        this.name = 'ActivityPurchaseAlreadyRedeemedError';
+        Object.setPrototypeOf(this, ActivityPurchaseAlreadyRedeemedError.prototype);
+    }
+}
+
+export async function purchaseActivity(body: ActivityPurchaseBody): Promise<ActivityPurchaseResult> {
+    const url = `${BACKEND_BASE_URL}/player/activity/purchase`;
+    try {
+        return await httpPostJson<ActivityPurchaseResult>(url, body, BACKEND_TIMEOUT_MS);
+    } catch (err) {
+        const msg = (err as Error)?.message ?? '';
+        // Http module encodes 409 as "HTTP 409: {\"reason\":\"receipt already redeemed\"}".
+        if (msg.includes('HTTP 409') && msg.includes('receipt already redeemed')) {
+            throw new ActivityPurchaseAlreadyRedeemedError(body.activityId, body.productId, body.transactionId);
+        }
+        throw err;
+    }
+}
