@@ -64,13 +64,6 @@ export interface ClearLinesResult {
     fullyCleared: number;
     /** Count of rows that partially cleared but had surviving stones. */
     partialCount: number;
-    /** Bomb seeds that the collision-after-gravity scan detected: a bomb
-     *  that got pushed by gravity onto another prop. clearLines can't
-     *  run detonateBombs itself (would require a circular import of
-     *  Detonate), so the caller — GameState.lockAndNext etc. — should
-     *  feed these to detonateBombs after the clearLines return to make
-     *  the collision fire on the current tick instead of the next lock. */
-    collisionBombSeeds: Array<{ r: number; c: number; kind: BombKind }>;
 }
 
 /**
@@ -91,7 +84,7 @@ export function clearLines(
         }
         if (full) candidates.push(r);
     }
-    if (!candidates.length) return { fullyCleared: 0, partialCount: 0, collisionBombSeeds: [] };
+    if (!candidates.length) return { fullyCleared: 0, partialCount: 0 };
 
     // 2. Stones — decrement, partition into "partial" vs "splice".
     const rowsToPartial: number[] = [];
@@ -151,11 +144,6 @@ export function clearLines(
     const fellMoves = applyDiagonalGravity(state, reservedTop);
     const allMoves = spliceMoves.concat(fellMoves);
     if (allMoves.length && hooks.onCellsFell) hooks.onCellsFell(allMoves);
-    // After the fall settles, trigger any prop that landed directly
-    // on top of another prop (same column, +1 row). Clear-trigger
-    // props fire via hooks here; bombs come back as seeds for the
-    // caller to feed into detonateBombs.
-    const collisionBombSeeds = fireStackedPropCollisionsAfterGravity(state, fellMoves, hooks, reservedTop);
 
     // 7. Orphan-prop pass — partial clears null the host but keep the prop.
     processClearedChests(state, hooks);
@@ -186,10 +174,6 @@ export function clearLines(
     // just like before.
     const boomFellMoves = applyDiagonalGravity(state, state.board.length);
     if (boomFellMoves.length && hooks.onCellsFell) hooks.onCellsFell(boomFellMoves);
-    // Second collision pass — booms punched holes earlier, this gravity
-    // may create new prop-on-prop stacks.
-    const boomCollisionBombSeeds = fireStackedPropCollisionsAfterGravity(state, boomFellMoves, hooks, state.board.length);
-    for (const s of boomCollisionBombSeeds) collisionBombSeeds.push(s);
 
     if (rowsToSplice.length > 0 || rowsToPartial.length > 0) {
         hooks.onClearSound?.(1);
@@ -198,7 +182,6 @@ export function clearLines(
     return {
         fullyCleared: rowsToSplice.length,
         partialCount: rowsToPartial.length,
-        collisionBombSeeds,
     };
 }
 

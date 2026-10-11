@@ -38,7 +38,6 @@ import {
 import { activateBoom } from './Boom';
 import { detonateBombs, DetonateHooks } from '../Detonate';
 import { applyDiagonalGravity } from '../ColumnGravity';
-import { fireStackedPropCollisionsAfterGravity } from '../ClearLines';
 
 /** Common hit-effect for both rocket and gatling: a 1:1 cancel cleared
  *  the cell at (r, c). Fire every prop hook for what was sitting there,
@@ -105,15 +104,6 @@ export function triggerHitProps(
             if (cleared.length) {
                 const moves = applyDiagonalGravity(state, reservedTop);
                 if (moves.length && hooks.onCellsFell) hooks.onCellsFell(moves);
-                // Fire stacked prop-on-prop collisions produced by this
-                // mid-storm gravity: a bomb or clear-trigger prop pushed
-                // onto another prop should fire THIS tick.
-                const collisionBombSeeds = fireStackedPropCollisionsAfterGravity(
-                    state, moves, hooks as DetonateHooks, reservedTop,
-                );
-                if (collisionBombSeeds.length) {
-                    detonateBombs(state, collisionBombSeeds, reservedTop, hooks as DetonateHooks);
-                }
             }
         }
     }
@@ -286,13 +276,6 @@ export class RocketState {
         // matches the ClearLines / bomb boom-diamond convention.
         const fellMoves = applyDiagonalGravity(state, state.board.length);
         if (fellMoves.length && hooks.onCellsFell) hooks.onCellsFell(fellMoves);
-        // Fire stacked prop-on-prop collisions produced by storm-end gravity.
-        const collisionBombSeeds = fireStackedPropCollisionsAfterGravity(
-            state, fellMoves, hooks as DetonateHooks, state.board.length,
-        );
-        if (collisionBombSeeds.length) {
-            detonateBombs(state, collisionBombSeeds, state.board.length, hooks as DetonateHooks);
-        }
         hooks.onFinish?.();
     }
 }

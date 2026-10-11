@@ -28,7 +28,6 @@ import { isColoredCell, wrap } from '../Board';
 import { activateBoom } from './Boom';
 import { detonateBombs, DetonateHooks } from '../Detonate';
 import { applyDiagonalGravity } from '../ColumnGravity';
-import { fireStackedPropCollisionsAfterGravity } from '../ClearLines';
 
 export type RandomFn = () => number;
 
@@ -351,15 +350,6 @@ export function applyWreckerPlan(
     } else {
         const fellMoves = applyDiagonalGravity(state, reservedTop);
         if (fellMoves.length && hooks.onCellsFell) hooks.onCellsFell(fellMoves);
-        // Fallen-prop-on-prop collisions: a col/row/box bomb or clear-trigger
-        // prop pushed onto another prop by this wrecker's post-sweep gravity
-        // must fire THIS tick, not wait for the next lock's adjacency scan.
-        const collisionBombSeeds = fireStackedPropCollisionsAfterGravity(
-            state, fellMoves, hooks, reservedTop,
-        );
-        if (collisionBombSeeds.length) {
-            detonateBombs(state, collisionBombSeeds, reservedTop, hooks);
-        }
     }
     return true;
 }

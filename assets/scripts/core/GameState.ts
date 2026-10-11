@@ -59,7 +59,7 @@ import { makeEmptyBombs, makeEmptyBooms, makeEmptyWreckers, injectRandomMagicPro
 import { collides, rotateBombs, rotateBooms, rotateWreckers } from './Pieces';
 import { Bag } from './Bag';
 import { applyColumnGravity, applyDiagonalGravity } from './ColumnGravity';
-import { clearLines, ClearLinesHooks, fireStackedPropCollisionsAfterGravity } from './ClearLines';
+import { clearLines, ClearLinesHooks } from './ClearLines';
 import { detonateBombs, DetonateHooks } from './Detonate';
 import { spawn, lock, gatherLevelBombs, gatherAdjacentBombs, gatherAdjacentBooms, gatherAdjacentWreckers } from './PieceOps';
 import { activateBoom, processClearedBooms } from './Items/Boom';
@@ -1102,12 +1102,6 @@ export class GameState {
             if (result.fullyCleared >= 1) {
                 this.hooks.onNaturalRowClears?.(result.fullyCleared);
             }
-        }
-        if (result.collisionBombSeeds.length) {
-            detonateBombs(
-                this.state, result.collisionBombSeeds,
-                reservedTop, this.makeDetonateHooks(),
-            );
         }
     }
 
@@ -2202,21 +2196,6 @@ export class GameState {
             // act as obstacles.
             const fellMoves = applyDiagonalGravity(this.state, this.state.board.length);
             if (fellMoves.length) this.hooks.onCellsFell?.(fellMoves);
-            // Prop stacking caused by boom-driven gravity: clear-trigger
-            // props fire via hooks inside the helper; bombs come back
-            // as seeds for us to feed to detonateBombs on this same tick
-            // (otherwise a bomb pushed onto another prop would stay
-            // dormant until the NEXT lock's adjacency scan caught it).
-            const boomCollisionBombSeeds = fireStackedPropCollisionsAfterGravity(
-                this.state, fellMoves,
-                this.makeClearHooks(), this.state.board.length,
-            );
-            if (boomCollisionBombSeeds.length) {
-                detonateBombs(
-                    this.state, boomCollisionBombSeeds,
-                    this.computeReservedTop(), this.makeDetonateHooks(),
-                );
-            }
         }
 
         if (seeds.length) {
@@ -2245,16 +2224,6 @@ export class GameState {
             // blasts because the col-blast loop skips currently-full rows).
             const result = clearLines(this.state, this.computeReservedTop(), this.makeClearHooks());
             this._lastClearLinesFullyCleared = result.fullyCleared;
-            if (result.collisionBombSeeds.length) {
-                // Stacked bombs produced by the clearLines gravity pass —
-                // fire them on this tick so a bomb pushed onto another
-                // prop by the clear doesn't wait for the next lock's
-                // adjacency scan.
-                detonateBombs(
-                    this.state, result.collisionBombSeeds,
-                    this.computeReservedTop(), this.makeDetonateHooks(),
-                );
-            }
             convertReservedZoneToGray(this.state, this.levelReservedHeight);
             // Score + lines for level mode. Use the pre-detonate full count
             // so col-bomb-host rows count even though detonate spliced them.
@@ -2984,18 +2953,6 @@ export class GameState {
             // back down. Skipped if no adjacent boom actually fired.
             const fellMoves = applyDiagonalGravity(this.state, this.computeReservedTop());
             if (fellMoves.length) this.hooks.onCellsFell?.(fellMoves);
-            // Mortar-path prop stacking — same reason as the lockAndNext
-            // boom-gravity branch above.
-            const mortarCollisionBombSeeds = fireStackedPropCollisionsAfterGravity(
-                this.state, fellMoves,
-                this.makeClearHooks(), this.computeReservedTop(),
-            );
-            if (mortarCollisionBombSeeds.length) {
-                detonateBombs(
-                    this.state, mortarCollisionBombSeeds,
-                    this.computeReservedTop(), this.makeDetonateHooks(),
-                );
-            }
         }
         if (seeds.length) {
             detonateBombs(this.state, seeds, this.computeReservedTop(), this.makeDetonateHooks());
@@ -3005,12 +2962,7 @@ export class GameState {
         }
         if (this.mode === 'level' || this.mode === 'collect') {
             const mortarResult = clearLines(this.state, this.computeReservedTop(), this.makeClearHooks());
-            if (mortarResult.collisionBombSeeds.length) {
-                detonateBombs(
-                    this.state, mortarResult.collisionBombSeeds,
-                    this.computeReservedTop(), this.makeDetonateHooks(),
-                );
-            }
+            void mortarResult;
             convertReservedZoneToGray(this.state, this.levelReservedHeight);
             if (naturalClearsThisLock > 0) {
                 const pts = [0, 100, 300, 500, 800][Math.min(naturalClearsThisLock, 4)] * this.level;

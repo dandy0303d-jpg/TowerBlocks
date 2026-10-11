@@ -32,8 +32,6 @@ import {
 } from '../ClearLines';
 import { triggerHitProps } from './Rocket';
 import { applyDiagonalGravity } from '../ColumnGravity';
-import { fireStackedPropCollisionsAfterGravity } from '../ClearLines';
-import { detonateBombs, DetonateHooks } from '../Detonate';
 
 export type RandomFn = () => number;
 
@@ -238,13 +236,6 @@ export class GatlingState {
         // holes in the gray foundation.
         const fellMoves = applyDiagonalGravity(state, state.board.length);
         if (fellMoves.length && hooks.onCellsFell) hooks.onCellsFell(fellMoves);
-        // Fire stacked prop-on-prop collisions produced by storm-end gravity.
-        const collisionBombSeeds = fireStackedPropCollisionsAfterGravity(
-            state, fellMoves, hooks as DetonateHooks, state.board.length,
-        );
-        if (collisionBombSeeds.length) {
-            detonateBombs(state, collisionBombSeeds, state.board.length, hooks as DetonateHooks);
-        }
         hooks.onFinish?.();
     }
 }
