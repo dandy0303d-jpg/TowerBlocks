@@ -64,6 +64,13 @@ export interface ClearLinesResult {
     fullyCleared: number;
     /** Count of rows that partially cleared but had surviving stones. */
     partialCount: number;
+    /** Bomb seeds that the collision-after-gravity scan detected: a bomb
+     *  that got pushed by gravity onto another prop. clearLines can't
+     *  run detonateBombs itself (would require a circular import of
+     *  Detonate), so the caller — GameState.lockAndNext etc. — should
+     *  feed these to detonateBombs after the clearLines return to make
+     *  the collision fire on the current tick instead of the next lock. */
+    collisionBombSeeds: Array<{ r: number; c: number; kind: BombKind }>;
 }
 
 /**
@@ -84,7 +91,7 @@ export function clearLines(
         }
         if (full) candidates.push(r);
     }
-    if (!candidates.length) return { fullyCleared: 0, partialCount: 0 };
+    if (!candidates.length) return { fullyCleared: 0, partialCount: 0, collisionBombSeeds: [] };
 
     // 2. Stones — decrement, partition into "partial" vs "splice".
     const rowsToPartial: number[] = [];
@@ -145,11 +152,10 @@ export function clearLines(
     const allMoves = spliceMoves.concat(fellMoves);
     if (allMoves.length && hooks.onCellsFell) hooks.onCellsFell(allMoves);
     // After the fall settles, trigger any prop that landed directly
-    // on top of another prop (same column, +1 row). Previously such
-    // props stayed silent — a wrecker/boom/meteor dropped by gravity
-    // onto a chest/meteor/etc. just sat there until the player cleared
-    // more lines around it. Now the landed prop fires on contact.
-    fireStackedPropCollisionsAfterGravity(state, fellMoves, hooks, reservedTop);
+    // on top of another prop (same column, +1 row). Clear-trigger
+    // props fire via hooks here; bombs come back as seeds for the
+    // caller to feed into detonateBombs.
+    const collisionBombSeeds = fireStackedPropCollisionsAfterGravity(state, fellMoves, hooks, reservedTop);
 
     // 7. Orphan-prop pass — partial clears null the host but keep the prop.
     processClearedChests(state, hooks);
@@ -182,13 +188,18 @@ export function clearLines(
     if (boomFellMoves.length && hooks.onCellsFell) hooks.onCellsFell(boomFellMoves);
     // Second collision pass — booms punched holes earlier, this gravity
     // may create new prop-on-prop stacks.
-    fireStackedPropCollisionsAfterGravity(state, boomFellMoves, hooks, state.board.length);
+    const boomCollisionBombSeeds = fireStackedPropCollisionsAfterGravity(state, boomFellMoves, hooks, state.board.length);
+    for (const s of boomCollisionBombSeeds) collisionBombSeeds.push(s);
 
     if (rowsToSplice.length > 0 || rowsToPartial.length > 0) {
         hooks.onClearSound?.(1);
     }
 
-    return { fullyCleared: rowsToSplice.length, partialCount: rowsToPartial.length };
+    return {
+        fullyCleared: rowsToSplice.length,
+        partialCount: rowsToPartial.length,
+        collisionBombSeeds,
+    };
 }
 
 // ---------- internal helpers ----------
@@ -440,12 +451,14 @@ export function processClearedGatlings(state: BoardState, hooks: ItemTriggerHook
     }
 }
 
-/** True if any clear-triggered prop grid has a non-null entry at (r, c).
- *  Bombs are intentionally excluded — they use the piece-lock
- *  adjacency path, not the clear-trigger hooks. */
-function cellHasClearTriggerProp(state: BoardState, r: number, c: number): boolean {
+/** True if (r, c) carries ANY embedded prop — clear-trigger types
+ *  (chest/meteor/blizzard/wrecker/hail/rocket/gatling/boom) OR a bomb
+ *  (boardBombs). Used by the collision scan to decide whether a fall
+ *  touches a prop-prop stack. */
+function cellHasAnyProp(state: BoardState, r: number, c: number): boolean {
     if (r < 0 || r >= state.board.length) return false;
     return !!(
+        (state.boardBombs      && state.boardBombs[r]      && state.boardBombs[r][c])      ||
         (state.boardBooms      && state.boardBooms[r]      && state.boardBooms[r][c])      ||
         (state.boardChests     && state.boardChests[r]     && state.boardChests[r][c])     ||
         (state.boardMeteors    && state.boardMeteors[r]    && state.boardMeteors[r][c])    ||
@@ -464,34 +477,41 @@ function cellHasClearTriggerProp(state: BoardState, r: number, c: number): boole
  *  used elsewhere in the game.
  *
  *  Scope: vertical stacking only, per the player's request. Horizontal
- *  adjacency (same row, +/- 1 column) is intentionally skipped so the
- *  behaviour doesn't creep.
+ *  adjacency (same row, +/- 1 column) is intentionally skipped.
  *
- *  Firing uses the same per-type null + hook pattern as `fireRowProps`.
- *  Bombs are not fired here — they trigger via the piece-adjacency
- *  path, not clear-triggers.
+ *  Two output paths:
+ *    - Clear-trigger props (chest/meteor/blizzard/wrecker/hail/rocket/
+ *      gatling/boom) fire IMMEDIATELY via `hooks` — same null + hook
+ *      pattern as `fireRowProps`.
+ *    - Bombs (row/col/box3) can't be fired through hooks; they live in
+ *      the detonateBombs() pipeline. Returned as a BombSeed-shaped
+ *      list so the caller can feed them to Detonate's chain. If the
+ *      caller doesn't run bombs (e.g. an endless-mode gravity pass that
+ *      doesn't go through clearLines), the bomb stays live and will
+ *      fire on the next lock through the normal adjacency path.
  *
- *  Hook side-effects (further bomb seeds, wrecker plans, boom gravity
- *  resettles etc.) chain through normally — caller is responsible for
- *  running any required follow-up gravity pass. */
+ *  Collision rule: landed prop fires if the cell below ALSO has ANY
+ *  prop (bomb or clear-trigger). Either half of the stack can trigger
+ *  the other — a chest landing on a bomb fires the chest AND queues
+ *  the bomb; a bomb landing on a wrecker fires the wrecker AND queues
+ *  the bomb; etc. */
 export function fireStackedPropCollisionsAfterGravity(
     state: BoardState,
     moves: ReadonlyArray<CellFallMove>,
     hooks: ItemTriggerHooks,
     reservedTop: number = state.board.length,
-): void {
-    if (!moves.length) return;
+): Array<{ r: number; c: number; kind: BombKind }> {
+    const bombSeeds: Array<{ r: number; c: number; kind: BombKind }> = [];
+    if (!moves.length) return bombSeeds;
     for (const m of moves) {
         if (m.toR === m.fromR) continue;   // not actually a drop
         const landedR = m.toR;
         const c       = m.c;
-        if (!cellHasClearTriggerProp(state, landedR, c)) continue;
-        if (!cellHasClearTriggerProp(state, landedR + 1, c)) continue;
+        if (!cellHasAnyProp(state, landedR, c)) continue;
+        if (!cellHasAnyProp(state, landedR + 1, c)) continue;
 
         // Fire every clear-trigger prop sitting on the landed cell.
-        // Mirrors Detonate.fireCellProps's per-type block so a cell
-        // carrying both a chest AND (hypothetically) a wrecker would
-        // fire both in the same order.
+        // Mirrors Detonate.fireCellProps's per-type block.
         if (state.boardChests?.[landedR]?.[c]) {
             state.boardChests[landedR][c] = null;
             hooks.onChestTriggered?.(landedR, c);
@@ -526,5 +546,15 @@ export function fireStackedPropCollisionsAfterGravity(
             const cleared = activateBoom(state, landedR, c, lvl, reservedTop);
             hooks.onBoomTriggered?.(landedR, c, lvl, cleared);
         }
+        // Bomb: can't fire inline (needs the detonateBombs chain).
+        // Collect as a seed; caller runs them. Keep the embed in place
+        // so the bomb kind survives the trip to detonate — Detonate's
+        // chain will re-read the kind and null the embed as part of
+        // processing the seed.
+        const bombKind = state.boardBombs?.[landedR]?.[c] ?? null;
+        if (bombKind) {
+            bombSeeds.push({ r: landedR, c, kind: bombKind });
+        }
     }
+    return bombSeeds;
 }

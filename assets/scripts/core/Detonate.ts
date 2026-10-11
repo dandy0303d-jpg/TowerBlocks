@@ -334,10 +334,14 @@ export function detonateBombs(
     const allMoves = spliceMoves.concat(fellMoves);
     if (allMoves.length && hooks.onCellsFell) hooks.onCellsFell(allMoves);
 
-    // Fallen-prop-on-prop collisions. Same purpose as the companion
-    // call in ClearLines — a wrecker/boom/etc that dropped onto
-    // another prop fires on contact instead of sitting silent.
-    fireStackedPropCollisionsAfterGravity(state, fellMoves, hooks, reservedTop);
+    // Fallen-prop-on-prop collisions. Clear-trigger props fire inline;
+    // bombs come back as seeds and we re-enter the local chain so they
+    // detonate as part of the same cascade (otherwise a wrecker/boom
+    // triggered by a stacked bomb would wait for the NEXT lock).
+    const collisionBombSeeds = fireStackedPropCollisionsAfterGravity(state, fellMoves, hooks, reservedTop);
+    if (collisionBombSeeds.length) {
+        detonateBombs(state, collisionBombSeeds, reservedTop, hooks);
+    }
 
     // Orphan-prop pass — anything whose host cell got nulled by a col blast.
     processClearedChests(state, hooks);
