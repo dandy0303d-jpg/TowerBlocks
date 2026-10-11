@@ -47,7 +47,6 @@
 // iOS branch is now a no-op; Analytics / Crashlytics / Remote Config
 // will be re-integrated via Swift Package Manager in a future pass.
 #import <AppTrackingTransparency/AppTrackingTransparency.h>
-#import <AdSupport/AdSupport.h>   // ASIdentifierManager → IDFA
 
 @implementation AppDelegate
 @synthesize window;
@@ -134,18 +133,6 @@
                     default:                                                statusName = @"unknown"; break;
                 }
                 NSLog(@"[ATT] tracking authorization status = %@", statusName);
-                // Dev convenience: print the IDFA to the console so it
-                // can be copy-pasted into the LevelPlay dashboard's
-                // Test Devices page. Only meaningful when status is
-                // 'authorized' — any other state returns a zeroed UUID
-                // (00000000-...). Remove this block once the device is
-                // registered as a LevelPlay test device.
-                if (status == ATTrackingManagerAuthorizationStatusAuthorized) {
-                    NSString *idfa = [[[ASIdentifierManager sharedManager] advertisingIdentifier] UUIDString];
-                    NSLog(@"[ATT] IDFA (paste into LevelPlay → Test Devices): %@", idfa);
-                } else {
-                    NSLog(@"[ATT] IDFA unavailable because status != authorized (will be zeroed)");
-                }
             }];
         });
     }
