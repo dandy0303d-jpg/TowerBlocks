@@ -1746,26 +1746,48 @@ export class GameState {
         // muddled blip.
         setTimeout(() => {
             this.modalPaused = false;
-            const ok = this.useItem(key);
-            if (!ok) {
-                // Roll back the inventory grant — item couldn't activate
-                // (e.g. rewind without enough history). Reopen picker so
-                // the player can choose the other option.
-                this.inventory[key] = before;
-                this.energyPicker.active = true;
-                this.hooks.onEnergyPickerOpen?.([...this.energyPicker.choices]);
-                return;
-            }
-            // Drain the bar and notify the UI.
-            this.energyCharge = 0;
-            this.energyPicker.choices = [];
-            this.hooks.onEnergyChanged?.(0, ENERGY_FULL_THRESHOLD);
-            // Reset pity — the player committed to an item, so the next
-            // picker opens with base ITEM_BASE_PROBS odds. Rollback path
-            // above (ok === false) intentionally does NOT reset, since
-            // the player didn't actually receive an item.
-            this._pickerDrawStreak = 0;
-            this.hooks.onEnergyPickerPicked?.(key);
+            // If the player tapped PAUSE between picking and now, defer
+            // firing the item until they resume. Previously `useItem`
+            // would see `paused === true`, return false via the
+            // canAcceptInput gate, and the rollback branch would reopen
+            // the picker — which fired `onEnergyPickerOpen` and popped
+            // the modal AGAIN. The player sees "picker → pause → picker
+            // → pause → picker…" forever because every retry hits the
+            // same gate. Keep the pick committed; wait out the pause,
+            // then fire. tryFire self-polls at 100ms until the game is
+            // either resumed (fire the item) or torn down (silent
+            // rollback — scene is gone, nobody sees the state).
+            const tryFire = () => {
+                if (this.gameOver || !this.running) {
+                    this.inventory[key] = before;
+                    return;
+                }
+                if (this.paused) {
+                    setTimeout(tryFire, 100);
+                    return;
+                }
+                const ok = this.useItem(key);
+                if (!ok) {
+                    // Roll back the inventory grant — item couldn't activate
+                    // (e.g. rewind without enough history). Reopen picker so
+                    // the player can choose the other option.
+                    this.inventory[key] = before;
+                    this.energyPicker.active = true;
+                    this.hooks.onEnergyPickerOpen?.([...this.energyPicker.choices]);
+                    return;
+                }
+                // Drain the bar and notify the UI.
+                this.energyCharge = 0;
+                this.energyPicker.choices = [];
+                this.hooks.onEnergyChanged?.(0, ENERGY_FULL_THRESHOLD);
+                // Reset pity — the player committed to an item, so the next
+                // picker opens with base ITEM_BASE_PROBS odds. Rollback path
+                // above (ok === false) intentionally does NOT reset, since
+                // the player didn't actually receive an item.
+                this._pickerDrawStreak = 0;
+                this.hooks.onEnergyPickerPicked?.(key);
+            };
+            tryFire();
         }, GameState.PICK_EXECUTE_DELAY_MS);
         // Return true optimistically — the pick has been accepted, even
         // though the effect fires on the next microtask. All existing

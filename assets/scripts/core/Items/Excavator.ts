@@ -34,6 +34,7 @@ import {
     spliceRows,
 } from '../ClearLines';
 import { applyDiagonalGravity } from '../ColumnGravity';
+import { fireStackedPropCollisionsAfterGravity } from '../ClearLines';
 import { detonateBombs, DetonateHooks, BombSeed } from '../Detonate';
 /** Returns true if any rows were dug (i.e. the inventory entry is consumed). */
 export function activateExcavator(
@@ -188,6 +189,15 @@ export function activateExcavator(
     const fellMoves = applyDiagonalGravity(state, reservedTop);
     const allMoves = spliceMoves.concat(fellMoves);
     if (allMoves.length && hooks.onCellsFell) hooks.onCellsFell(allMoves);
+    // Fire stacked prop-on-prop collisions produced by this gravity pass:
+    // a bomb / clear-trigger prop pushed onto another prop must fire THIS
+    // tick instead of waiting for the next lock's adjacency scan.
+    const collisionBombSeeds = fireStackedPropCollisionsAfterGravity(
+        state, fellMoves, hooks as DetonateHooks, reservedTop,
+    );
+    if (collisionBombSeeds.length) {
+        detonateBombs(state, collisionBombSeeds, reservedTop, hooks as DetonateHooks);
+    }
     processClearedChests(state, hooks);
     processClearedMeteors(state, hooks);
     processClearedBlizzards(state, hooks);
