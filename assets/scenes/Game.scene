@@ -76802,6 +76802,7 @@
       "__uuid__": "fdff30f4-3ff6-4fd1-b8bf-7ca36493d72c",
       "__expectedType__": "cc.AudioClip"
     },
+    "sandTick": null,
     "masterVolume": 0.8,
     "sfxEnabled": true,
     "_id": "bdnPzawvxOkomC9/RidvEW"

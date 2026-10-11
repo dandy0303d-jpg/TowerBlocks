@@ -245,9 +245,19 @@ export class LevelPlayAdProvider implements IAdProvider {
                 return { kind: 'error', reason: (e as Error).message };
             }
         }
-        if (!this._ready) {
-            return { kind: 'error', reason: 'not-ready' };
-        }
+        // NB: no `_ready` pre-gate. The flag tracks only the DEFAULT ad
+        // unit's readiness (because the native `rewardedAvailable` push
+        // doesn't carry a per-unit id yet) — but game code calls us
+        // with per-slot ad units (fate / magic / revive) that may be
+        // in different load states. Letting the request through means
+        // the native bridge decides based on the SPECIFIC adUnit's
+        // isAdReady(), and lazy-creates on first use for a unit that
+        // hasn't been seen yet. First click on a fresh unit returns
+        // kind:'error' reason:'not-ready — unit lazily created, try
+        // again'; the ad finishes loading in a few seconds and the
+        // second click succeeds. The callers already warn + no-op on
+        // 'error', so UX is: player taps once, nothing happens, taps
+        // again a few seconds later, ad plays.
         this.installHook();
         try {
             const waiter = this.showSlot.wait();

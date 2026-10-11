@@ -116,10 +116,15 @@ public class LevelPlayBridge: NSObject {
                 return
             }
             NSLog("[LevelPlay] onInitSuccess (config=\(String(describing: config)))")
-            // Prepare the default rewarded ad unit. Ad ops can add more
-            // units later by calling createAndLoadRewarded(adUnitId:)
-            // — one instance per ad unit id.
-            self.createAndLoadRewarded(adUnitId: Self.defaultRewardedAdUnit)
+            // NO auto-load of a default ad unit at init anymore — the
+            // old hardcoded fallback (8sdnjo086acl132c) was the Android
+            // 本命方块 unit and does not exist on the iOS dashboard, so
+            // it fired didFailToLoadAd 'Invalid ad unit id' on every
+            // boot. The JS side passes the actual per-slot ad unit on
+            // each showRewardedAd() call; the Swift bridge lazily
+            // creates + loads the LPMRewardedAd for a unit the first
+            // time it's used (see showRewarded's createAndLoadRewarded
+            // lazy branch) and reuses the same instance from then on.
             self.emitInitResult(success: true, error: nil)
         }
     }

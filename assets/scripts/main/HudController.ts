@@ -49,6 +49,7 @@ import { consumeDailyFree } from '../core/DailyFreeApi';
 import { PlayerProfile } from '../core/PlayerProfile';
 import { fetchBackpack, consumeBackpackItem, getCachedBackpack } from '../core/BackpackApi';
 import { IS_DEV_BUILD, LEVELPLAY_FATE_AD_UNIT, LEVELPLAY_MAGIC_AD_UNIT } from '../core/BuildConfig';
+import { Providers } from '../core/channels/Providers';
 import { MagicHourglassEffect } from '../../effects/magic-hourglass/MagicHourglassEffect';
 import { MagicGatlingEffect } from '../../effects/magic-gatling/MagicGatlingEffect';
 import { MagicMeteorEffect } from '../../effects/magic-meteor/MagicMeteorEffect';
