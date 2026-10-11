@@ -539,9 +539,13 @@ class Profile {
      *  whether to swallow or surface. Also mirrors name+avatar into
      *  localStorage so offline reads see the latest values. */
     async fetchProfile(): Promise<{
-        name:       string;
-        avatarIdx:  number;
-        bestScores: { level: number; endless: number; blind: number };
+        name:          string;
+        avatarIdx:     number;
+        bestScores:    { level: number; endless: number; blind: number };
+        /** Server-authoritative max cleared level index (0-based) or
+         *  `undefined` on older server builds that don't send it yet.
+         *  See LeaderboardApi.PlayerProfileResult for context. */
+        maxClearedIdx?: number;
     }> {
         const p = await fetchPlayerProfile();
         this._name = p.name;
@@ -561,9 +565,10 @@ class Profile {
         sys.localStorage.setItem(NAME_KEY, p.name);
         sys.localStorage.setItem(AVATAR_KEY, String(p.avatarIdx));
         return {
-            name: p.name,
-            avatarIdx: p.avatarIdx,
-            bestScores: p.bestScores,
+            name:          p.name,
+            avatarIdx:     p.avatarIdx,
+            bestScores:    p.bestScores,
+            maxClearedIdx: p.maxClearedIdx,
         };
     }
 

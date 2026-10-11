@@ -249,27 +249,29 @@ export class LoadingController extends Component {
                              (e as Error).message));
             try {
                 const p = await PlayerProfile.fetchProfile();
-                // Server-side level progress lives in TWO places, and we
-                // need the max of both to hydrate correctly:
+                // Server-authoritative max cleared level idx. Three
+                // sources, in priority order:
                 //
-                //   1. player.bestScores.level — historically the "highest
-                //      cleared level count". Only bumped by endless/blind
-                //      submitScore calls; the level-mode submitLevelTime
-                //      endpoint writes to the leaderboard table but never
-                //      touches this field. So for a level-mode-only
-                //      player, bestScores.level stays 0 forever.
+                //   1. profile.maxClearedIdx (added 2026-10-11) — the
+                //      backend reads from player_level_progress and
+                //      returns a dedicated 0-indexed field. Use it
+                //      whenever present.
                 //
-                //   2. leaderboard/level-time entries — every per-level
-                //      submitLevelTime creates one row per (uuid, level),
-                //      keyed by the fastest elapsedSec. The MAX levelIdx
-                //      across all my rows IS my true "highest cleared" —
-                //      it's the only source of truth for level-mode
-                //      progress after a device switch / account recovery.
+                //   2. bestScores.level - 1. Legacy field; backend
+                //      hydrates it from the same source as (1) as of
+                //      2026-10-11 so both agree, but older server
+                //      builds may still have the old (stale, only
+                //      bumped by endless/blind submitScore) behaviour.
                 //
-                // Take the max of both so a player who's cleared level 45
-                // via level-mode + reached endless-layer 20 still recovers
-                // to level 46 unlocked on a fresh device.
-                let serverIdx = (p?.bestScores?.level ?? 0) - 1;   // -1 if server has nothing
+                //   3. max(levelIdx) across /leaderboard/level-time/mine
+                //      rows. Only covers players who submitted times —
+                //      pre-9 levels aren't on the time leaderboard so
+                //      stays empty for early players.
+                //
+                // Belt-and-braces max() so a backend mid-rollout that
+                // misses (1) and has stale (2) doesn't drop a
+                // returning player back to -1.
+                let serverIdx = p?.maxClearedIdx ?? ((p?.bestScores?.level ?? 0) - 1);
                 try {
                     const mine = await fetchMyLevelTimes();
                     if (mine.length > 0) {
@@ -278,12 +280,12 @@ export class LoadingController extends Component {
                             -1,
                         );
                         if (derivedIdx > serverIdx) {
-                            console.log(`[Loading] level-time entries yield higher progress: ${derivedIdx} > bestScores.level-1=${serverIdx}`);
+                            console.log(`[Loading] level-time entries yield higher progress: ${derivedIdx} > profile.maxClearedIdx/bestScores.level-1=${serverIdx}`);
                             serverIdx = derivedIdx;
                         }
                     }
                 } catch (e) {
-                    console.warn('[Loading] fetchMyLevelTimes failed (progress hydration will fall back to bestScores.level only):', (e as Error).message);
+                    console.warn('[Loading] fetchMyLevelTimes failed (progress hydration will fall back to profile.maxClearedIdx / bestScores.level):', (e as Error).message);
                 }
                 const localIdx = LevelProgress.maxClearedIdx;
                 if (serverIdx > localIdx) {

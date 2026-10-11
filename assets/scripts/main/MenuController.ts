@@ -1006,16 +1006,31 @@ export class MenuController extends Component {
             // install; player just re-plays the missing levels).
             try {
                 const p = await PlayerProfile.fetchProfile();
-                // Server-side level progress lives in TWO places (see the
-                // same block in LoadingController.beginBoot for the full
-                // rationale). Short version: bestScores.level is only
-                // bumped by endless/blind submitScore, NOT by level-mode
-                // submitLevelTime — so a level-mode-only player has 0
-                // there forever. The truth is in the leaderboard/level-
-                // time-mine entries: max(levelIdx) is the real "highest
-                // cleared". Take the max of both to hydrate correctly on
-                // fresh installs / account recovery.
-                let serverIdx = (p?.bestScores?.level ?? 0) - 1;
+                // Server-authoritative max cleared level idx. Three
+                // sources, in priority order:
+                //
+                //   1. profile.maxClearedIdx (added 2026-10-11, server
+                //      change: /player/profile reads directly from
+                //      player_level_progress and returns it as a
+                //      dedicated field). This is THE truth; use it
+                //      whenever present.
+                //
+                //   2. bestScores.level - 1 (0-indexed). Legacy field;
+                //      used to be stale on backend versions where
+                //      /run/finish didn't bump it, but as of 2026-10-11
+                //      profile hydrates it from the same source as
+                //      maxClearedIdx, so the two agree.
+                //
+                //   3. max(levelIdx) across /leaderboard/level-time/mine
+                //      entries. Only covers players who submitted
+                //      timings — pre-9 levels aren't on the time
+                //      leaderboard, so empty on new/early players.
+                //
+                // Belt-and-braces: take max of all three so a backend
+                // mid-rollout that returns stale (2) and empty (3)
+                // doesn't regress returning players to -1 when (1) is
+                // missing on that build.
+                let serverIdx = p?.maxClearedIdx ?? ((p?.bestScores?.level ?? 0) - 1);
                 try {
                     const mine = await fetchMyLevelTimes();
                     if (mine.length > 0) {
@@ -1024,12 +1039,12 @@ export class MenuController extends Component {
                             -1,
                         );
                         if (derivedIdx > serverIdx) {
-                            log(`[MenuController] boot: level-time entries yield higher progress ${derivedIdx} > bestScores.level-1=${serverIdx}`);
+                            log(`[MenuController] boot: level-time entries yield higher progress ${derivedIdx} > profile.maxClearedIdx/bestScores.level-1=${serverIdx}`);
                             serverIdx = derivedIdx;
                         }
                     }
                 } catch (e) {
-                    console.warn(`[MenuController] boot fetchMyLevelTimes failed (progress will fall back to bestScores.level only): ${(e as Error)?.message}`);
+                    console.warn(`[MenuController] boot fetchMyLevelTimes failed (progress will fall back to profile.maxClearedIdx / bestScores.level): ${(e as Error)?.message}`);
                 }
                 if (serverIdx >= 0) {
                     // Max-merge with whatever's already in localStorage

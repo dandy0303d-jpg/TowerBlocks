@@ -80,6 +80,14 @@ export interface PlayerProfileResult {
     name:       string;
     avatarIdx:  number;
     bestScores: { level: number; endless: number; blind: number };
+    /** Server-authoritative max cleared level index (0-based). `-1`
+     *  means the player has never cleared any level. Added 2026-10-11
+     *  so clients can seed LevelProgress at boot without having to
+     *  derive it from bestScores.level - 1 and max(level-time entries)
+     *  (both of which were historically stale on some paths). Prefer
+     *  this field over bestScores.level - 1 when present. Older server
+     *  builds omit it; callers fall back to the legacy derivation. */
+    maxClearedIdx?: number;
     /** ISO timestamp when the player can next change their nickname,
      *  or null if they can change immediately (never changed / cooldown
      *  already elapsed). Server enforces the 7-day rule authoritatively. */
