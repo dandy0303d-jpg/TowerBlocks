@@ -1087,7 +1087,21 @@ export class MenuController extends Component {
             await this.maybeShowConsentGate();
 
             // Step 3: tutorial or menu
+            // Local-only tutorial flag is wiped by app reinstall / data
+            // clear — but the SERVER remembers maxClearedIdx. If the
+            // player has any clear history (>= 0 = cleared level 1 or
+            // higher), they've obviously already learned the controls;
+            // skip the tutorial and treat the local flag as 'seen' so
+            // the next cold boot takes the fast path without a server
+            // round trip. This fixes the "reinstall replays tutorial"
+            // UX for returning players.
+            const hasServerHistory = LevelProgress.maxClearedIdx >= 0;
+            if (hasServerHistory && !TutorialProgress.hasSeen('operations')) {
+                log(`[MenuController] returning player (maxClearedIdx=${LevelProgress.maxClearedIdx}) — skipping tutorial, marking seen`);
+                TutorialProgress.markSeen('operations');
+            }
             const needTutorial = !TutorialProgress.hasSeen('operations')
+                              && !hasServerHistory
                               && !!this.tutorialController;
             if (!needTutorial) {
                 this.showModeSelect();
