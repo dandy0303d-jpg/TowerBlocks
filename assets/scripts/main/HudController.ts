@@ -48,7 +48,7 @@ import { purchaseRefresh, RefreshType, REFRESH_COST_TIERS, MAX_PAID_REFRESHES_PE
 import { consumeDailyFree } from '../core/DailyFreeApi';
 import { PlayerProfile } from '../core/PlayerProfile';
 import { fetchBackpack, consumeBackpackItem, getCachedBackpack } from '../core/BackpackApi';
-import { IS_DEV_BUILD, LEVELPLAY_FATE_AD_UNIT } from '../core/BuildConfig';
+import { IS_DEV_BUILD, LEVELPLAY_FATE_AD_UNIT, LEVELPLAY_MAGIC_AD_UNIT } from '../core/BuildConfig';
 import { MagicHourglassEffect } from '../../effects/magic-hourglass/MagicHourglassEffect';
 import { MagicGatlingEffect } from '../../effects/magic-gatling/MagicGatlingEffect';
 import { MagicMeteorEffect } from '../../effects/magic-meteor/MagicMeteorEffect';
@@ -3222,13 +3222,35 @@ export class HudController extends Component {
         // server /consume endpoint SHOULD 429 in that case but doesn't
         // on all versions — this guard is client-side belt-and-braces
         // so the "🎬 Watch Ad" label matches actual behaviour.
-        // Ad-watch integration is a separate TODO — for now the click
-        // is a silent noop instead of a free refresh.
+        //
+        // Exhausted → fall through to rewarded ad (魔法道具 ad unit).
+        // On rewarded completion we grant the refresh client-side; the
+        // S2S callback credits the daily-free bucket server-side so
+        // the next cold boot's cached remaining stays in sync.
         const cached = PlayerProfile.dailyFreeRemaining('magic');
         if (cached === 0) {
-            console.log('[Picker] daily-free exhausted — ad-watch not wired, ignoring click');
-            // TODO(rewarded-ad): call channel's ad SDK, play rewarded
-            // video, on completion refreshEnergyPicker() + update label.
+            console.log('[Picker] daily-free exhausted — triggering rewarded ad');
+            void (async () => {
+                AnalyticsApi.logCustom('ad_shown', { placement: 'picker_refresh' });
+                try {
+                    const r = await Providers.ads.showRewardedAd(LEVELPLAY_MAGIC_AD_UNIT);
+                    if (r.kind === 'rewarded') {
+                        AnalyticsApi.logAdReward({
+                            virtualCurrencyName: 'picker_refresh',
+                            value:               1,
+                            placement:           'picker_refresh',
+                        });
+                        g.refreshEnergyPicker();
+                        this.refreshesUsedThisFull++;
+                        this.updateRefreshButtonLabel();
+                    } else if (r.kind === 'error') {
+                        console.warn(`[Picker] ad not shown — ${r.reason}`);
+                    }
+                    // 'dismissed' = player skipped early → no reward, no toast
+                } catch (e) {
+                    console.warn('[Picker] showRewardedAd threw:', (e as Error)?.message ?? e);
+                }
+            })();
             return;
         }
         // Server-authoritative daily-free gate. POST /player/daily-free/consume
