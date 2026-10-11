@@ -3506,6 +3506,24 @@ export class GameController extends Component {
         // launch has played out.
         const delayMs = Math.max(0, this._otherPropBusyUntil - Date.now());
         if (delayMs > 0) {
+            // Reserve commit window up-front so gates like
+            // `fxNonFallStillPlaying` (which drives drainPendingPickerOpen,
+            // drainPendingSpawn, etc.) know the wrecker is in-flight even
+            // during the pre-launch delay. Without this reservation, the
+            // energy picker would pop up DURING the gap, the player's
+            // magic-item pick could mutate the board (clear cells, etc.),
+            // and when the setTimeout finally fires _runWreckerPrePulse
+            // the picks might point at nulled cells or the wrecker prop
+            // itself could already be gone — collision trigger lost.
+            //
+            // Reserve for: delayMs + the maximum theoretical launch
+            // sequence (10 picks × 60ms stagger + 400ms flight) + pulse.
+            // _runWreckerPrePulse's own commitAt bump will overwrite this
+            // with the real value (potentially shorter if picks < 10).
+            const maxLaunchMs = (picks.length - 1) * 60 + 400;
+            const pulseMs    = this.wreckerPulseDuration * 1000;
+            const reservedAt = Date.now() + delayMs + maxLaunchMs + pulseMs;
+            if (reservedAt > this.wreckerCommitAt) this.wreckerCommitAt = reservedAt;
             setTimeout(() => this._runWreckerPrePulse(
                 srcR, srcC, picks, comboBoomLevel, comboBombAxis,
             ), delayMs);
