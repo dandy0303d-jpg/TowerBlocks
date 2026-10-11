@@ -84,6 +84,24 @@ class Profile {
     private _accountType: AccountType | null | undefined = undefined;   // undefined = not loaded
     private _avatarIdx: number | null = null;   // null = never picked → renderer falls back to uuid hash
 
+    /** True if this boot restored a pre-existing uuid from the server
+     *  via Game Center / Google Play Games / Apple sign-in silent recover
+     *  (as opposed to minting a fresh anonymous account). Reliable
+     *  "returning player on fresh install" signal — a brand-new player
+     *  can't have a server-side uuid to recover, so GC recover returning
+     *  non-null means this device has installed the game before.
+     *
+     *  Used by MenuController's tutorial gate: /player/profile's
+     *  bestScores.level and /leaderboard/level-time/mine are known to
+     *  lag the authoritative /run/start maxClearedIdx on some backend
+     *  versions, so this flag is a secondary signal to skip the
+     *  tutorial for recovered players even when server progress reports
+     *  are stale. */
+    private _recoveredFromExistingAccount: boolean = false;
+    public get recoveredFromExistingAccount(): boolean {
+        return this._recoveredFromExistingAccount;
+    }
+
     /** Server-authoritative daily-free reroll counters. `null` = not
      *  yet fetched (fresh boot, offline). HUD callers should call
      *  DailyFreeApi.consume() rather than reading this directly for
@@ -669,6 +687,7 @@ class Profile {
         if (sys.os === sys.OS.IOS) {
             const gcRecovered = await this._tryGameCenterRecover();
             if (gcRecovered) {
+                this._recoveredFromExistingAccount = true;
                 console.log('[PlayerProfile] recovered via Game Center:', gcRecovered.uuid);
                 return;
             }
