@@ -276,6 +276,13 @@
 	<string>????</string>
 	<key>CFBundleVersion</key>
 	<string>2</string>
+	<!-- Export compliance: TetriTower only uses standard crypto (HTTPS /
+	     TLS via NSURLSession + the system keychain). No custom encryption
+	     algorithms, no proprietary crypto libraries. Setting NO here
+	     exempts the build from annual export compliance paperwork and
+	     lets App Store Connect skip the manual question on every upload. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSAppTransportSecurity</key>

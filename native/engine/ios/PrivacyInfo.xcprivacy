@@ -26,23 +26,78 @@
 <dict>
     <!-- ================================================================
          Section 1: Tracking
-         Are we linking user data collected here to third-party data for
-         advertising / cross-app tracking? No — TetriTower has no ads,
-         no analytics SDK, no cross-app tracking.
+         We DO track for advertising: Unity LevelPlay mediates rewarded
+         ads with 4 adapters (AdMob, Meta Audience Network, Unity Ads,
+         AppLovin). When the ATT prompt grants authorization, those
+         adapters receive IDFA + device info and may link it to
+         third-party ad data for frequency capping, attribution and
+         personalisation. Hence NSPrivacyTracking = true.
          ================================================================ -->
     <key>NSPrivacyTracking</key>
-    <false/>
+    <true/>
 
+    <!-- Domains that MUST load only after ATT authorization. Per Apple's
+         docs, list every host the mediated ad SDKs reach for tracking
+         purposes. These sets are maintained by each SDK vendor; the
+         values below are the vendor-published tracking domains as of
+         2026 Q4. Review when any ad adapter is bumped. -->
     <key>NSPrivacyTrackingDomains</key>
-    <array/>
+    <array>
+        <!-- Unity LevelPlay / ironSource -->
+        <string>ssa.aura.ironsrc.com</string>
+        <string>ssa.aura.ssacdn.com</string>
+        <string>init.supersonicads.com</string>
+        <string>outcome-ssp.supersonicads.com</string>
+        <string>cs.supersonicads.com</string>
+        <!-- Google AdMob -->
+        <string>googleads.g.doubleclick.net</string>
+        <string>pagead2.googlesyndication.com</string>
+        <string>pubads.g.doubleclick.net</string>
+        <!-- Meta Audience Network -->
+        <string>graph.facebook.com</string>
+        <string>an.facebook.com</string>
+        <!-- Unity Ads -->
+        <string>auction.unityads.unity3d.com</string>
+        <string>config.unityads.unity3d.com</string>
+        <string>publisher-config.unityads.unity3d.com</string>
+        <string>cdn-highwinds.unityads.unity3d.com</string>
+        <!-- AppLovin -->
+        <string>ms.applovin.com</string>
+        <string>a.applvn.com</string>
+        <string>d.applvn.com</string>
+        <string>stats.applovin.com</string>
+    </array>
 
     <!-- ================================================================
          Section 2: Collected Data Types
-         Per Apple: only list things that leave the device. All three
-         below are sent to our own backend (tetritower.konenine.kr).
+         Per Apple: only list things that leave the device. The three
+         server-bound types (UserID / PurchaseHistory / OtherUserContent)
+         are sent to our own backend (tetritower.konenine.kr).
+         DeviceID (IDFA + IDFV) leaves the device via the LevelPlay
+         mediated ad adapters when the player grants ATT.
          ================================================================ -->
     <key>NSPrivacyCollectedDataTypes</key>
     <array>
+        <!-- 0) Device ID (IDFA + IDFV). Collected by Unity LevelPlay +
+             its 4 ad adapters (AdMob / Meta / UnityAds / AppLovin) when
+             ATT authorization is granted. Used by those SDKs for
+             advertising attribution + frequency capping + targeting.
+             Tracking = true because the identifier is linked to
+             third-party ad data server-side. -->
+        <dict>
+            <key>NSPrivacyCollectedDataType</key>
+            <string>NSPrivacyCollectedDataTypeDeviceID</string>
+            <key>NSPrivacyCollectedDataTypeLinked</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypeTracking</key>
+            <true/>
+            <key>NSPrivacyCollectedDataTypePurposes</key>
+            <array>
+                <string>NSPrivacyCollectedDataTypePurposeThirdPartyAdvertising</string>
+                <string>NSPrivacyCollectedDataTypePurposeAnalytics</string>
+            </array>
+        </dict>
+
         <!-- 1) Player UUID (server-issued identifier).
              Linked to identity (it IS the identity from our POV).
              Not used for tracking. Purpose = app functionality (needed
