@@ -955,8 +955,28 @@ export class GameController extends Component {
                     SoundManager.instance?.play('line_clear');
             HapticsManager.impact('medium');
                     this.onShatter(r, content);
+                    // Shatter FX dust + gravity settle ~700ms. Gates
+                    // wreckers triggered in the same tick behind this.
+                    this._bumpOtherPropBusy(700);
                 },
-                onCellsFell: moves => this.registerFallAnimations(moves),
+                onCellsFell: moves => {
+                    this.registerFallAnimations(moves);
+                    // Airborne cubes falling: ~FALL_ROW_DURATION_MS per row
+                    // + a short settle. Compute the longest drop in this
+                    // batch and bump the busy window accordingly so any
+                    // wrecker triggered in the same tick waits for the
+                    // tower to visually stop moving before firing.
+                    let maxRowsDrop = 0;
+                    for (const m of moves) {
+                        const dr = m.toR - m.fromR;
+                        if (dr > maxRowsDrop) maxRowsDrop = dr;
+                    }
+                    if (maxRowsDrop > 0) {
+                        this._bumpOtherPropBusy(
+                            maxRowsDrop * this.FALL_ROW_DURATION_MS + 150,
+                        );
+                    }
+                },
                 onWreckerPrePulse: (srcR, srcC, picks, comboBoomLevel, comboBombAxis) => {
                     HapticsManager.impact('heavy');
                     // Wrecker combo (× boom OR × bomb) → screen-shake.
@@ -1005,6 +1025,8 @@ export class GameController extends Component {
                         SoundManager.instance?.play('rocket_hit');
                         HapticsManager.impact('heavy');
                     }
+                    // Shatter FX + gravity settle ~700ms.
+                    this._bumpOtherPropBusy(700);
                 },
                 onGatlingHit: picks => {
                     this.queueWreckerPicksShatter(picks);
@@ -1016,6 +1038,8 @@ export class GameController extends Component {
                         SoundManager.instance?.play('rocket_hit');
                         HapticsManager.impact('heavy');
                     }
+                    // Shatter FX + gravity settle ~700ms (same as rocket).
+                    this._bumpOtherPropBusy(700);
                 },
                 // Fire SFX for a rocket storm: play `rocket_fire` three
                 // times in quick succession as the salvo takes off —
@@ -1029,10 +1053,15 @@ export class GameController extends Component {
                     for (let i = 0; i < 3; i++) {
                         setTimeout(() => SoundManager.instance?.play('rocket_fire'), 300 + i * 150);
                     }
+                    // Rocket swarm: 3 launches × 150ms stagger + ~700ms
+                    // flight + impact FX. Gate wreckers for ~1500ms.
+                    this._bumpOtherPropBusy(1500);
                 },
                 onGatlingFire: (_col) => {
                     SoundManager.instance?.play('gatling_fire');
                     HapticsManager.impact('medium');
+                    // Gatling: ~800ms rapid-fire + impact.
+                    this._bumpOtherPropBusy(1200);
                 },
                 // Meteor shower per-DOT launch — fires each time a
                 // DOT piece spawns. SFX only; no haptic (per-DOT
@@ -1041,6 +1070,8 @@ export class GameController extends Component {
                 // one-shot launches, not a shower).
                 onMeteorFire:  ()     => {
                     SoundManager.instance?.play('meteor_fire');
+                    // Meteor shower is ~1.5s of falling + impact.
+                    this._bumpOtherPropBusy(1500);
                 },
                 // Mortar drop lock — play SFX only on the FIRST drop
                 // of each storm. Subsequent drops in the same storm
@@ -1053,6 +1084,8 @@ export class GameController extends Component {
                     this._mortarLandSfxArmed = true;
                     SoundManager.instance?.play('meteor_fire');
                     HapticsManager.impact('heavy');
+                    // Mortar storm: multiple drops over ~1.5s.
+                    this._bumpOtherPropBusy(1500);
                 },
                 // Endless / blind — 24-col row filled + converted to
                 // gray. Play the same `line_clear` cue level mode
@@ -1097,6 +1130,10 @@ export class GameController extends Component {
                     if (level >= 2) {
                         this._shakeBoardRoot(440, 0.075);
                     }
+                    // Wrecker gating: boom shatter FX + gravity settle
+                    // combined ~1s. Delay any wrecker trail starts in
+                    // this tick until after this clears.
+                    this._bumpOtherPropBusy(1000);
                 },
                 onColBombDetonate: (r, c, tier) => {
                     SoundManager.instance?.play('bomb_boom');
@@ -3231,6 +3268,28 @@ export class GameController extends Component {
      *  `drainWreckerPulse`. */
     private wreckerCommitAt: number = 0;
 
+    /** Deadline (Date.now ms) after which "other item FX fired in this
+     *  same tick are visually done + their airborne blocks have landed."
+     *  Bumped by every non-wrecker prop trigger hook (boom / meteor /
+     *  rocket / gatling / hail / blizzard / chest / bomb-ribbon) with a
+     *  rough end-of-animation estimate; also bumped whenever
+     *  pendingFallMoves is non-empty (gravity resettle in flight).
+     *
+     *  `queueWreckerPrePulse` delays the start of the wrecker's own
+     *  projectile launches by `max(0, this - now)` so the wrecker
+     *  always fires AFTER the other props' aftermath has settled —
+     *  the player sees: other items pop → cubes fall + lock → THEN
+     *  wrecker's trail of 10 projectiles starts. 0 = nothing pending. */
+    private _otherPropBusyUntil: number = 0;
+    /** Shared bumper used by every non-wrecker prop hook. Takes the
+     *  rough estimated animation length and extends the deadline if
+     *  this would push it further out. */
+    private _bumpOtherPropBusy(animMs: number): void {
+        if (!animMs || animMs <= 0) return;
+        const until = Date.now() + animMs;
+        if (until > this._otherPropBusyUntil) this._otherPropBusyUntil = until;
+    }
+
     /** One-shot gate for the mortar landing SFX: armed by
      *  `onMortarActivated` (storm start) and consumed by the first
      *  `onMortarLanded` of that storm. Keeps a single "clay lands"
@@ -3434,6 +3493,44 @@ export class GameController extends Component {
         picks: ReadonlyArray<{ r: number; c: number; color: import('../core/Constants').CellValue }>,
         comboBoomLevel: 0 | 1 | 2 | 3 = 0,
         comboBombAxis: 'row' | 'col' | null = null,
+    ): void {
+        if (!this.gameState || !picks.length) return;
+
+        // Other-item gating: if a non-wrecker prop fired in this same
+        // tick (boom / meteor / rocket / gatling / row shatter / gravity
+        // settle), their hooks have bumped `_otherPropBusyUntil`. Defer
+        // the whole wrecker launch (projectiles + marker stamping +
+        // commit timing) until that deadline, so the player sees:
+        //
+        //   1. Other items pop + do their FX
+        //   2. Airborne cubes fall and lock
+        //   3. ONLY THEN wrecker's 10 projectiles start flying
+        //
+        // Reserving commit timing until after the delay also means
+        // `wreckerCommitAt` is set correctly off the deferred `now`,
+        // so `drainWreckerPulse` doesn't commit before the delayed
+        // launch has played out.
+        const delayMs = Math.max(0, this._otherPropBusyUntil - Date.now());
+        if (delayMs > 0) {
+            setTimeout(() => this._runWreckerPrePulse(
+                srcR, srcC, picks, comboBoomLevel, comboBombAxis,
+            ), delayMs);
+            return;
+        }
+        this._runWreckerPrePulse(srcR, srcC, picks, comboBoomLevel, comboBombAxis);
+    }
+
+    /** Body of `queueWreckerPrePulse`, extracted so it can be scheduled
+     *  via setTimeout once other props' FX have had time to play out.
+     *  Captures `now` at execution time so the commit deadline is
+     *  computed relative to when projectiles actually launch, not when
+     *  the trigger originally fired. */
+    private _runWreckerPrePulse(
+        srcR: number,
+        srcC: number,
+        picks: ReadonlyArray<{ r: number; c: number; color: import('../core/Constants').CellValue }>,
+        comboBoomLevel: 0 | 1 | 2 | 3,
+        comboBombAxis: 'row' | 'col' | null,
     ): void {
         if (!this.gameState || !picks.length) return;
         const now = Date.now();
