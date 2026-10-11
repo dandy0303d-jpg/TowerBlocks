@@ -3161,6 +3161,71 @@ export class GameState {
         this.openEnergyPicker();
     }
 
+    /** After the lock pipeline + any item FX settles, scan the WHOLE board
+     *  one more time for embed-prop adjacencies that were created mid-
+     *  pipeline by gravity shuffling cells around (e.g. a col-bomb
+     *  dropped onto a wrecker's row, or two wreckers that drifted next
+     *  to each other after a boom's diamond carved out their supports).
+     *  Fires every adjacency the normal `gather*` scans would have
+     *  caught at a fresh piece lock — booms first, wreckers queued,
+     *  then bombs — so the player doesn't have to wait for the NEXT
+     *  piece lock before these finally pop.
+     *
+     *  Returns true if ANY prop was fired. Caller (commitPendingSpawn)
+     *  should NOT spawn the next piece on true — spawn gets re-queued
+     *  through the normal FX-settlement path once this fresh fire chain
+     *  drains. */
+    private _fireAnyAdjacentEmbedProps(): boolean {
+        const adjBombs    = gatherAdjacentBombs(this.state).filter(s => s.kind !== 'box3');
+        const adjBooms    = gatherAdjacentBooms(this.state);
+        const adjWreckers = gatherAdjacentWreckers(this.state);
+        if (!adjBombs.length && !adjBooms.length && !adjWreckers.length) return false;
+
+        // Mirror lockAndNext's firing order so combos read correctly.
+        this.captureWreckerBoomCombos();
+        const reservedTop = this.computeReservedTop();
+
+        // Booms first — their diamonds clear cells that would otherwise
+        // steal rows from the bomb detonate pass below.
+        if (adjBooms.length) {
+            const fire = (r: number, c: number, level: 1 | 2 | 3,
+                          cleared: Array<{ r: number; c: number }>) =>
+                this.hooks.onBoomTriggered?.(r, c, level, cleared);
+            for (const { r, c, level } of adjBooms) {
+                const stillThere = this.state.boardBooms
+                    && this.state.boardBooms[r] && this.state.boardBooms[r][c];
+                if (!stillThere) continue;
+                this.state.boardBooms![r][c] = null;
+                const cleared = activateBoom(this.state, r, c, level, reservedTop);
+                fire(r, c, level, cleared);
+            }
+            processClearedBooms(this.state, { onBoomActivated: fire }, reservedTop);
+        }
+
+        // Wreckers: null their host prop NOW so downstream bomb detonate
+        // doesn't re-fire them via boardWreckers scans, but DEFER the
+        // trigger until after the bomb pass so the pick pool reflects
+        // the post-bomb board.
+        const wreckerFireQueue: Array<{ r: number; c: number }> = [];
+        for (const { r, c } of adjWreckers) {
+            const stillThere = this.state.boardWreckers
+                && this.state.boardWreckers[r] && this.state.boardWreckers[r][c];
+            if (!stillThere) continue;
+            this.state.boardWreckers![r][c] = null;
+            wreckerFireQueue.push({ r, c });
+        }
+
+        if (adjBombs.length) {
+            detonateBombs(this.state, adjBombs, reservedTop, this.makeDetonateHooks());
+        }
+
+        for (const { r, c } of wreckerFireQueue) {
+            this.triggerWreckerFromBoard(r, c);
+        }
+
+        return true;
+    }
+
     /** Renderer calls this once every FX has played through. Idempotent
      *  on the empty/already-spawned case. */
     commitPendingSpawn(): void {
@@ -3180,6 +3245,13 @@ export class GameState {
         // _drainPendingBox3Detonations clears this array on expiry;
         // the very next commitPendingSpawn tick will then spawn.
         if (this.pendingBox3Detonations.length > 0) return;
+        // Global adjacency sweep — catch any embed-prop pair that mid-
+        // pipeline gravity brought together but no local collision scan
+        // noticed (e.g. col/row/box bomb falling onto a wrecker through
+        // a cleared column). If we fire anything, hold back the spawn:
+        // the fresh FX will re-queue pendingSpawn through the regular
+        // settlement path when its own hooks drain.
+        if (this._fireAnyAdjacentEmbedProps()) return;
         this.pendingSpawn = false;
         // If a magic-item effect (excavator / wrecker / storm) cleared
         // the task zone, win the level NOW instead of spawning the next
