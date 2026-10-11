@@ -24,7 +24,12 @@ import { StoreKitProvider } from './StoreKitProvider';
 import { AppleAuth } from './AppleAuth';
 import { GameCenter } from './GameCenter';
 import { LevelPlayAdProvider } from '../../core/channels/LevelPlayAdProvider';
-import { LEVELPLAY_REWARDED_AD_UNIT } from '../../core/BuildConfig';
+import {
+    LEVELPLAY_REWARDED_AD_UNIT,
+    LEVELPLAY_FATE_AD_UNIT,
+    LEVELPLAY_MAGIC_AD_UNIT,
+    LEVELPLAY_REVIVE_AD_UNIT,
+} from '../../core/BuildConfig';
 import { PlayerProfile } from '../../core/PlayerProfile';
 
 (function initAppStore(): void {
@@ -68,7 +73,16 @@ import { PlayerProfile } from '../../core/PlayerProfile';
     });
     Providers.setAds(adProvider);
     adProvider.init()
-        .then(() => console.log('[AppStoreBoot][Ads] LevelPlay init OK'))
+        .then(() => {
+            console.log('[AppStoreBoot][Ads] LevelPlay init OK — preloading 3 ad units');
+            // Pre-warm all three rewarded slots so the FIRST player tap
+            // on a 'watch ad' button plays immediately instead of
+            // returning 'not-ready — lazily created'. Fire-and-forget;
+            // native starts loading each unit in parallel.
+            adProvider.preloadRewardedAd(LEVELPLAY_FATE_AD_UNIT);
+            adProvider.preloadRewardedAd(LEVELPLAY_MAGIC_AD_UNIT);
+            adProvider.preloadRewardedAd(LEVELPLAY_REVIVE_AD_UNIT);
+        })
         .catch((e) => console.warn(`[AppStoreBoot][Ads] LevelPlay init failed: ${(e as Error).message}`));
 
     // ---- DEBUG: expose SIWA to globalThis so we can trigger it from

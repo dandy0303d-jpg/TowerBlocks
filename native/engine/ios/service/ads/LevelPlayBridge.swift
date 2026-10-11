@@ -129,6 +129,16 @@ public class LevelPlayBridge: NSObject {
         }
     }
 
+    /// Called when JS sends "levelplay.preloadRewarded". Creates (if
+    /// not already) and loads the LPMRewardedAd for the given ad unit
+    /// without showing. Boot code fires this per ad unit so the first
+    /// player tap gets a ready ad instead of lazy-create latency.
+    public func preloadRewarded(adUnit: String) {
+        guard !adUnit.isEmpty else { return }
+        NSLog("[LevelPlay] preloadRewarded adUnit=\(adUnit)")
+        createAndLoadRewarded(adUnitId: adUnit)
+    }
+
     /// Called when JS sends "levelplay.rewardedReady". Reads the SDK's
     /// current readiness for the default ad unit (not the cached flag,
     /// which can lag by one listener callback).

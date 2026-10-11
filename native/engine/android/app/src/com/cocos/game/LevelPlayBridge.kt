@@ -92,6 +92,7 @@ object LevelPlayBridge {
     private const val EV_INIT                    = "levelplay.init"
     private const val EV_INIT_RESULT             = "levelplay.initResult"
     private const val EV_REWARDED_READY          = "levelplay.rewardedReady"
+    private const val EV_PRELOAD_REWARDED        = "levelplay.preloadRewarded"
     private const val EV_REWARDED_READY_RESULT   = "levelplay.rewardedReadyResult"
     private const val EV_SHOW_REWARDED           = "levelplay.showRewarded"
     private const val EV_SHOW_REWARDED_RESULT    = "levelplay.showRewardedResult"
@@ -121,9 +122,10 @@ object LevelPlayBridge {
         installed = true
         activityRef = WeakReference(activity)
         val bridge = JsbBridgeWrapper.getInstance()
-        bridge.addScriptEventListener(EV_INIT)           { uuid -> handleInit(uuid) }
-        bridge.addScriptEventListener(EV_REWARDED_READY) { _    -> handleRewardedReady() }
-        bridge.addScriptEventListener(EV_SHOW_REWARDED)  { p    -> handleShowRewarded(p) }
+        bridge.addScriptEventListener(EV_INIT)             { uuid -> handleInit(uuid) }
+        bridge.addScriptEventListener(EV_REWARDED_READY)   { _    -> handleRewardedReady() }
+        bridge.addScriptEventListener(EV_SHOW_REWARDED)    { p    -> handleShowRewarded(p) }
+        bridge.addScriptEventListener(EV_PRELOAD_REWARDED) { p    -> handlePreloadRewarded(p) }
         Log.i(TAG, "installed — event listeners registered")
     }
 
@@ -279,6 +281,15 @@ object LevelPlayBridge {
         })
         rewardedAds[placement] = ad
         ad.loadAd()
+    }
+
+    /** Fire-and-forget preload for a specific placement. TS boot code
+     *  fires this per ad unit so the first player tap gets a ready ad
+     *  instead of the lazy-create latency path. */
+    private fun handlePreloadRewarded(placement: String?) {
+        if (placement.isNullOrBlank()) return
+        Log.i(TAG, "preloadRewarded placement=$placement")
+        createAndLoadRewarded(placement)
     }
 
     private fun handleRewardedReady() {

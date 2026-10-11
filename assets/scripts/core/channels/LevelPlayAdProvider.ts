@@ -71,6 +71,7 @@ const EV = {
     showRewarded:          'levelplay.showRewarded',
     showRewardedResult:    'levelplay.showRewardedResult',
     rewardedAvailable:     'levelplay.rewardedAvailable',   // pushed by Kotlin
+    preloadRewarded:       'levelplay.preloadRewarded',     // fire-and-forget
 } as const;
 
 interface NativeInitResult    { success: boolean; error?: string; }
@@ -233,6 +234,18 @@ export class LevelPlayAdProvider implements IAdProvider {
 
     isRewardedAdReady(): boolean {
         return this._ready && isSupportedOS();
+    }
+
+    /** Fire-and-forget preload for a specific ad unit. Native creates
+     *  the LPMRewardedAd / LevelPlayRewardedAd instance (if not already)
+     *  and starts loading. Boot code calls this for every ad unit the
+     *  game will use so the first player tap on a 'watch ad' button
+     *  plays immediately instead of returning kind:'error' reason:
+     *  'not-ready — unit lazily created, try again'. */
+    preloadRewardedAd(adUnit: string): void {
+        if (!isSupportedOS() || !adUnit) return;
+        this.installHook();
+        this.send(EV.preloadRewarded, adUnit);
     }
 
     async showRewardedAd(placement?: string): Promise<AdShowResult> {

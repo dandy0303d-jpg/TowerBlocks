@@ -66,6 +66,12 @@ static inline void DispatchToJS(NSString *event, NSString *arg) {
         } copy];
         [bridge addScriptEventListener:@"levelplay.rewardedReady" listener:readyListener];
 
+        // -- levelplay.preloadRewarded -----------------------------------
+        OnScriptEventListener preloadListener = [^(NSString *arg) {
+            [impl preloadRewardedWithAdUnit:(arg ?: @"")];
+        } copy];
+        [bridge addScriptEventListener:@"levelplay.preloadRewarded" listener:preloadListener];
+
         // -- levelplay.showRewarded --------------------------------------
         OnScriptEventListener showListener = [^(NSString *arg) {
             [impl showRewardedWithPlacement:arg];
